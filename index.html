@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self';
+                 script-src 'self';
+                 style-src 'self' https://fonts.googleapis.com;
+                 font-src  'self' https://fonts.gstatic.com;
+                 img-src   'self' data: https://upload.wikimedia.org https://*.wikimedia.org;
+                 connect-src 'self' https://api.anthropic.com https://*.wikipedia.org;" />
+  <title>Brita</title>
+  <link rel="stylesheet" href="dist/renderer.css" />
+</head>
+<body>
+  <div id="root"></div>
+  <script src="dist/renderer.js"></script>
+</body>
+</html>
