@@ -1,9 +1,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // packages/mobile/src/platform/claude.ts
-// Porta de packages/desktop/src/main/handlers/claudeHandlers.js — só
-// summarize/generate (usados na criação de artigo); claude:ask fica para
-// quando ArticleView.tsx for portado (é a função de perguntas dentro de um
-// artigo aberto, fora do escopo desta fase).
+// Porta de packages/desktop/src/main/handlers/claudeHandlers.js — summarize,
+// generate e ask (chat contextual dentro do artigo, sem histórico persistido,
+// igual ao desktop).
 //
 // IMPORTANTE (transporte): a API da Anthropic não expõe CORS para chamada de
 // browser/WebView — por isso o desktop faz essa chamada no processo main via
@@ -40,6 +39,16 @@ Regras:
 - Cubra: definição, contexto histórico ou científico, relevância, relações com outros conceitos
 - Use linguagem precisa — este é um documento de referência pessoal
 - Responda APENAS com os bullet points, sem título, sem introdução
+`.trim();
+
+const SYSTEM_ASK = `
+Você é um assistente que responde perguntas com base em um artigo de uma base de
+conhecimento pessoal.
+Regras:
+- Responda apenas com base no artigo e no contexto de artigos relacionados fornecidos
+- Se o contexto não for suficiente para responder com segurança, diga isso explicitamente
+- Seja direto: entre 1 e 4 frases, sem introduções nem floreios
+- Responda em português brasileiro
 `.trim();
 
 async function callClaude(apiKey: string, systemPrompt: string, userMessage: string, maxTokens = 800): Promise<string> {
@@ -83,4 +92,18 @@ export async function generate(title: string, context = ""): Promise<string> {
     ? `Conceito: ${title}\n\nContexto adicional (artigos relacionados na minha base):\n${context.slice(0, 2000)}`
     : `Conceito: ${title}`;
   return callClaude(apiKey, SYSTEM_GENERATE, userMsg, 800);
+}
+
+export async function ask(
+  question: string, articleTitle: string, articleText: string, relatedContext = ""
+): Promise<string> {
+  const apiKey = await getConfigValue("anthropicApiKey");
+  if (!apiKey) throw new Error("API key da Anthropic não configurada.");
+  const userMsg = [
+    `Artigo: ${articleTitle}`,
+    `Conteúdo:\n${articleText.slice(0, 6000)}`,
+    relatedContext ? `\nArtigos relacionados:\n${relatedContext.slice(0, 1500)}` : "",
+    `\nPergunta: ${question}`,
+  ].filter(Boolean).join("\n");
+  return callClaude(apiKey, SYSTEM_ASK, userMsg, 500);
 }

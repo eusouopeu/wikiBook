@@ -2,7 +2,7 @@
 // packages/shared/components/ArticleView.tsx
 // ─────────────────────────────────────────────────────────────────────────────
 
-import React, { useRef, useEffect, useState, useCallback, useMemo } from "react";
+import React, { useRef, useEffect, useLayoutEffect, useState, useCallback, useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
 import DOMPurify from "dompurify";
 import type { Article, ArticleExcerpt, ExcerptCategory, ExcerptOutlineItem, Flashcard, FlashcardGrade } from "../shared/types";
@@ -1415,8 +1415,27 @@ const ContextMenu: React.FC<ContextMenuProps> = ({
     };
   }, [onClose]);
 
+  // Encaixa o menu dentro da viewport — sem isso, um toque/clique perto da
+  // borda (comum em telas estreitas de celular) renderiza o menu cortado ou
+  // fora da tela por completo, já que x/y vêm crus do evento de origem.
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState({ top: y, left: x });
+
+  useLayoutEffect(() => {
+    const el = menuRef.current;
+    if (!el) { setPos({ top: y, left: x }); return; }
+    const margin = 8;
+    const rect = el.getBoundingClientRect();
+    const maxLeft = window.innerWidth - rect.width - margin;
+    const maxTop = window.innerHeight - rect.height - margin;
+    setPos({
+      left: Math.max(margin, Math.min(x, maxLeft)),
+      top: Math.max(margin, Math.min(y, maxTop)),
+    });
+  }, [x, y]);
+
   return (
-    <div className="context-menu" style={{ position: "fixed", top: y, left: x, zIndex: 1000 }}
+    <div ref={menuRef} className="context-menu" style={{ position: "fixed", top: pos.top, left: pos.left, zIndex: 1000 }}
          onClick={e => e.stopPropagation()}>
       <div className="context-menu-header">"{label}"</div>
       {hasText && (

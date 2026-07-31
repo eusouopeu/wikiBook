@@ -126,12 +126,39 @@
   color: var(--text-muted, #888);
 }
 
-.mobile-active-preview {
-  border-top: 1px solid var(--border, #ddd);
-  padding-top: 12px;
+/* ── Tela de artigo (ArticleView de @lexicon/shared, reaproveitado) ────────── */
+
+.mobile-article-screen {
+  height: 100vh;
+  overflow-y: auto;
+  box-sizing: border-box;
 }
 
-.mobile-active-preview h2 {
-  margin: 0 0 6px;
-  font-size: 1.1rem;
+.mobile-article-screen-nav {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  padding: env(safe-area-inset-top) 16px 8px;
+  background: var(--bg-body, #f8f9fa);
+}
+
+.mobile-back-btn {
+  border: none;
+  background: transparent;
+  color: var(--accent, #3366cc);
+  font-size: 1rem;
+  padding: 8px 4px;
+  min-height: 44px;
+}
+
+.mobile-article-screen-body {
+  padding: 0 16px 32px;
+}
+
+/* Suprime o callout nativo de seleção do iOS (Copiar/Buscar) sobre o
+   conteúdo do artigo — ele competiria visualmente com o menu de contexto
+   custom que abre no mesmo gesto de toque longo. Efeito real só confirmável
+   num device/simulador de verdade. */
+.mobile-article-screen .wiki-content {
+  -webkit-touch-callout: none;
 }

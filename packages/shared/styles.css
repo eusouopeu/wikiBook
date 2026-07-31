@@ -918,7 +918,10 @@ html, body, #root {
 /* ══════════════════════════════════════════════════════════════════════════
    MODAL DE TRECHO (excerpt-modal)
 ══════════════════════════════════════════════════════════════════════════ */
-.excerpt-modal { max-width: 560px; min-width: 460px; }
+/* min() em vez de min-width fixo: em viewports estreitos (celular) o modal
+   encolhe até 92% da tela em vez de vazar pelas bordas — achado testando o
+   fluxo de salvar trecho no preview mobile (460px não cabe em 375px). */
+.excerpt-modal { max-width: 560px; min-width: min(460px, 92vw); }
 
 .excerpt-preview {
   background: var(--bg-toc);

@@ -3,9 +3,9 @@
 // Implementa window.lexicon com a MESMA assinatura do preload.js do desktop
 // (contextBridge → ipcRenderer.invoke), para que App.tsx/useStore.ts/
 // ArticleView.tsx em @lexicon/shared funcionem sem nenhuma alteração.
-// Canais ainda não portados (flashcards:*, article:appendExcerpt/appendImage/
-// export*) devolvem ok:false — useStore.ts já trata isso com graceful
-// fallback onde importa.
+// Canais ainda não portados (flashcards:*, article:export*) devolvem ok:false
+// — ArticleView.tsx já trata isso com graceful degradation (ex.: seção de
+// flashcards fica vazia em vez de quebrar).
 // ─────────────────────────────────────────────────────────────────────────────
 
 import * as articles from "./articles";
@@ -34,6 +34,19 @@ async function invoke(channel: string, payload?: any): Promise<IpcResponse> {
         };
       case "article:removeLink":
         return { ok: true, data: await articles.removeLink(payload.parentId, payload.linkId) };
+      case "article:appendExcerpt":
+        return { ok: true, data: await articles.appendExcerpt(payload) };
+      case "article:appendImage":
+        return { ok: true, data: await articles.appendImage(payload) };
+      case "article:removeExcerpt":
+        return { ok: true, data: await articles.removeExcerpt(payload.targetId, payload.excerptId) };
+      case "article:updateExcerpt":
+        return {
+          ok: true,
+          data: await articles.updateExcerpt(payload.articleId, payload.excerptId, payload.editedMarkdown),
+        };
+      case "article:updateExcerptOutline":
+        return { ok: true, data: await articles.updateExcerptOutline(payload.articleId, payload.outline) };
 
       case "config:get":
         return {
@@ -53,6 +66,13 @@ async function invoke(channel: string, payload?: any): Promise<IpcResponse> {
         return { ok: true, data: { summary: await claude.summarize(payload.text, payload.title ?? "") } };
       case "claude:generate":
         return { ok: true, data: { summary: await claude.generate(payload.title, payload.context ?? "") } };
+      case "claude:ask":
+        return {
+          ok: true,
+          data: {
+            answer: await claude.ask(payload.question, payload.articleTitle, payload.articleText, payload.relatedContext ?? ""),
+          },
+        };
 
       default:
         return { ok: false, error: `Canal "${channel}" ainda não implementado no mobile.` };

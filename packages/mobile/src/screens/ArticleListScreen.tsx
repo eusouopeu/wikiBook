@@ -19,13 +19,14 @@ const SOURCE_COLOR: Record<Article["source"], string> = {
 };
 
 interface Props {
+  onOpenArticle: (id: string) => void;
   onNewArticle: () => void;
   onSettings: () => void;
 }
 
-export function ArticleListScreen({ onNewArticle, onSettings }: Props) {
+export function ArticleListScreen({ onOpenArticle, onNewArticle, onSettings }: Props) {
   const {
-    articles, activeArticleId, loadArticles, openArticle,
+    articles, activeArticleId, loadArticles,
     searchQuery, setSearchQuery, selectedTag, setSelectedTag,
   } = useStore();
 
@@ -66,8 +67,6 @@ export function ArticleListScreen({ onNewArticle, onSettings }: Props) {
     return result;
   }, [articles, searchQuery, selectedTag, searchIndex]);
 
-  const activeArticle = articles.find(a => a.id === activeArticleId) ?? null;
-
   return (
     <div className="mobile-screen">
       <header className="mobile-header">
@@ -106,7 +105,7 @@ export function ArticleListScreen({ onNewArticle, onSettings }: Props) {
           <li
             key={a.id}
             className={`mobile-article-item ${a.id === activeArticleId ? "active" : ""}`}
-            onClick={() => openArticle(a.id)}
+            onClick={() => onOpenArticle(a.id)}
           >
             <span className="mobile-dot" style={{ background: SOURCE_COLOR[a.source] }} />
             <span className="mobile-article-title">{a.title}</span>
@@ -119,13 +118,6 @@ export function ArticleListScreen({ onNewArticle, onSettings }: Props) {
           </li>
         )}
       </ul>
-
-      {activeArticle && (
-        <div className="mobile-active-preview">
-          <h2>{activeArticle.title}</h2>
-          <p>{activeArticle.summary || "(sem resumo)"}</p>
-        </div>
-      )}
     </div>
   );
 }
