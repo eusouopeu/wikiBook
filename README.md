@@ -1,22 +1,24 @@
 # Lexicon — Base de conhecimento pessoal com grafo de conceitos
 
-App Electron para macOS (e Windows/Linux) que permite criar, explorar e visualizar
-artigos interligados — vindos da Wikipedia ou gerados pelo Claude — como um grafo
-pessoal de conhecimento.
+Monorepo (npm workspaces) com a UI React + D3 + Zustand compartilhada entre um
+app desktop (Electron, macOS/Windows/Linux) e um app mobile (Capacitor,
+iOS/Android) que permitem criar, explorar e visualizar artigos interligados —
+vindos da Wikipedia ou gerados pelo Claude — como um grafo pessoal de
+conhecimento.
 
 ---
 
-## Instalação e execução
+## Instalação e execução (desktop)
 
 ```bash
-# 1. Instalar dependências
+# 1. Instalar dependências (na raiz do monorepo — resolve todos os workspaces)
 npm install
 
 # 2. Modo desenvolvimento (abre o DevTools automaticamente)
-npm run dev
+npm run dev --workspace packages/desktop
 
 # 3. Build para distribuição
-npm run build
+npm run build --workspace packages/desktop
 ```
 
 ### Pré-requisitos
@@ -35,31 +37,35 @@ npm run build
 
 ```
 lexicon-app/
-├── index.html                     # Janela Electron
-├── package.json
-├── src/
-│   ├── main/
-│   │   ├── main.js                # Processo principal Electron
-│   │   ├── preload.js             # Bridge IPC segura (contextBridge)
-│   │   └── handlers/
-│   │       ├── articleHandlers.js # CRUD de artigos (JSON locais)
-│   │       ├── wikipediaHandlers.js # Busca e sanitização da Wikipedia
-│   │       ├── claudeHandlers.js  # Resumos e geração via Anthropic API
-│   │       └── configHandlers.js  # Persistência de configurações
-│   ├── renderer/
-│   │   ├── index.tsx              # Ponto de entrada React
-│   │   ├── App.tsx                # Componente raiz + layout
-│   │   ├── styles.css             # Tema editorial escuro
-│   │   ├── store/
-│   │   │   └── useStore.ts        # Estado global Zustand + cálculo do grafo
-│   │   └── components/
-│   │       ├── GraphView.tsx      # Grafo D3 com zoom e tamanho em cascata
-│   │       └── ArticleView.tsx    # Visualização de artigo + menu de contexto
-│   └── shared/
-│       └── types.ts               # Tipos TypeScript compartilhados
-└── dist/                          # Gerado pelo esbuild (não commitar)
-    └── renderer.js
+├── package.json                   # workspace root (npm workspaces)
+└── packages/
+    ├── shared/                    # @lexicon/shared — UI React/D3/Zustand, sem nada de host
+    │   ├── App.tsx                # Componente raiz do desktop (layout 3 colunas)
+    │   ├── styles.css             # Tema editorial escuro
+    │   ├── store/useStore.ts      # Estado global Zustand + cálculo do grafo
+    │   ├── components/
+    │   │   ├── GraphView.tsx      # Grafo D3 com zoom e tamanho em cascata
+    │   │   └── ArticleView.tsx    # Visualização de artigo + menu de contexto
+    │   └── shared/types.ts        # Tipos TypeScript compartilhados (contrato do bridge)
+    │
+    ├── desktop/                   # Shell Electron
+    │   ├── index.html
+    │   ├── src/
+    │   │   ├── renderer-entry.tsx # Bootstrap React — importa App de @lexicon/shared
+    │   │   └── main/
+    │   │       ├── main.js        # Processo principal Electron
+    │   │       ├── preload.js     # Bridge IPC segura (contextBridge) → window.lexicon
+    │   │       └── handlers/      # articleHandlers/wikipediaHandlers/claudeHandlers/
+    │   │                          # flashcardHandlers/configHandlers — fs local do Node
+    │   └── dist/                  # Gerado pelo esbuild (não commitar)
+    │
+    └── mobile/                    # Shell Capacitor (iOS/Android)
+        └── src/platform/          # window.lexicon equivalente via plugins Capacitor
 ```
+
+Desktop e mobile importam os mesmos componentes/estado de `@lexicon/shared`; só a
+implementação de `window.lexicon.invoke(channel, payload)` muda por plataforma
+(IPC do Electron vs. plugins nativos do Capacitor).
 
 ---
 

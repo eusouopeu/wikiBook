@@ -1,10 +1,10 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// src/renderer/store/useStore.ts
-// Store Zustand central do renderer
+// packages/shared/store/useStore.ts
+// Store Zustand central — compartilhado entre desktop e mobile
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { create } from "zustand";
-import type { Article, ArticleLink, ExcerptOutlineItem, GraphNode, GraphEdge } from "../../shared/types";
+import type { Article, ArticleLink, ExcerptOutlineItem, GraphNode, GraphEdge } from "../shared/types";
 
 // Tipo do bridge exposto pelo preload
 declare global {

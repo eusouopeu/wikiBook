@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// src/renderer/components/GraphView.tsx
+// packages/shared/components/GraphView.tsx
 // Visualização em grafo com D3 force layout.
 // Funcionalidades:
 //   - Nós com tamanho em cascata (pai 20% maior que filho, recursivamente)
@@ -11,7 +11,7 @@
 
 import React, { useEffect, useRef, useCallback } from "react";
 import * as d3 from "d3";
-import type { GraphNode, GraphEdge } from "../../shared/types";
+import type { GraphNode, GraphEdge } from "../shared/types";
 import { useStore } from "../store/useStore";
 
 interface Props {

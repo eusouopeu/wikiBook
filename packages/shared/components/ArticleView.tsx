@@ -1,11 +1,11 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// src/renderer/components/ArticleView.tsx
+// packages/shared/components/ArticleView.tsx
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useRef, useEffect, useState, useCallback, useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
 import DOMPurify from "dompurify";
-import type { Article, ArticleExcerpt, ExcerptCategory, ExcerptOutlineItem, Flashcard, FlashcardGrade } from "../../shared/types";
+import type { Article, ArticleExcerpt, ExcerptCategory, ExcerptOutlineItem, Flashcard, FlashcardGrade } from "../shared/types";
 import { useStore } from "../store/useStore";
 import { computeTrackedEdit, stripTrackedMarkup } from "../lib/excerptDiff";
 import {

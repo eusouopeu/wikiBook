@@ -1,14 +1,14 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// scripts/dev-electron.js
+// packages/desktop/scripts/dev-electron.js
 // Runner de desenvolvimento: sobe o Electron e o REINICIA automaticamente sempre
-// que um arquivo do processo principal (src/main/**) ou de tipos compartilhados
-// (src/shared/**) muda. Sem isso, o `electron .` fica preso na versão do código
-// carregada na inicialização, e mudanças no main process só entram após fechar e
-// reabrir o app manualmente.
+// que um arquivo do processo principal (src/main/**) muda. Sem isso, o
+// `electron .` fica preso na versão do código carregada na inicialização, e
+// mudanças no main process só entram após fechar e reabrir o app manualmente.
 //
-// O renderer (src/renderer/**) continua sendo reconstruído pelo esbuild --watch;
-// como um restart do main também recarrega a janela, mudanças de interface entram
-// no próximo restart — ou recarregue a janela com ⌘R para vê-las na hora.
+// O renderer (src/renderer-entry.tsx + @lexicon/shared) continua sendo
+// reconstruído pelo esbuild --watch; como um restart do main também recarrega
+// a janela, mudanças de interface entram no próximo restart — ou recarregue a
+// janela com ⌘R para vê-las na hora.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const { spawn } = require("child_process");
@@ -17,7 +17,7 @@ const path = require("path");
 
 const ROOT = path.resolve(__dirname, "..");
 const electronBin = require("electron");                 // caminho do binário do Electron
-const WATCH_DIRS = ["src/main", "src/shared"].map(d => path.join(ROOT, d));
+const WATCH_DIRS = ["src/main"].map(d => path.join(ROOT, d));
 
 let child = null;
 let restarting = false;

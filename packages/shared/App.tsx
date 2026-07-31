@@ -1,11 +1,11 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// src/renderer/App.tsx
-// Componente raiz — layout de 3 colunas: sidebar | conteúdo | painel de grafo
+// packages/shared/App.tsx
+// Componente raiz do desktop — layout de 3 colunas: sidebar | conteúdo | painel de grafo
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useStore, computeLocalSubgraph } from "./store/useStore";
-import type { Flashcard, FlashcardGrade } from "../shared/types";
+import type { Flashcard, FlashcardGrade } from "./shared/types";
 import { GraphView } from "./components/GraphView";
 import { ArticleView, ReviewModal } from "./components/ArticleView";
 
