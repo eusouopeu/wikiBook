@@ -2,8 +2,8 @@
 // packages/mobile/src/MobileApp.tsx
 // Componente raiz do shell mobile — equivalente mínimo ao papel de App.tsx no
 // desktop (segura o estado de "qual tela/modal está aberto"), sem o layout de
-// 3 colunas nem a tab bar inferior (fica para quando flashcards forem
-// portados — telas suficientes para justificar navegação por abas).
+// 3 colunas nem a tab bar inferior (fica para quando houver telas suficientes
+// para justificar navegação por abas).
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useState } from "react";
@@ -13,6 +13,7 @@ import { ArticleScreen } from "./screens/ArticleScreen";
 import { GraphScreen } from "./screens/GraphScreen";
 import { NewArticleModal } from "./screens/NewArticleModal";
 import { SettingsModal } from "./screens/SettingsModal";
+import { StatusOverlay } from "./StatusOverlay";
 
 export function MobileApp() {
   const [screen, setScreen] = useState<"list" | "article" | "graph">("list");
@@ -36,26 +37,30 @@ export function MobileApp() {
     setScreen("article");
   }
 
+  let content: React.ReactNode;
   if (screen === "article") {
-    return activeArticle
+    content = activeArticle
       ? <ArticleScreen article={activeArticle} onBack={() => setScreen("list")} />
       : <div className="mobile-screen"><p className="mobile-empty">Carregando…</p></div>;
-  }
-
-  if (screen === "graph") {
-    return <GraphScreen onBack={() => setScreen("list")} onOpenArticle={handleGraphNodeOpen} />;
-  }
-
-  return (
-    <>
+  } else if (screen === "graph") {
+    content = <GraphScreen onBack={() => setScreen("list")} onOpenArticle={handleGraphNodeOpen} />;
+  } else {
+    content = (
       <ArticleListScreen
         onOpenArticle={handleOpenArticle}
         onNewArticle={() => setShowNewModal(true)}
         onSettings={() => setShowSettings(true)}
         onOpenGraph={() => setScreen("graph")}
       />
+    );
+  }
+
+  return (
+    <>
+      {content}
       {showNewModal && <NewArticleModal onClose={() => setShowNewModal(false)} />}
       {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
+      <StatusOverlay />
     </>
   );
 }

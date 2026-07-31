@@ -3,8 +3,6 @@
 // Implementa window.lexicon com a MESMA assinatura do preload.js do desktop
 // (contextBridge → ipcRenderer.invoke), para que App.tsx/useStore.ts/
 // ArticleView.tsx em @lexicon/shared funcionem sem nenhuma alteração.
-// Canal ainda não portado (article:export*) devolve ok:false — a exportação
-// é a última fase do roadmap (Filesystem + Share).
 // ─────────────────────────────────────────────────────────────────────────────
 
 import * as articles from "./articles";
@@ -12,6 +10,7 @@ import * as config from "./config";
 import * as wikipedia from "./wikipedia";
 import * as claude from "./claude";
 import * as flashcards from "./flashcards";
+import * as exporter from "./export";
 
 interface IpcResponse<T = unknown> { ok: boolean; data?: T; error?: string; }
 
@@ -83,6 +82,11 @@ async function invoke(channel: string, payload?: any): Promise<IpcResponse> {
         return { ok: true, data: await flashcards.listDue() };
       case "flashcards:grade":
         return { ok: true, data: await flashcards.grade(payload.articleId, payload.cardId, payload.grade) };
+
+      case "article:exportMarkdown":
+        return { ok: true, data: await exporter.exportMarkdown() };
+      case "article:exportFlashcardsCsv":
+        return { ok: true, data: await exporter.exportFlashcardsCsv() };
 
       default:
         return { ok: false, error: `Canal "${channel}" ainda não implementado no mobile.` };

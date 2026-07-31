@@ -30,7 +30,7 @@ interface Props {
 export function ArticleListScreen({ onOpenArticle, onNewArticle, onSettings, onOpenGraph }: Props) {
   const {
     articles, activeArticleId, loadArticles,
-    searchQuery, setSearchQuery, selectedTag, setSelectedTag,
+    searchQuery, setSearchQuery, selectedTag, setSelectedTag, showToast,
   } = useStore();
 
   const [dueCount, setDueCount] = useState(0);
@@ -49,6 +49,25 @@ export function ArticleListScreen({ onOpenArticle, onNewArticle, onSettings, onO
 
   async function handleGlobalGrade(articleId: string, cardId: string, grade: FlashcardGrade) {
     await window.lexicon.invoke("flashcards:grade", { articleId, cardId, grade });
+  }
+
+  // Escreve os arquivos e abre o share sheet nativo — não existe "escolher
+  // pasta" no mobile, quem decide o destino final é o usuário no share sheet
+  // (Arquivos, iCloud Drive, Google Drive, AirDrop…).
+  async function handleExportMarkdown() {
+    const res = await window.lexicon.invoke("article:exportMarkdown");
+    if (!res.ok) { showToast(res.error ?? "Falha na exportação.", "error"); return; }
+    const { count } = res.data as { count: number };
+    if (count === 0) { showToast("Nenhum artigo para exportar."); return; }
+    showToast(`${count} artigo${count > 1 ? "s" : ""} pronto${count > 1 ? "s" : ""} — escolha o destino.`);
+  }
+
+  async function handleExportFlashcardsCsv() {
+    const res = await window.lexicon.invoke("article:exportFlashcardsCsv");
+    if (!res.ok) { showToast(res.error ?? "Falha ao exportar flashcards.", "error"); return; }
+    const { count } = res.data as { count: number };
+    if (count === 0) { showToast("Nenhum trecho de texto salvo para exportar."); return; }
+    showToast(`${count} flashcard${count > 1 ? "s" : ""} pronto${count > 1 ? "s" : ""} — escolha o destino.`);
   }
 
   useEffect(() => { loadArticles(); refreshDueCount(); }, [loadArticles, refreshDueCount]);
@@ -93,6 +112,8 @@ export function ArticleListScreen({ onOpenArticle, onNewArticle, onSettings, onO
       <header className="mobile-header">
         <h1>Lexicon</h1>
         <div className="mobile-header-actions">
+          <button className="mobile-icon-btn" title="Exportar Markdown" onClick={handleExportMarkdown}>⤓</button>
+          <button className="mobile-icon-btn" title="Exportar flashcards (CSV)" onClick={handleExportFlashcardsCsv}>🎴</button>
           <button className="mobile-icon-btn" title="Grafo" onClick={onOpenGraph}>🕸</button>
           <button className="mobile-icon-btn" title="Configurações" onClick={onSettings}>⚙</button>
         </div>
