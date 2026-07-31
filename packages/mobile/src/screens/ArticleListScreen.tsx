@@ -22,9 +22,10 @@ interface Props {
   onOpenArticle: (id: string) => void;
   onNewArticle: () => void;
   onSettings: () => void;
+  onOpenGraph: () => void;
 }
 
-export function ArticleListScreen({ onOpenArticle, onNewArticle, onSettings }: Props) {
+export function ArticleListScreen({ onOpenArticle, onNewArticle, onSettings, onOpenGraph }: Props) {
   const {
     articles, activeArticleId, loadArticles,
     searchQuery, setSearchQuery, selectedTag, setSelectedTag,
@@ -72,6 +73,7 @@ export function ArticleListScreen({ onOpenArticle, onNewArticle, onSettings }: P
       <header className="mobile-header">
         <h1>Lexicon</h1>
         <div className="mobile-header-actions">
+          <button className="mobile-icon-btn" title="Grafo" onClick={onOpenGraph}>🕸</button>
           <button className="mobile-icon-btn" title="Configurações" onClick={onSettings}>⚙</button>
         </div>
       </header>

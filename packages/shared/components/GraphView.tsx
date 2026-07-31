@@ -19,6 +19,10 @@ interface Props {
   edges: GraphEdge[];
   // Expõe o elemento SVG ao pai (para os botões de zoom em GraphControls)
   onSvgReady?: (el: SVGSVGElement | null) => void;
+  // Chamado após abrir um artigo por clique num nó, além da troca de view
+  // padrão via store — usado pelo shell mobile, que navega por estado local
+  // em vez do campo "view" do store (lido só pelo App.tsx do desktop)
+  onNodeOpen?: (id: string) => void;
 }
 
 // Paleta por fonte
@@ -36,7 +40,7 @@ function tagColor(tag: string): string {
   return TAG_PALETTE[Math.abs(hash) % TAG_PALETTE.length];
 }
 
-export const GraphView: React.FC<Props> = ({ nodes, edges, onSvgReady }) => {
+export const GraphView: React.FC<Props> = ({ nodes, edges, onSvgReady, onNodeOpen }) => {
   const svgRef = useRef<SVGSVGElement>(null);
   const simulationRef = useRef<d3.Simulation<any, any> | null>(null);
   const openArticle = useStore(s => s.openArticle);
@@ -240,6 +244,7 @@ export const GraphView: React.FC<Props> = ({ nodes, edges, onSvgReady }) => {
       .on("click", (_event, d) => {
         openArticle(d.id);
         setView("article");
+        onNodeOpen?.(d.id);
       });
 
     // ── Tick ──────────────────────────────────────────────────────────────────
@@ -285,7 +290,7 @@ export const GraphView: React.FC<Props> = ({ nodes, edges, onSvgReady }) => {
     simulation.alphaDecay(0.025);
 
     simulationRef.current = simulation;
-  }, [nodes, edges, openArticle, setView]);
+  }, [nodes, edges, openArticle, setView, onNodeOpen]);
 
   useEffect(() => {
     draw();
