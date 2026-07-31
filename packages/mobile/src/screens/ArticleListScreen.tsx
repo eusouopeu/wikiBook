@@ -5,12 +5,14 @@
 // fixa). A derivação de busca/filtro por tag hoje vive dentro de App.tsx no
 // desktop (não em useStore.ts) — como o mobile não reusa App.tsx inteiro
 // (layout de 3 colunas não faz sentido em tela pequena), essa lógica é
-// replicada aqui.
+// replicada aqui. A revisão global de flashcards (badge + modal agregando
+// todos os artigos) é o mesmo padrão do App.tsx do desktop, também replicado
+// pelo mesmo motivo.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import React, { useEffect, useMemo } from "react";
-import { useStore } from "@lexicon/shared";
-import type { Article } from "@lexicon/shared";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { useStore, ReviewModal } from "@lexicon/shared";
+import type { Article, Flashcard, FlashcardGrade } from "@lexicon/shared";
 
 const SOURCE_COLOR: Record<Article["source"], string> = {
   wikipedia: "#378ADD",
@@ -31,7 +33,25 @@ export function ArticleListScreen({ onOpenArticle, onNewArticle, onSettings, onO
     searchQuery, setSearchQuery, selectedTag, setSelectedTag,
   } = useStore();
 
-  useEffect(() => { loadArticles(); }, [loadArticles]);
+  const [dueCount, setDueCount] = useState(0);
+  const [globalReviewOpen, setGlobalReviewOpen] = useState(false);
+  const [globalDueCards, setGlobalDueCards] = useState<Flashcard[]>([]);
+
+  const refreshDueCount = useCallback(async () => {
+    const res = await window.lexicon.invoke("flashcards:listDue");
+    if (res.ok) setDueCount((res.data as Flashcard[]).length);
+  }, []);
+
+  async function handleOpenGlobalReview() {
+    const res = await window.lexicon.invoke("flashcards:listDue");
+    if (res.ok) { setGlobalDueCards(res.data as Flashcard[]); setGlobalReviewOpen(true); }
+  }
+
+  async function handleGlobalGrade(articleId: string, cardId: string, grade: FlashcardGrade) {
+    await window.lexicon.invoke("flashcards:grade", { articleId, cardId, grade });
+  }
+
+  useEffect(() => { loadArticles(); refreshDueCount(); }, [loadArticles, refreshDueCount]);
 
   const searchIndex = useMemo(() => {
     const index = new Map<string, string>();
@@ -100,6 +120,12 @@ export function ArticleListScreen({ onOpenArticle, onNewArticle, onSettings, onO
         </div>
       )}
 
+      {dueCount > 0 && (
+        <button className="global-review-btn" onClick={handleOpenGlobalReview}>
+          🎓 Revisar flashcards ({dueCount})
+        </button>
+      )}
+
       <button className="mobile-new-article-btn" onClick={onNewArticle}>+ Novo artigo</button>
 
       <ul className="mobile-article-list">
@@ -120,6 +146,14 @@ export function ArticleListScreen({ onOpenArticle, onNewArticle, onSettings, onO
           </li>
         )}
       </ul>
+
+      {globalReviewOpen && (
+        <ReviewModal
+          cards={globalDueCards}
+          onGrade={handleGlobalGrade}
+          onClose={() => { setGlobalReviewOpen(false); refreshDueCount(); }}
+        />
+      )}
     </div>
   );
 }

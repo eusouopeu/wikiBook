@@ -197,6 +197,25 @@ function htmlTableToMarkdown(html: string): string {
   return [header, separator, ...body].join("\n");
 }
 
+// Conversão pragmática HTML → Markdown, usada pelo gerador de flashcards
+// (platform/flashcards.ts) para reprocessar excerpts salvos como HTML.
+export function htmlToMarkdown(html: string): string {
+  let md = html;
+  md = md.replace(/<h2[^>]*>([\s\S]*?)<\/h2>/gi, "\n## $1\n");
+  md = md.replace(/<h3[^>]*>([\s\S]*?)<\/h3>/gi, "\n### $1\n");
+  md = md.replace(/<h4[^>]*>([\s\S]*?)<\/h4>/gi, "\n#### $1\n");
+  md = md.replace(/<li[^>]*>([\s\S]*?)<\/li>/gi, "- $1\n");
+  md = md.replace(/<(?:b|strong)[^>]*>([\s\S]*?)<\/(?:b|strong)>/gi, "**$1**");
+  md = md.replace(/<(?:i|em)[^>]*>([\s\S]*?)<\/(?:i|em)>/gi, "*$1*");
+  md = md.replace(/<p[^>]*>([\s\S]*?)<\/p>/gi, "\n$1\n");
+  md = md.replace(/<br\s*\/?>/gi, "\n");
+  md = md.replace(/<img[^>]*>/gi, "");
+  md = md.replace(/<[^>]+>/g, "");
+  md = decodeEntities(md);
+  md = md.replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n");
+  return md.trim();
+}
+
 interface AppendExcerptArgs {
   targetId?: string | null; targetTitle?: string;
   html: string; kind?: "text" | "table"; category?: ArticleExcerpt["category"];
