@@ -1,0 +1,137 @@
+/* packages/mobile/src/mobile.css
+   Estilos do shell mobile — usa as variáveis definidas em @lexicon/shared/styles.css
+   (--bg, --text, --accent etc.), sem reaproveitar o layout de 3 colunas do desktop. */
+
+.mobile-screen {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  padding: env(safe-area-inset-top) 16px 16px;
+  box-sizing: border-box;
+  gap: 12px;
+  overflow-y: auto;
+}
+
+.mobile-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.mobile-header h1 {
+  margin: 8px 0 0;
+  font-family: var(--font-title, serif);
+  font-size: 1.5rem;
+}
+
+.mobile-icon-btn {
+  border: none;
+  background: transparent;
+  font-size: 1.3rem;
+  padding: 8px;
+  min-width: 44px;
+  min-height: 44px;
+}
+
+.mobile-search {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border, #ddd);
+  background: var(--bg-input, #fff);
+  color: var(--text, #111);
+  font-size: 1rem;
+}
+
+.mobile-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.mobile-tag {
+  border: 1px solid var(--border, #ddd);
+  background: var(--bg-input, #fff);
+  color: var(--text, #111);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 0.85rem;
+}
+
+.mobile-tag.active {
+  background: var(--accent-soft, #eaf3fb);
+  border-color: var(--accent, #3366cc);
+  color: var(--accent, #3366cc);
+}
+
+.mobile-new-article-btn {
+  padding: 12px 14px;
+  border-radius: 8px;
+  border: none;
+  background: var(--accent, #3366cc);
+  color: #fff;
+  font-size: 0.95rem;
+  min-height: 44px;
+}
+
+.mobile-article-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow-y: auto;
+}
+
+.mobile-article-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 10px;
+  border-radius: 8px;
+  min-height: 44px; /* alvo de toque mínimo */
+}
+
+.mobile-article-item.active {
+  background: var(--bg-selected, #d0e8f7);
+}
+
+.mobile-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.mobile-article-title {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mobile-link-count {
+  font-size: 0.75rem;
+  color: var(--text-muted, #888);
+  background: var(--bg-hover, #eaf3fb);
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+
+.mobile-empty {
+  padding: 24px 10px;
+  text-align: center;
+  color: var(--text-muted, #888);
+}
+
+.mobile-active-preview {
+  border-top: 1px solid var(--border, #ddd);
+  padding-top: 12px;
+}
+
+.mobile-active-preview h2 {
+  margin: 0 0 6px;
+  font-size: 1.1rem;
+}
