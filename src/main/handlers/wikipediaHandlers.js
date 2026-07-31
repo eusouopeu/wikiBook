@@ -15,7 +15,9 @@ const https = require("https");
 const { URL } = require("url");
 
 // User-Agent obrigatório pela Wikipedia — sem ele retorna 403
-const WIKI_UA = "Brita/1.0 (app pessoal; contato@exemplo.com) Node.js";
+const WIKI_UA = "Lexicon/1.0 (app pessoal; contato@exemplo.com) Node.js";
+
+const REQUEST_TIMEOUT_MS = 20_000;
 
 // ── Fetch com suporte a headers customizados ──────────────────────────────────
 function fetchUrl(url, headers = {}) {
@@ -25,6 +27,7 @@ function fetchUrl(url, headers = {}) {
       hostname: parsed.hostname,
       path: parsed.pathname + parsed.search,
       method: "GET",
+      timeout: REQUEST_TIMEOUT_MS,
       headers: {
         "User-Agent": WIKI_UA,
         "Accept": "application/json, text/html",
@@ -34,12 +37,16 @@ function fetchUrl(url, headers = {}) {
     const req = https.request(options, (res) => {
       // Segue redirecionamentos (301/302) automaticamente
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-        return fetchUrl(res.headers.location, headers).then(resolve).catch(reject);
+        res.resume();
+        // Location pode ser relativa — resolve contra a URL original
+        const next = new URL(res.headers.location, url).toString();
+        return fetchUrl(next, headers).then(resolve).catch(reject);
       }
       let body = "";
       res.on("data", chunk => body += chunk);
       res.on("end", () => resolve({ status: res.statusCode, body }));
     });
+    req.on("timeout", () => req.destroy(new Error(`Tempo esgotado após ${REQUEST_TIMEOUT_MS / 1000}s ao acessar ${parsed.hostname}.`)));
     req.on("error", reject);
     req.end();
   });
@@ -53,6 +60,14 @@ function fetchUrl(url, headers = {}) {
 // 3. Manter parágrafos, listas, headings
 function sanitizeWikipediaHtml(html) {
   let out = html;
+
+  // 0. Defesa em profundidade: remove <script>, <style> e atributos on* (onclick,
+  //    onerror etc.). O renderer ainda passa tudo pelo DOMPurify antes de exibir.
+  out = out
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "")
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, "")
+    .replace(/\s+on[a-z]+="[^"]*"/gi, "")
+    .replace(/\s+on[a-z]+='[^']*'/gi, "");
 
   // 1. Corrige URLs protocol-relative (//upload.wikimedia.org/…) → HTTPS
   out = out.replace(/\bsrc="\/\/([^"]+)"/g, 'src="https://$1"');
@@ -82,31 +97,56 @@ function sanitizeWikipediaHtml(html) {
 
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Busca títulos candidatos na API de search
+async function searchWikipedia(query, lang, limit) {
+  const searchUrl =
+    `https://${lang}.wikipedia.org/w/api.php?` +
+    `action=query&list=search&srsearch=${encodeURIComponent(query)}` +
+    `&srlimit=${limit}&format=json&origin=*`;
+
+  const searchRes = await fetchUrl(searchUrl);
+  if (searchRes.status !== 200) {
+    throw new Error(`Wikipedia retornou status ${searchRes.status}`);
+  }
+  const searchData = JSON.parse(searchRes.body);
+  return searchData?.query?.search ?? [];
+}
+
 function createWikipediaHandlers(ipcMain) {
 
-  // ── wikipedia:fetch { query, lang? } → { title, html, extract } ─────────────
-  // query: string de busca (ex.: "fotossíntese")
-  // lang: código de idioma (padrão "pt")
-  ipcMain.handle("wikipedia:fetch", async (_evt, { query, lang = "pt" }) => {
+  // ── wikipedia:search { query, lang? } → [{ title, snippet }] ────────────────
+  // Usado pelo modal de novo artigo para prévia dos resultados antes de criar.
+  ipcMain.handle("wikipedia:search", async (_evt, { query, lang = "pt" }) => {
     try {
-      // Passo 1: busca o título exato via API de search
-      const searchUrl =
-        `https://${lang}.wikipedia.org/w/api.php?` +
-        `action=query&list=search&srsearch=${encodeURIComponent(query)}` +
-        `&srlimit=1&format=json&origin=*`;
+      const results = await searchWikipedia(query, lang, 5);
+      return {
+        ok: true,
+        data: results.map(r => ({
+          title: r.title,
+          // snippet vem com marcação <span class="searchmatch"> — vira texto puro
+          snippet: (r.snippet ?? "").replace(/<[^>]+>/g, ""),
+        })),
+      };
+    } catch (e) {
+      return { ok: false, error: e.message };
+    }
+  });
 
-      const searchRes = await fetchUrl(searchUrl);
-      if (searchRes.status !== 200) {
-        return { ok: false, error: `Wikipedia retornou status ${searchRes.status}` };
+  // ── wikipedia:fetch { query?, exactTitle?, lang? } → { title, html, extract }
+  // query: string de busca (ex.: "fotossíntese") — resolve o melhor resultado
+  // exactTitle: título exato já escolhido (pula a etapa de busca)
+  // lang: código de idioma (padrão "pt")
+  ipcMain.handle("wikipedia:fetch", async (_evt, { query, exactTitle, lang = "pt" }) => {
+    try {
+      let pageTitle = exactTitle;
+      if (!pageTitle) {
+        // Passo 1: busca o título exato via API de search
+        const results = await searchWikipedia(query, lang, 1);
+        if (results.length === 0) {
+          return { ok: false, error: `Nenhum resultado encontrado para "${query}".` };
+        }
+        pageTitle = results[0].title;
       }
-
-      const searchData = JSON.parse(searchRes.body);
-      const results = searchData?.query?.search;
-      if (!results || results.length === 0) {
-        return { ok: false, error: `Nenhum resultado encontrado para "${query}".` };
-      }
-
-      const pageTitle = results[0].title;
 
       // Passo 2: busca o HTML do artigo via REST API
       // Substitui espaços por _ antes de codificar (padrão Wikipedia)

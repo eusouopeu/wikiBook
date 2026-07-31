@@ -17,6 +17,8 @@ import { useStore } from "../store/useStore";
 interface Props {
   nodes: GraphNode[];
   edges: GraphEdge[];
+  // Expõe o elemento SVG ao pai (para os botões de zoom em GraphControls)
+  onSvgReady?: (el: SVGSVGElement | null) => void;
 }
 
 // Paleta por fonte
@@ -26,10 +28,24 @@ const SOURCE_COLOR: Record<string, string> = {
   manual:    "#1D9E75",
 };
 
-export const GraphView: React.FC<Props> = ({ nodes, edges }) => {
+// Cor determinística por tag (anel externo do nó)
+const TAG_PALETTE = ["#E05561", "#B58CF6", "#4EC9B0", "#E5C07B", "#61AFEF", "#D19A66", "#C678DD", "#98C379"];
+function tagColor(tag: string): string {
+  let hash = 0;
+  for (let i = 0; i < tag.length; i++) hash = (hash * 31 + tag.charCodeAt(i)) | 0;
+  return TAG_PALETTE[Math.abs(hash) % TAG_PALETTE.length];
+}
+
+export const GraphView: React.FC<Props> = ({ nodes, edges, onSvgReady }) => {
   const svgRef = useRef<SVGSVGElement>(null);
+  const simulationRef = useRef<d3.Simulation<any, any> | null>(null);
   const openArticle = useStore(s => s.openArticle);
   const setView = useStore(s => s.setView);
+
+  useEffect(() => {
+    onSvgReady?.(svgRef.current);
+    return () => onSvgReady?.(null);
+  }, [onSvgReady]);
 
   const draw = useCallback(() => {
     if (!svgRef.current || nodes.length === 0) return;
@@ -173,15 +189,26 @@ export const GraphView: React.FC<Props> = ({ nodes, edges }) => {
       .attr("stroke", d => SOURCE_COLOR[d.source] ?? "#888")
       .attr("stroke-width", d => d.depth === 0 ? 2.2 : 1.4);
 
-    // Rótulo: título truncado
+    // Rótulo: abaixo do nó, tamanho fixo — legível em qualquer raio
     nodeG.append("text")
-      .text(d => d.title.length > 22 ? d.title.slice(0, 20) + "…" : d.title)
+      .text(d => d.title.length > 30 ? d.title.slice(0, 28) + "…" : d.title)
       .attr("text-anchor", "middle")
-      .attr("dominant-baseline", "central")
-      .attr("font-size", d => Math.max(9, d.radius * 0.45) + "px")
-      .attr("fill", d => SOURCE_COLOR[d.source] ?? "#aaa")
+      .attr("y", d => d.radius + 14)
+      .attr("font-size", "11px")
+      .attr("fill", "var(--fg, #ddd)")
+      .attr("fill-opacity", 0.85)
       .attr("pointer-events", "none")
       .style("user-select", "none");
+
+    // Anel externo colorido pela primeira tag do artigo
+    nodeG.filter(d => (d.tags?.length ?? 0) > 0)
+      .append("circle")
+      .attr("r", d => d.radius + 6)
+      .attr("fill", "none")
+      .attr("stroke", d => tagColor(d.tags[0]))
+      .attr("stroke-width", 1.8)
+      .attr("stroke-opacity", 0.75)
+      .attr("stroke-dasharray", "4 3");
 
     // Badge de profundidade (pequeno círculo no canto superior direito)
     nodeG.filter(d => d.depth === 0)
@@ -257,17 +284,34 @@ export const GraphView: React.FC<Props> = ({ nodes, edges }) => {
     // Stop simulation after it stabilizes
     simulation.alphaDecay(0.025);
 
+    simulationRef.current = simulation;
   }, [nodes, edges, openArticle, setView]);
 
-  useEffect(() => { draw(); }, [draw]);
+  useEffect(() => {
+    draw();
+    // Interrompe a simulação anterior ao redesenhar/desmontar
+    return () => {
+      simulationRef.current?.stop();
+      simulationRef.current = null;
+    };
+  }, [draw]);
 
-  // Redesenha se o container for redimensionado
+  // Em redimensionamento, apenas recentraliza a simulação — preserva as
+  // posições dos nós em vez de redesenhar tudo do zero
   useEffect(() => {
     if (!svgRef.current) return;
-    const observer = new ResizeObserver(() => draw());
-    observer.observe(svgRef.current.parentElement!);
+    const container = svgRef.current.parentElement!;
+    const observer = new ResizeObserver(() => {
+      const sim = simulationRef.current;
+      if (!sim) return;
+      const w = container.clientWidth || 800;
+      const h = container.clientHeight || 600;
+      sim.force("center", d3.forceCenter(w / 2, h / 2));
+      sim.alpha(0.2).restart();
+    });
+    observer.observe(container);
     return () => observer.disconnect();
-  }, [draw]);
+  }, []);
 
   return (
     <svg

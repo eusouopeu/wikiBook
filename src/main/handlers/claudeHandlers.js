@@ -7,11 +7,14 @@
 
 const https = require("https");
 
+const REQUEST_TIMEOUT_MS = 60_000;
+
 function httpsPost(hostname, path, headers, body) {
   return new Promise((resolve, reject) => {
     const data = JSON.stringify(body);
     const req = https.request(
       { hostname, path, method: "POST",
+        timeout: REQUEST_TIMEOUT_MS,
         headers: { ...headers, "Content-Length": Buffer.byteLength(data) } },
       (res) => {
         let buf = "";
@@ -19,6 +22,7 @@ function httpsPost(hostname, path, headers, body) {
         res.on("end", () => resolve({ status: res.statusCode, body: buf }));
       }
     );
+    req.on("timeout", () => req.destroy(new Error(`Tempo esgotado após ${REQUEST_TIMEOUT_MS / 1000}s ao chamar a API da Anthropic.`)));
     req.on("error", reject);
     req.write(data);
     req.end();
@@ -62,6 +66,16 @@ Regras:
 - Foque nos conceitos centrais, definições e relações causais
 - Não inclua exemplos ou analogias — apenas afirmações factuais
 - Responda APENAS com os bullet points, sem título, sem introdução, sem conclusão
+`.trim();
+
+const SYSTEM_ASK = `
+Você é um assistente que responde perguntas com base em um artigo de uma base de
+conhecimento pessoal.
+Regras:
+- Responda apenas com base no artigo e no contexto de artigos relacionados fornecidos
+- Se o contexto não for suficiente para responder com segurança, diga isso explicitamente
+- Seja direto: entre 1 e 4 frases, sem introduções nem floreios
+- Responda em português brasileiro
 `.trim();
 
 const SYSTEM_GENERATE = `
@@ -120,6 +134,32 @@ function createClaudeHandlers(ipcMain) {
 
       const summary = await callClaude(apiKey, SYSTEM_GENERATE, userMsg, 800);
       return { ok: true, data: { summary } };
+    } catch (e) {
+      return { ok: false, error: e.message };
+    }
+  });
+
+  // ── claude:ask { question, articleTitle, articleText, relatedContext? } ─────
+  // Chat contextual: responde uma pergunta usando o artigo aberto (e títulos de
+  // artigos vinculados/backlinks) como contexto. Sem histórico persistido —
+  // cada pergunta é independente (mais simples e suficiente para o caso de uso).
+  ipcMain.handle("claude:ask", async (_evt, { question, articleTitle, articleText, relatedContext = "" }) => {
+    try {
+      const { getConfig } = require("./configHandlers");
+      const apiKey = getConfig("anthropicApiKey");
+      if (!apiKey) {
+        return { ok: false, error: "API key da Anthropic não configurada." };
+      }
+
+      const userMsg = [
+        `Artigo: ${articleTitle}`,
+        `Conteúdo:\n${articleText.slice(0, 6000)}`,
+        relatedContext ? `\nArtigos relacionados:\n${relatedContext.slice(0, 1500)}` : "",
+        `\nPergunta: ${question}`,
+      ].filter(Boolean).join("\n");
+
+      const answer = await callClaude(apiKey, SYSTEM_ASK, userMsg, 500);
+      return { ok: true, data: { answer } };
     } catch (e) {
       return { ok: false, error: e.message };
     }

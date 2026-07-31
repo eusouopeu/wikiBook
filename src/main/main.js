@@ -10,6 +10,7 @@ const { createArticleHandlers } = require("./handlers/articleHandlers");
 const { createWikipediaHandlers } = require("./handlers/wikipediaHandlers");
 const { createClaudeHandlers } = require("./handlers/claudeHandlers");
 const { createConfigHandlers } = require("./handlers/configHandlers");
+const { createFlashcardHandlers } = require("./handlers/flashcardHandlers");
 
 let mainWindow = null;
 
@@ -43,6 +44,7 @@ app.whenReady().then(() => {
   createWikipediaHandlers(ipcMain);
   createClaudeHandlers(ipcMain);
   createConfigHandlers(ipcMain);
+  createFlashcardHandlers(ipcMain);
 
   createWindow();
 

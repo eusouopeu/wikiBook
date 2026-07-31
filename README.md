@@ -1,4 +1,4 @@
-# Brita — Base de conhecimento pessoal com grafo de conceitos
+# Lexicon — Base de conhecimento pessoal com grafo de conceitos
 
 App Electron para macOS (e Windows/Linux) que permite criar, explorar e visualizar
 artigos interligados — vindos da Wikipedia ou gerados pelo Claude — como um grafo
@@ -34,7 +34,7 @@ npm run build
 ## Estrutura do projeto
 
 ```
-brita-app/
+lexicon-app/
 ├── index.html                     # Janela Electron
 ├── package.json
 ├── src/
@@ -69,8 +69,8 @@ Todos os dados são locais — nenhuma sincronização com nuvem.
 
 | Dado | Localização |
 |---|---|
-| Artigos | `~/Library/Application Support/Brita/articles/` (macOS) |
-| Configurações | `~/Library/Application Support/Brita/config.json` |
+| Artigos | `~/Library/Application Support/Lexicon/articles/` (macOS) |
+| Configurações | `~/Library/Application Support/Lexicon/config.json` |
 
 Cada artigo é um arquivo `<slug>.json` independente — fácil de fazer backup ou
 exportar manualmente.

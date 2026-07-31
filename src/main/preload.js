@@ -5,7 +5,7 @@
 
 const { contextBridge, ipcRenderer } = require("electron");
 
-contextBridge.exposeInMainWorld("brita", {
+contextBridge.exposeInMainWorld("lexicon", {
   // Invoca um handler registrado no main process e retorna Promise<IpcResponse>
   invoke: (channel, payload) => ipcRenderer.invoke(channel, payload),
 });

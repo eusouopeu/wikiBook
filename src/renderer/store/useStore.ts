@@ -4,12 +4,12 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { create } from "zustand";
-import type { Article, ArticleLink, GraphNode, GraphEdge } from "../../shared/types";
+import type { Article, ArticleLink, ExcerptOutlineItem, GraphNode, GraphEdge } from "../../shared/types";
 
 // Tipo do bridge exposto pelo preload
 declare global {
   interface Window {
-    brita: {
+    lexicon: {
       invoke: (channel: string, payload?: unknown) => Promise<{ ok: boolean; data?: unknown; error?: string }>;
     };
   }
@@ -17,7 +17,7 @@ declare global {
 
 // ── Helper para chamadas IPC ──────────────────────────────────────────────────
 async function ipc<T>(channel: string, payload?: unknown): Promise<T> {
-  const res = await window.brita.invoke(channel, payload);
+  const res = await window.lexicon.invoke(channel, payload);
   if (!res.ok) throw new Error(res.error ?? "IPC error");
   return res.data as T;
 }
@@ -40,13 +40,28 @@ interface AppState {
   // ── UI states ──────────────────────────────────────────────────────────────
   searchQuery: string;
   isSearchOpen: boolean;
-  // Contexto do menu de clique direito no artigo
+  // Idioma da Wikipedia (persistido em config.json)
+  wikipediaLang: string;
+  // Filtro por tag na sidebar (null = todas)
+  selectedTag: string | null;
+  // Escopo do grafo: global (tudo) ou local (artigo ativo + vizinhos)
+  graphScope: "global" | "local";
+  localDepth: 1 | 2;
+  // Tarefa em andamento (ex.: geração via Claude disparada pelo menu de contexto)
+  pendingTask: string | null;
+  // Notificação transitória
+  toast: { message: string; type: "info" | "error" } | null;
+  // Contexto do menu de clique direito no artigo — tableHtml/imageSrc/imageAlt
+  // ficam presentes só quando o clique foi sobre uma tabela ou imagem
   contextMenu: {
     visible: boolean;
     x: number;
     y: number;
     selectedText: string;
     parentArticleId: string | null;
+    tableHtml?: string;
+    imageSrc?: string;
+    imageAlt?: string;
   };
 
   // ── Actions ────────────────────────────────────────────────────────────────
@@ -55,7 +70,7 @@ interface AppState {
   saveArticle: (article: Partial<Article> & { title: string }) => Promise<Article>;
   deleteArticle: (id: string) => Promise<void>;
 
-  fetchFromWikipedia: (query: string, parentId?: string | null) => Promise<Article>;
+  fetchFromWikipedia: (query: string, parentId?: string | null, exactTitle?: string) => Promise<Article>;
   generateWithClaude: (title: string, parentId?: string | null) => Promise<Article>;
 
   addLink: (parentId: string, anchorText: string, targetId: string, targetTitle: string) => Promise<void>;
@@ -64,7 +79,17 @@ interface AppState {
   setView: (v: "article" | "graph") => void;
   setSearchQuery: (q: string) => void;
   setSearchOpen: (open: boolean) => void;
-  showContextMenu: (x: number, y: number, text: string, parentId: string) => void;
+  setWikipediaLang: (lang: string) => Promise<void>;
+  setSelectedTag: (tag: string | null) => void;
+  setGraphScope: (scope: "global" | "local") => void;
+  setLocalDepth: (depth: 1 | 2) => void;
+  updateTags: (articleId: string, tags: string[]) => Promise<void>;
+  updateExcerptMarkdown: (articleId: string, excerptId: string, editedMarkdown: string) => Promise<void>;
+  updateExcerptOutline: (articleId: string, outline: ExcerptOutlineItem[]) => Promise<void>;
+  showToast: (message: string, type?: "info" | "error") => void;
+  showContextMenu: (x: number, y: number, parentId: string, opts?: {
+    selectedText?: string; tableHtml?: string; imageSrc?: string; imageAlt?: string;
+  }) => void;
   hideContextMenu: () => void;
   rebuildGraph: () => void;
 }
@@ -76,14 +101,17 @@ interface AppState {
 function computeGraphData(articles: Article[]): { nodes: GraphNode[]; edges: GraphEdge[] } {
   const BASE_RADIUS = 28;
 
-  // Monta mapa de parentesco: targetId → [parentId]
+  // Monta mapas de adjacência: targetId → [parentId] e parentId → [targetId]
   const parentMap = new Map<string, string[]>();
+  const childMap = new Map<string, string[]>();
   const allEdges: GraphEdge[] = [];
 
   for (const art of articles) {
     for (const link of art.links) {
       if (!parentMap.has(link.targetId)) parentMap.set(link.targetId, []);
       parentMap.get(link.targetId)!.push(art.id);
+      if (!childMap.has(art.id)) childMap.set(art.id, []);
+      childMap.get(art.id)!.push(link.targetId);
       allEdges.push({
         id: link.id,
         source: art.id,
@@ -93,30 +121,19 @@ function computeGraphData(articles: Article[]): { nodes: GraphNode[]; edges: Gra
     }
   }
 
-  // BFS para calcular depth de cada nó
+  // BFS para calcular depth de cada nó — como todas as raízes entram na fila
+  // com depth 0, a primeira visita a um nó já é pelo caminho mais curto
   const depths = new Map<string, number>();
   // Nós sem nenhum pai são raízes (depth 0)
   const roots = articles.filter(a => !parentMap.has(a.id) || parentMap.get(a.id)!.length === 0);
   const queue: Array<{ id: string; depth: number }> = roots.map(r => ({ id: r.id, depth: 0 }));
-  const visited = new Set<string>();
 
   while (queue.length > 0) {
     const { id, depth } = queue.shift()!;
-    if (visited.has(id)) continue;
-    visited.add(id);
-    // Usa o menor depth encontrado (artigo pode ser filho de múltiplos pais)
-    if (!depths.has(id) || depths.get(id)! > depth) depths.set(id, depth);
-
-    // Propaga para filhos
-    for (const art of articles) {
-      for (const link of art.links) {
-        if (link.targetId === id && !visited.has(art.id)) {
-          // art.id é pai de id → art.id já processado; processa filhos de id
-        }
-        if (art.id === id && !visited.has(link.targetId)) {
-          queue.push({ id: link.targetId, depth: depth + 1 });
-        }
-      }
+    if (depths.has(id)) continue;
+    depths.set(id, depth);
+    for (const childId of childMap.get(id) ?? []) {
+      if (!depths.has(childId)) queue.push({ id: childId, depth: depth + 1 });
     }
   }
 
@@ -135,12 +152,44 @@ function computeGraphData(articles: Article[]): { nodes: GraphNode[]; edges: Gra
       id: art.id,
       title: art.title,
       source: art.source,
+      tags: art.tags ?? [],
       depth,
       radius,
     };
   });
 
   return { nodes, edges: allEdges };
+}
+
+// ── Subgrafo local: artigo central + vizinhos até N saltos (não-direcional) ──
+// Usado pelo modo "Local" da visualização em grafo — reaproveita os nós/raios
+// já calculados globalmente, apenas filtra quais entram na cena.
+export function computeLocalSubgraph(
+  nodes: GraphNode[], edges: GraphEdge[], centerId: string, maxDepth: number
+): { nodes: GraphNode[]; edges: GraphEdge[] } {
+  const adjacency = new Map<string, Set<string>>();
+  const link = (a: string, b: string) => {
+    if (!adjacency.has(a)) adjacency.set(a, new Set());
+    adjacency.get(a)!.add(b);
+  };
+  for (const e of edges) { link(e.source, e.target); link(e.target, e.source); }
+
+  const included = new Set<string>([centerId]);
+  let frontier = [centerId];
+  for (let depth = 0; depth < maxDepth; depth++) {
+    const next: string[] = [];
+    for (const id of frontier) {
+      for (const neighbor of adjacency.get(id) ?? []) {
+        if (!included.has(neighbor)) { included.add(neighbor); next.push(neighbor); }
+      }
+    }
+    frontier = next;
+  }
+
+  return {
+    nodes: nodes.filter(n => included.has(n.id)),
+    edges: edges.filter(e => included.has(e.source) && included.has(e.target)),
+  };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -154,6 +203,12 @@ export const useStore = create<AppState>((set, get) => ({
   graphEdges: [],
   searchQuery: "",
   isSearchOpen: false,
+  wikipediaLang: "pt",
+  selectedTag: null,
+  graphScope: "global",
+  localDepth: 1,
+  pendingTask: null,
+  toast: null,
   contextMenu: {
     visible: false, x: 0, y: 0,
     selectedText: "", parentArticleId: null,
@@ -164,6 +219,11 @@ export const useStore = create<AppState>((set, get) => ({
     const articles = await ipc<Article[]>("article:list");
     const { nodes, edges } = computeGraphData(articles);
     set({ articles, graphNodes: nodes, graphEdges: edges });
+    // Carrega o idioma da Wikipedia salvo em config (uma vez, junto do bootstrap)
+    try {
+      const lang = await ipc<string | undefined>("config:get", { key: "wikipediaLang" });
+      if (lang) set({ wikipediaLang: lang });
+    } catch { /* mantém o padrão "pt" */ }
   },
 
   // ── openArticle ─────────────────────────────────────────────────────────────
@@ -212,56 +272,76 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   // ── fetchFromWikipedia ──────────────────────────────────────────────────────
-  fetchFromWikipedia: async (query, parentId = null) => {
-    const wiki = await ipc<{ title: string; html: string; plainTextExtract: string }>(
-      "wikipedia:fetch", { query }
-    );
-
-    // Gera resumo via Claude automaticamente
-    let summary = "";
+  fetchFromWikipedia: async (query, parentId = null, exactTitle) => {
+    set({ pendingTask: `Buscando "${exactTitle ?? query}" na Wikipédia…` });
     try {
-      const r = await ipc<{ summary: string }>("claude:summarize", {
+      const wiki = await ipc<{ title: string; html: string; plainTextExtract: string }>(
+        "wikipedia:fetch", { query, exactTitle, lang: get().wikipediaLang }
+      );
+
+      // Dedup: se já existe artigo da Wikipedia com o título resolvido, reutiliza
+      const existing = get().articles.find(
+        a => a.source === "wikipedia" && a.title.toLowerCase() === wiki.title.toLowerCase()
+      );
+      if (existing) {
+        get().showToast(`"${wiki.title}" já existe — artigo reutilizado.`);
+        return existing;
+      }
+
+      // Gera resumo via Claude automaticamente
+      set({ pendingTask: `Resumindo "${wiki.title}" com Claude…` });
+      let summary = "";
+      try {
+        const r = await ipc<{ summary: string }>("claude:summarize", {
+          title: wiki.title,
+          text: wiki.plainTextExtract,
+        });
+        summary = r.summary;
+      } catch {
+        summary = "• Resumo não disponível.";
+      }
+
+      const article = await get().saveArticle({
         title: wiki.title,
-        text: wiki.plainTextExtract,
+        source: "wikipedia",
+        content: wiki.html,
+        summary,
+        links: [],
       });
-      summary = r.summary;
-    } catch {
-      summary = "• Resumo não disponível.";
+
+      // Se veio de uma busca contextual (parentId fornecido), o caller é responsável
+      // por chamar addLink com o texto selecionado
+      return article;
+    } finally {
+      set({ pendingTask: null });
     }
-
-    const article = await get().saveArticle({
-      title: wiki.title,
-      source: "wikipedia",
-      content: wiki.html,
-      summary,
-      links: [],
-    });
-
-    // Se veio de uma busca contextual (parentId fornecido), o caller é responsável
-    // por chamar addLink com o texto selecionado
-    return article;
   },
 
   // ── generateWithClaude ──────────────────────────────────────────────────────
   generateWithClaude: async (title, parentId = null) => {
-    // Coleta contexto dos artigos relacionados ao pai (se houver)
-    let context = "";
-    if (parentId) {
-      const parent = get().articles.find(a => a.id === parentId);
-      if (parent) context = parent.summary;
+    set({ pendingTask: `Gerando "${title}" com Claude…` });
+    try {
+      // Coleta contexto dos artigos relacionados ao pai (se houver)
+      let context = "";
+      if (parentId) {
+        const parent = get().articles.find(a => a.id === parentId);
+        if (parent) context = parent.summary;
+      }
+
+      const r = await ipc<{ summary: string }>("claude:generate", { title, context });
+
+      const article = await get().saveArticle({
+        title,
+        source: "claude",
+        content: "",   // artigos gerados pelo Claude não têm HTML, só bullet points
+        summary: r.summary,
+        links: [],
+      });
+
+      return article;
+    } finally {
+      set({ pendingTask: null });
     }
-
-    const r = await ipc<{ summary: string }>("claude:generate", { title, context });
-
-    const article = await get().saveArticle({
-      title,
-      source: "claude",
-      content: "",   // artigos gerados pelo Claude não têm HTML, só bullet points
-      summary: r.summary,
-      links: [],
-    });
-
-    return article;
   },
 
   // ── addLink ─────────────────────────────────────────────────────────────────
@@ -290,8 +370,39 @@ export const useStore = create<AppState>((set, get) => ({
   setView: (v) => set({ view: v }),
   setSearchQuery: (q) => set({ searchQuery: q }),
   setSearchOpen: (open) => set({ isSearchOpen: open }),
-  showContextMenu: (x, y, text, parentId) =>
-    set({ contextMenu: { visible: true, x, y, selectedText: text, parentArticleId: parentId } }),
+  setWikipediaLang: async (lang) => {
+    set({ wikipediaLang: lang });
+    await ipc("config:set", { key: "wikipediaLang", value: lang });
+  },
+  setSelectedTag: (tag) => set({ selectedTag: tag }),
+  setGraphScope: (scope) => set({ graphScope: scope }),
+  setLocalDepth: (depth) => set({ localDepth: depth }),
+  updateTags: async (articleId, tags) => {
+    const article = get().articles.find(a => a.id === articleId);
+    if (!article) return;
+    await get().saveArticle({ ...article, tags });
+  },
+  updateExcerptMarkdown: async (articleId, excerptId, editedMarkdown) => {
+    const article = await ipc<Article>("article:updateExcerpt", { articleId, excerptId, editedMarkdown });
+    set(s => ({ articles: s.articles.map(a => a.id === articleId ? article : a) }));
+  },
+  updateExcerptOutline: async (articleId, outline) => {
+    const article = await ipc<Article>("article:updateExcerptOutline", { articleId, outline });
+    set(s => ({ articles: s.articles.map(a => a.id === articleId ? article : a) }));
+  },
+  showToast: (message, type = "info") => {
+    set({ toast: { message, type } });
+    setTimeout(() => {
+      // Só limpa se ainda for o mesmo toast
+      if (get().toast?.message === message) set({ toast: null });
+    }, 3500);
+  },
+  showContextMenu: (x, y, parentId, opts = {}) =>
+    set({ contextMenu: {
+      visible: true, x, y, parentArticleId: parentId,
+      selectedText: opts.selectedText ?? "",
+      tableHtml: opts.tableHtml, imageSrc: opts.imageSrc, imageAlt: opts.imageAlt,
+    } }),
   hideContextMenu: () =>
     set({ contextMenu: { visible: false, x: 0, y: 0, selectedText: "", parentArticleId: null } }),
 
