@@ -3,19 +3,21 @@
 // Componente raiz do desktop — layout de 3 colunas: sidebar | conteúdo | painel de grafo
 // ─────────────────────────────────────────────────────────────────────────────
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useStore, computeLocalSubgraph } from "./store/useStore";
 import type { Flashcard, FlashcardGrade } from "./shared/types";
 import { GraphView } from "./components/GraphView";
 import { ArticleView, ReviewModal } from "./components/ArticleView";
+import { FolderPicker } from "./components/FolderPicker";
+import { MiniGraphPreview } from "./components/MiniGraphPreview";
 
 // ── Controles de zoom do grafo ────────────────────────────────────────────────
 // Chama os métodos D3 expostos no SVGElement pelo GraphView
-const GraphControls: React.FC<{ svgRef: React.RefObject<SVGSVGElement | null> }> = ({ svgRef }) => (
+const GraphControls: React.FC<{ canvasRef: React.RefObject<HTMLCanvasElement | null> }> = ({ canvasRef }) => (
   <div className="graph-controls">
-    <button title="Aproximar" onClick={() => (svgRef.current as any)?.__zoomIn()}>＋</button>
-    <button title="Afastar"   onClick={() => (svgRef.current as any)?.__zoomOut()}>－</button>
-    <button title="Resetar"   onClick={() => (svgRef.current as any)?.__zoomReset()}>⌖</button>
+    <button title="Aproximar" onClick={() => (canvasRef.current as any)?.__zoomIn()}>＋</button>
+    <button title="Afastar"   onClick={() => (canvasRef.current as any)?.__zoomOut()}>－</button>
+    <button title="Resetar"   onClick={() => (canvasRef.current as any)?.__zoomReset()}>⌖</button>
   </div>
 );
 
@@ -218,7 +220,14 @@ const StatusOverlay: React.FC = () => {
         </div>
       )}
       {toast && (
-        <div className={`toast toast-${toast.type}`}>{toast.message}</div>
+        <div className={`toast toast-${toast.type}`}>
+          {toast.message}
+          {toast.action && (
+            <button type="button" className="toast-action-btn" onClick={toast.action.onClick}>
+              {toast.action.label}
+            </button>
+          )}
+        </div>
       )}
     </div>
   );
@@ -243,14 +252,60 @@ export default function App() {
     searchQuery, setSearchQuery,
     selectedTag, setSelectedTag, showToast,
     graphScope, setGraphScope, localDepth, setLocalDepth,
+    folders, selectedFolder, setSelectedFolder,
+    createFolder, renameFolder, deleteFolder, setArticleFolder,
   } = useStore();
 
   const [showNewModal, setShowNewModal] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
 
+  // ── Pastas ──────────────────────────────────────────────────────────────
+  const [folderPickerFor, setFolderPickerFor] = useState<{ articleId: string; x: number; y: number } | null>(null);
+  const [renamingFolderId, setRenamingFolderId] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState("");
+
+  function handleRenameFolderStart(id: string, currentName: string) {
+    setRenamingFolderId(id);
+    setRenameDraft(currentName);
+  }
+  async function handleRenameFolderCommit() {
+    if (renamingFolderId && renameDraft.trim()) await renameFolder(renamingFolderId, renameDraft.trim());
+    setRenamingFolderId(null);
+  }
+  async function handleDeleteFolder(id: string, name: string) {
+    if (!window.confirm(`Excluir a pasta "${name}"?\n\nOs artigos dentro dela voltam para "Sem pasta".`)) return;
+    await deleteFolder(id);
+  }
+
+  // ── Mini-grafo no hover da lista ────────────────────────────────────────
+  const hoverTimerRef = useRef<number | null>(null);
+  const [hoverPreview, setHoverPreview] = useState<{ articleId: string; x: number; y: number } | null>(null);
+
+  function scheduleHoverPreview(articleId: string, rect: DOMRect) {
+    if (hoverTimerRef.current) window.clearTimeout(hoverTimerRef.current);
+    hoverTimerRef.current = window.setTimeout(() => {
+      const previewWidth = 220;
+      const x = rect.right + 8 + previewWidth > window.innerWidth
+        ? Math.max(8, rect.left - previewWidth - 8)
+        : rect.right + 8;
+      setHoverPreview({ articleId, x, y: Math.max(8, rect.top) });
+    }, 300);
+  }
+  function cancelHoverPreview() {
+    if (hoverTimerRef.current) { window.clearTimeout(hoverTimerRef.current); hoverTimerRef.current = null; }
+    setHoverPreview(null);
+  }
+  useEffect(() => () => { if (hoverTimerRef.current) window.clearTimeout(hoverTimerRef.current); }, []);
+
+  // ── Atalhos de teclado ──────────────────────────────────────────────────
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const [highlightedIndex, setHighlightedIndex] = useState(-1);
+
+  useEffect(() => { setHighlightedIndex(-1); }, [searchQuery, selectedTag, selectedFolder]);
+
   // Elemento SVG do grafo, recebido do GraphView após a montagem
   // (usado pelos botões de zoom em GraphControls)
-  const [graphSvgEl, setGraphSvgEl] = useState<SVGSVGElement | null>(null);
+  const [graphCanvasEl, setGraphCanvasEl] = useState<HTMLCanvasElement | null>(null);
 
   // Revisão global de flashcards (todos os artigos, agregados por vencimento)
   const [dueCount, setDueCount] = useState(0);
@@ -275,6 +330,29 @@ export default function App() {
 
   const activeArticle = articles.find(a => a.id === activeArticleId) ?? null;
 
+  // Cmd/Ctrl+N (novo artigo) e Cmd/Ctrl+F (foca a busca da sidebar — cede o
+  // atalho para a busca-na-página do ArticleView quando um artigo está aberto)
+  useEffect(() => {
+    function handler(e: KeyboardEvent) {
+      if (!(e.metaKey || e.ctrlKey)) return;
+      const key = e.key.toLowerCase();
+      const isModalOpen = showNewModal || showSettings;
+      if (key === "n" && !isModalOpen) {
+        e.preventDefault();
+        setShowNewModal(true);
+        return;
+      }
+      if (key === "f") {
+        if (view === "article" && activeArticle) return;
+        e.preventDefault();
+        searchInputRef.current?.focus();
+        searchInputRef.current?.select();
+      }
+    }
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [showNewModal, showSettings, view, activeArticle]);
+
   // Índice de busca full-text: título + resumo + conteúdo + trechos + tags
   const searchIndex = useMemo(() => {
     const index = new Map<string, string>();
@@ -297,11 +375,54 @@ export default function App() {
     return Array.from(tags).sort();
   }, [articles]);
 
+  // ── Busca semântica opcional (via Claude) ──────────────────────────────────
+  // Opt-in explícito (toggle "✦"); debounce de 400ms; cai silenciosamente para
+  // a busca por substring normal enquanto a chamada está em voo, se falhar, ou
+  // se a API key não estiver configurada.
+  const [semanticSearch, setSemanticSearch] = useState(false);
+  const [semanticLoading, setSemanticLoading] = useState(false);
+  const [semanticResultIds, setSemanticResultIds] = useState<string[] | null>(null);
+
+  useEffect(() => {
+    if (!semanticSearch || searchQuery.trim().length < 3) {
+      setSemanticResultIds(null);
+      return;
+    }
+    setSemanticLoading(true);
+    const id = setTimeout(async () => {
+      try {
+        const res = await window.lexicon.invoke("claude:searchRank", {
+          query: searchQuery.trim(),
+          candidates: articles.map(a => ({ id: a.id, title: a.title, summary: a.summary })),
+        });
+        setSemanticResultIds(res.ok ? (res.data as { ids: string[] }).ids : null);
+      } catch {
+        setSemanticResultIds(null);
+      } finally {
+        setSemanticLoading(false);
+      }
+    }, 400);
+    return () => clearTimeout(id);
+  }, [semanticSearch, searchQuery, articles]);
+
   const filteredArticles = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
+
+    if (semanticSearch && semanticResultIds && q.length >= 3) {
+      const rank = new Map(semanticResultIds.map((id, i) => [id, i]));
+      return articles
+        .filter(a =>
+          rank.has(a.id) &&
+          (!selectedTag || (a.tags ?? []).includes(selectedTag)) &&
+          (!selectedFolder || a.folderId === selectedFolder)
+        )
+        .sort((a, b) => rank.get(a.id)! - rank.get(b.id)!);
+    }
+
     let result = articles.filter(a =>
       (!q || (searchIndex.get(a.id) ?? "").includes(q)) &&
-      (!selectedTag || (a.tags ?? []).includes(selectedTag))
+      (!selectedTag || (a.tags ?? []).includes(selectedTag)) &&
+      (!selectedFolder || a.folderId === selectedFolder)
     );
     // Com busca ativa, artigos com match no título vêm primeiro
     if (q) {
@@ -311,7 +432,7 @@ export default function App() {
       ];
     }
     return result;
-  }, [articles, searchQuery, selectedTag, searchIndex]);
+  }, [articles, searchQuery, selectedTag, selectedFolder, searchIndex, semanticSearch, semanticResultIds]);
 
   // Exportação Markdown/Obsidian
   async function handleExport() {
@@ -357,12 +478,72 @@ export default function App() {
 
         <div className="sidebar-search">
           <input
+            ref={searchInputRef}
             type="search"
-            placeholder="Buscar em títulos e conteúdo…"
+            placeholder="Buscar em títulos e conteúdo… (⌘F)"
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === "ArrowDown") {
+                e.preventDefault();
+                setHighlightedIndex(i => Math.min(i + 1, filteredArticles.length - 1));
+              } else if (e.key === "ArrowUp") {
+                e.preventDefault();
+                setHighlightedIndex(i => Math.max(i - 1, 0));
+              } else if (e.key === "Enter" && highlightedIndex >= 0 && filteredArticles[highlightedIndex]) {
+                e.preventDefault();
+                openArticle(filteredArticles[highlightedIndex].id);
+                setView("article");
+              }
+            }}
           />
+          <button
+            type="button"
+            className={`semantic-search-toggle ${semanticSearch ? "active" : ""}`}
+            title={semanticSearch
+              ? "Busca semântica ativa (via Claude) — clique para voltar à busca por texto"
+              : "Ativar busca semântica (via Claude) — encontra por significado, não só texto exato"}
+            onClick={() => setSemanticSearch(s => !s)}
+          >
+            {semanticLoading ? "…" : "✦"}
+          </button>
         </div>
+
+        {/* Pastas */}
+        {folders.length > 0 && (
+          <div className="sidebar-folders">
+            {folders.map(f => (
+              <div key={f.id} className={`folder-chip ${selectedFolder === f.id ? "active" : ""}`}>
+                {renamingFolderId === f.id ? (
+                  <input
+                    className="folder-chip-rename-input" autoFocus value={renameDraft}
+                    onChange={e => setRenameDraft(e.target.value)}
+                    onBlur={handleRenameFolderCommit}
+                    onKeyDown={e => {
+                      if (e.key === "Enter") handleRenameFolderCommit();
+                      if (e.key === "Escape") setRenamingFolderId(null);
+                    }}
+                  />
+                ) : (
+                  <>
+                    <button
+                      type="button" className="folder-chip-label"
+                      onClick={() => setSelectedFolder(selectedFolder === f.id ? null : f.id)}
+                    >
+                      📁 {f.name}
+                    </button>
+                    <span className="folder-chip-actions">
+                      <button type="button" title="Renomear pasta"
+                              onClick={() => handleRenameFolderStart(f.id, f.name)}>✎</button>
+                      <button type="button" title="Excluir pasta"
+                              onClick={() => handleDeleteFolder(f.id, f.name)}>🗑</button>
+                    </span>
+                  </>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Filtro por tag */}
         {allTags.length > 0 && (
@@ -390,25 +571,59 @@ export default function App() {
         </button>
 
         <ul className="article-list">
-          {filteredArticles.map(a => (
+          {filteredArticles.map((a, i) => (
             <li
               key={a.id}
-              className={`article-item ${a.id === activeArticleId ? "active" : ""}`}
+              className={`article-item ${a.id === activeArticleId ? "active" : ""} ${i === highlightedIndex ? "highlighted" : ""}`}
               onClick={() => { openArticle(a.id); setView("article"); }}
+              onMouseEnter={e => scheduleHoverPreview(a.id, (e.currentTarget as HTMLElement).getBoundingClientRect())}
+              onMouseLeave={cancelHoverPreview}
             >
               <span className={`dot dot-${a.source}`} />
               <span className="article-item-title">{a.title}</span>
               {a.links.length > 0 && (
                 <span className="link-count">{a.links.length}</span>
               )}
+              <button
+                type="button" className="article-item-folder-btn" title="Mover para pasta"
+                onClick={e => {
+                  e.stopPropagation();
+                  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                  setFolderPickerFor({ articleId: a.id, x: rect.left, y: rect.bottom + 4 });
+                }}
+              >
+                📁
+              </button>
             </li>
           ))}
           {filteredArticles.length === 0 && (
             <li className="empty-list">
-              {searchQuery || selectedTag ? "Nenhum resultado." : "Nenhum artigo ainda."}
+              {searchQuery || selectedTag || selectedFolder ? "Nenhum resultado." : "Nenhum artigo ainda."}
             </li>
           )}
         </ul>
+
+        {hoverPreview && (
+          <MiniGraphPreview
+            x={hoverPreview.x} y={hoverPreview.y}
+            centerId={hoverPreview.articleId}
+            nodes={graphNodes} edges={graphEdges}
+          />
+        )}
+
+        {folderPickerFor && (
+          <FolderPicker
+            x={folderPickerFor.x} y={folderPickerFor.y}
+            folders={folders}
+            currentFolderId={articles.find(a => a.id === folderPickerFor.articleId)?.folderId}
+            onSelect={async (folderId) => {
+              await setArticleFolder(folderPickerFor.articleId, folderId);
+              setFolderPickerFor(null);
+            }}
+            onCreate={createFolder}
+            onClose={() => setFolderPickerFor(null)}
+          />
+        )}
       </aside>
 
       {/* ── Área principal ───────────────────────────────────────────────── */}
@@ -446,7 +661,7 @@ export default function App() {
                   <option value={2}>2 saltos</option>
                 </select>
               )}
-              <GraphControls svgRef={{ current: graphSvgEl }} />
+              <GraphControls canvasRef={{ current: graphCanvasEl }} />
             </>
           )}
         </div>
@@ -469,7 +684,7 @@ export default function App() {
                   <GraphView
                     nodes={displayedGraph.nodes}
                     edges={displayedGraph.edges}
-                    onSvgReady={setGraphSvgEl}
+                    onCanvasReady={setGraphCanvasEl}
                   />
                   <GraphLegend />
                 </>

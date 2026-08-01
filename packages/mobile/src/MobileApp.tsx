@@ -6,7 +6,7 @@
 // para justificar navegação por abas).
 // ─────────────────────────────────────────────────────────────────────────────
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useStore } from "@lexicon/shared";
 import { ArticleListScreen } from "./screens/ArticleListScreen";
 import { ArticleScreen } from "./screens/ArticleScreen";
@@ -20,7 +20,7 @@ export function MobileApp() {
   const [showNewModal, setShowNewModal] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
 
-  const { articles, activeArticleId, openArticle } = useStore();
+  const { articles, activeArticleId, loadingArticle, openArticle } = useStore();
   const activeArticle = articles.find(a => a.id === activeArticleId) ?? null;
 
   // Usado pela lista: já espera o fetch antes de navegar, então activeArticle
@@ -36,6 +36,15 @@ export function MobileApp() {
   function handleGraphNodeOpen(_id: string) {
     setScreen("article");
   }
+
+  // Sem isso, excluir o artigo que está sendo visualizado (activeArticleId
+  // vira null) deixava a tela travada em "Carregando…" para sempre — nada
+  // muda activeArticleId de volta depois de uma exclusão, e o placeholder de
+  // loading não tem botão de voltar. loadingArticle distingue esse caso do
+  // carregamento legítimo em andamento (aberto pelo grafo, ver comentário acima).
+  useEffect(() => {
+    if (screen === "article" && !activeArticleId && !loadingArticle) setScreen("list");
+  }, [screen, activeArticleId, loadingArticle]);
 
   let content: React.ReactNode;
   if (screen === "article") {

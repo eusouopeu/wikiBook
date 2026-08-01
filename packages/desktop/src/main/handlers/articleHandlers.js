@@ -10,11 +10,36 @@ const https   = require("https");
 const { URL } = require("url");
 
 const DATA_DIR = path.join(app.getPath("userData"), "articles");
+const TRASH_DIR = path.join(DATA_DIR, ".trash");
+const FLASHCARDS_DIR = path.join(app.getPath("userData"), "flashcards");
+const FLASHCARDS_TRASH_DIR = path.join(FLASHCARDS_DIR, ".trash");
+const TRASH_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;   // 30 dias
 
 function ensureDataDir() {
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 }
+function ensureTrashDir() {
+  if (!fs.existsSync(TRASH_DIR)) fs.mkdirSync(TRASH_DIR, { recursive: true });
+}
 function articlePath(id) { return path.join(DATA_DIR, `${id}.json`); }
+function trashPath(id)   { return path.join(TRASH_DIR, `${id}.json`); }
+
+// Limpeza oportunista de itens da lixeira com mais de 30 dias — roda no
+// máximo uma vez por processo (chamada de dentro de listAllArticles)
+let trashPurged = false;
+function purgeOldTrashOnce() {
+  if (trashPurged) return;
+  trashPurged = true;
+  try {
+    ensureTrashDir();
+    const now = Date.now();
+    for (const f of fs.readdirSync(TRASH_DIR)) {
+      if (!f.endsWith(".json")) continue;
+      const p = path.join(TRASH_DIR, f);
+      if (now - fs.statSync(p).mtimeMs > TRASH_MAX_AGE_MS) fs.unlinkSync(p);
+    }
+  } catch { /* limpeza é best-effort — nunca deve quebrar o bootstrap */ }
+}
 
 function readArticle(id) {
   const p = articlePath(id);
@@ -34,15 +59,27 @@ function writeArticle(article) {
   const tmp = p + ".tmp";
   fs.writeFileSync(tmp, JSON.stringify(article, null, 2), "utf8");
   fs.renameSync(tmp, p);
+  invalidateArticlesCache();
 }
+
+// Cache em memória da listagem completa — evita reler e reparsear TODOS os
+// JSONs do disco a cada article:list (bloqueava o main process do Electron
+// de forma síncrona). Invalidado (não atualizado incrementalmente) em toda
+// escrita — writeArticle() já cobre a maioria; delete/restore, que fazem
+// rename direto sem passar por writeArticle, invalidam explicitamente.
+let articlesCache = null;
+function invalidateArticlesCache() { articlesCache = null; }
 
 // Lê todos os artigos do disco — usado por list/export/flashcards
 function listAllArticles() {
   ensureDataDir();
-  return fs.readdirSync(DATA_DIR)
+  purgeOldTrashOnce();
+  if (articlesCache) return articlesCache;
+  articlesCache = fs.readdirSync(DATA_DIR)
     .filter(f => f.endsWith(".json"))
     .map(f => readArticle(f.replace(".json", "")))
     .filter(Boolean);
+  return articlesCache;
 }
 
 function slugify(title) {
@@ -294,10 +331,18 @@ function createArticleHandlers(ipcMain) {
     } catch (e) { return { ok: false, error: e.message }; }
   });
 
+  // Move (não apaga) o artigo para .trash/ — permite desfazer via article:restore.
+  // Links de outros artigos que apontavam para ele são removidos normalmente
+  // (o renderer já guarda essa informação antes de chamar este handler, e
+  // reaplica via addLink no "Desfazer").
   ipcMain.handle("article:delete", (_evt, { id }) => {
     try {
       const p = articlePath(id);
-      if (fs.existsSync(p)) fs.unlinkSync(p);
+      if (fs.existsSync(p)) {
+        ensureTrashDir();
+        fs.renameSync(p, trashPath(id));
+        invalidateArticlesCache();
+      }
       ensureDataDir();
       fs.readdirSync(DATA_DIR).filter(f => f.endsWith(".json")).forEach(f => {
         const art = readArticle(f.replace(".json", ""));
@@ -306,10 +351,36 @@ function createArticleHandlers(ipcMain) {
         art.links = art.links.filter(l => l.targetId !== id);
         if (art.links.length !== before) writeArticle(art);
       });
-      // Remove também os flashcards órfãos deste artigo, se houver
-      const flashcardsPath = path.join(app.getPath("userData"), "flashcards", `${id}.json`);
-      if (fs.existsSync(flashcardsPath)) fs.unlinkSync(flashcardsPath);
+      // Move (não apaga) os flashcards órfãos deste artigo, para restaurar junto
+      const flashcardsPath = path.join(FLASHCARDS_DIR, `${id}.json`);
+      if (fs.existsSync(flashcardsPath)) {
+        if (!fs.existsSync(FLASHCARDS_TRASH_DIR)) fs.mkdirSync(FLASHCARDS_TRASH_DIR, { recursive: true });
+        fs.renameSync(flashcardsPath, path.join(FLASHCARDS_TRASH_DIR, `${id}.json`));
+      }
       return { ok: true };
+    } catch (e) { return { ok: false, error: e.message }; }
+  });
+
+  // ── article:restore ─────────────────────────────────────────────────────────
+  // Desfaz uma exclusão recente: devolve o JSON (e os flashcards, se houver) de
+  // .trash/ para a posição original. Links removidos de outros artigos NÃO são
+  // restaurados aqui — o renderer reaplica via addLink com o que guardou antes
+  // de deletar (ver Fase 4.1 do plano / store.deleteArticle).
+  ipcMain.handle("article:restore", (_evt, { id }) => {
+    try {
+      const trashP = trashPath(id);
+      if (!fs.existsSync(trashP)) {
+        return { ok: false, error: "Artigo não encontrado na lixeira (pode já ter sido limpo)." };
+      }
+      ensureDataDir();
+      fs.renameSync(trashP, articlePath(id));
+      invalidateArticlesCache();
+      const flashcardsTrashPath = path.join(FLASHCARDS_TRASH_DIR, `${id}.json`);
+      if (fs.existsSync(flashcardsTrashPath)) {
+        if (!fs.existsSync(FLASHCARDS_DIR)) fs.mkdirSync(FLASHCARDS_DIR, { recursive: true });
+        fs.renameSync(flashcardsTrashPath, path.join(FLASHCARDS_DIR, `${id}.json`));
+      }
+      return { ok: true, data: readArticle(id) };
     } catch (e) { return { ok: false, error: e.message }; }
   });
 

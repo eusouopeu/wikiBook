@@ -20,11 +20,11 @@ interface Props {
   onOpenArticle: (id: string) => void;
 }
 
-const GraphControls: React.FC<{ svgRef: React.RefObject<SVGSVGElement | null> }> = ({ svgRef }) => (
+const GraphControls: React.FC<{ canvasRef: React.RefObject<HTMLCanvasElement | null> }> = ({ canvasRef }) => (
   <div className="graph-controls">
-    <button title="Aproximar" onClick={() => (svgRef.current as any)?.__zoomIn()}>＋</button>
-    <button title="Afastar" onClick={() => (svgRef.current as any)?.__zoomOut()}>－</button>
-    <button title="Resetar" onClick={() => (svgRef.current as any)?.__zoomReset()}>⌖</button>
+    <button title="Aproximar" onClick={() => (canvasRef.current as any)?.__zoomIn()}>＋</button>
+    <button title="Afastar" onClick={() => (canvasRef.current as any)?.__zoomOut()}>－</button>
+    <button title="Resetar" onClick={() => (canvasRef.current as any)?.__zoomReset()}>⌖</button>
   </div>
 );
 
@@ -33,7 +33,7 @@ export function GraphScreen({ onBack, onOpenArticle }: Props) {
     graphNodes, graphEdges, activeArticleId,
     graphScope, setGraphScope, localDepth, setLocalDepth,
   } = useStore();
-  const [graphSvgEl, setGraphSvgEl] = useState<SVGSVGElement | null>(null);
+  const [graphCanvasEl, setGraphCanvasEl] = useState<HTMLCanvasElement | null>(null);
 
   const displayedGraph = useMemo(() => {
     if (graphScope !== "local" || !activeArticleId) return { nodes: graphNodes, edges: graphEdges };
@@ -66,7 +66,7 @@ export function GraphScreen({ onBack, onOpenArticle }: Props) {
             <option value={2}>2 saltos</option>
           </select>
         )}
-        <GraphControls svgRef={{ current: graphSvgEl }} />
+        <GraphControls canvasRef={{ current: graphCanvasEl }} />
       </div>
 
       <div className="graph-container">
@@ -74,7 +74,7 @@ export function GraphScreen({ onBack, onOpenArticle }: Props) {
           <GraphView
             nodes={displayedGraph.nodes}
             edges={displayedGraph.edges}
-            onSvgReady={setGraphSvgEl}
+            onCanvasReady={setGraphCanvasEl}
             onNodeOpen={onOpenArticle}
           />
         ) : (

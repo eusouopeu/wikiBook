@@ -33,8 +33,11 @@
   min-height: 44px;
 }
 
+.mobile-search-row { display: flex; gap: 6px; }
+
 .mobile-search {
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   box-sizing: border-box;
   padding: 10px 12px;
   border-radius: 8px;
@@ -42,6 +45,12 @@
   background: var(--bg-input, #fff);
   color: var(--text, #111);
   font-size: 1rem;
+}
+
+.mobile-search-row .semantic-search-toggle {
+  min-height: 44px;
+  min-width: 44px;
+  font-size: 1.1rem;
 }
 
 .mobile-tags {

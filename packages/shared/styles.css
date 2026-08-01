@@ -143,20 +143,39 @@ html, body, #root {
 }
 .icon-btn:hover { background: var(--bg-hover); border-color: var(--border-light); }
 
-.sidebar-search { padding: 8px 10px 4px; }
+.sidebar-search { display: flex; gap: 5px; padding: 8px 10px 4px; }
 .sidebar-search input {
   background: var(--bg-input);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   color: var(--fg);
+  flex: 1;
   font-family: var(--font-ui);
   font-size: 13px;
+  min-width: 0;
   outline: none;
   padding: 5px 9px;
   transition: border-color 0.15s;
-  width: 100%;
 }
 .sidebar-search input:focus { border-color: var(--accent); }
+
+.semantic-search-toggle {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--fg3);
+  cursor: pointer;
+  flex-shrink: 0;
+  font-size: 14px;
+  min-width: 30px;
+  padding: 5px 8px;
+}
+.semantic-search-toggle:hover { border-color: var(--accent); color: var(--accent); }
+.semantic-search-toggle.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
 
 .new-article-btn {
   background: none;
@@ -197,6 +216,7 @@ html, body, #root {
   background: var(--accent-soft);
   border-left-color: var(--accent);
 }
+.article-item.highlighted { outline: 2px dashed var(--accent); outline-offset: -2px; }
 
 .dot { border-radius: 50%; flex-shrink: 0; height: 7px; width: 7px; }
 .dot-wikipedia { background: var(--accent); }
@@ -297,6 +317,36 @@ html, body, #root {
   min-height: 0;
   position: relative;   /* âncora da legenda */
   width: 100%;
+}
+
+.graph-canvas-wrap { height: 100%; position: relative; width: 100%; }
+
+.graph-canvas-wrap canvas:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+.graph-edge-tooltip {
+  background: var(--bg2, #1e1e1e);
+  border: 1px solid #555;
+  border-radius: 4px;
+  color: var(--fg, #ddd);
+  font-size: 11px;
+  padding: 3px 6px;
+  pointer-events: none;
+  position: absolute;
+  white-space: nowrap;
+  z-index: 10;
+}
+
+/* Utilitário: conteúdo só para leitor de tela (região aria-live do grafo) */
+.sr-only {
+  border: 0;
+  clip: rect(0, 0, 0, 0);
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  padding: 0;
+  position: absolute;
+  white-space: nowrap;
+  width: 1px;
 }
 
 /* Estado vazio */
@@ -750,36 +800,36 @@ html, body, #root {
    MENU DE CONTEXTO
 ══════════════════════════════════════════════════════════════════════════ */
 .context-menu {
+  align-items: center;
   background: var(--bg-modal);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: 999px;
   box-shadow: 0 4px 12px rgba(0,0,0,0.18);
-  min-width: 210px;
-  overflow: hidden;
+  display: flex;
+  flex-direction: row;
+  gap: 2px;
+  max-width: 92vw;
+  overflow-x: auto;
+  padding: 4px;
 }
-
-.context-menu-header {
-  background: var(--bg-body);
-  border-bottom: 1px solid var(--border-light);
-  color: var(--fg2);
-  font-family: var(--font-ui);
-  font-size: 11px;
-  font-style: italic;
-  padding: 6px 12px;
-}
+.context-menu::-webkit-scrollbar { display: none; }
 
 .context-menu-item {
+  align-items: center;
   background: none;
   border: none;
+  border-radius: 50%;
   color: var(--fg);
   cursor: pointer;
-  display: block;
-  font-family: var(--font-ui);
-  font-size: 13px;
-  padding: 7px 14px;
-  text-align: left;
+  display: flex;
+  flex-shrink: 0;
+  font-size: 16px;
+  height: 40px;
+  justify-content: center;
+  line-height: 1;
+  padding: 0;
   transition: background 0.1s;
-  width: 100%;
+  width: 40px;
 }
 .context-menu-item:hover { background: var(--bg-hover); }
 
@@ -787,10 +837,98 @@ html, body, #root {
 .context-menu-cancel { color: #d33; }
 
 .context-menu-divider {
-  border: none;
-  border-top: 1px solid var(--border-light);
-  margin: 2px 0;
+  align-self: stretch;
+  background: var(--border-light);
+  flex-shrink: 0;
+  margin: 4px 2px;
+  width: 1px;
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   BUSCAR NA PÁGINA
+══════════════════════════════════════════════════════════════════════════ */
+.find-in-page-bar {
+  align-items: center;
+  background: var(--bg-toc);
+  border: 1px solid var(--border-toc);
+  border-radius: var(--radius-sm);
+  display: flex;
+  gap: 6px;
+  margin: 0 0 12px;
+  padding: 6px 8px;
+}
+
+.find-in-page-bar input {
+  background: var(--bg-input, var(--bg-modal));
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--fg);
+  flex: 1;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  min-width: 0;
+  padding: 6px 10px;
+}
+
+.find-in-page-count {
+  color: var(--fg2);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  min-width: 40px;
+  text-align: center;
+}
+
+.find-in-page-bar button {
+  background: none;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  color: var(--fg);
+  cursor: pointer;
+  min-height: 32px;
+  min-width: 32px;
+  padding: 4px 8px;
+}
+.find-in-page-bar button:hover:not(:disabled) { background: var(--bg-hover); }
+.find-in-page-bar button:disabled { opacity: 0.4; cursor: default; }
+.find-in-page-close { color: #d33; }
+
+mark.find-match {
+  background: #ffe066;
+  border-radius: 2px;
+  color: #1a1a1a;
+}
+mark.find-match-current {
+  background: #ff9f1c;
+  outline: 2px solid #e67700;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   SUMÁRIO (CONTEÚDO)
+══════════════════════════════════════════════════════════════════════════ */
+.toc-modal { min-width: 320px; max-width: 90vw; max-height: 70vh; overflow-y: auto; }
+
+.toc-sections-list { list-style: none; margin: 0; padding: 0; }
+
+.toc-sections-item { margin: 0; padding: 0; }
+
+.toc-sections-item button {
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--border-light);
+  color: var(--fg-link);
+  cursor: pointer;
+  display: block;
+  font-family: var(--font-ui);
+  font-size: 14px;
+  padding: 8px 4px;
+  text-align: left;
+  width: 100%;
+}
+.toc-sections-item button:hover { background: var(--bg-hover); }
+
+.toc-level-2 button { padding-left: 4px; font-weight: 600; }
+.toc-level-3 button { padding-left: 20px; font-size: 13px; }
+.toc-level-4 button { padding-left: 36px; font-size: 12px; color: var(--fg2); }
 
 /* ══════════════════════════════════════════════════════════════════════════
    MODAIS
@@ -1169,6 +1307,22 @@ html, body, #root {
   padding: 9px 16px;
 }
 .toast-error { border-color: #c0392b; color: #e74c3c; }
+
+.toast-action-btn {
+  background: none;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  color: var(--accent);
+  cursor: pointer;
+  flex-shrink: 0;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 600;
+  margin-left: auto;
+  padding: 3px 10px;
+  white-space: nowrap;
+}
+.toast-action-btn:hover { background: var(--accent); color: #fff; }
 .spinner {
   animation: lexicon-spin 0.8s linear infinite;
   border: 2px solid var(--border);
@@ -1234,6 +1388,156 @@ html, body, #root {
   background: var(--accent);
   border-color: var(--accent);
   color: #fff;
+}
+
+/* Chips de pasta na sidebar (desktop e mobile) */
+.sidebar-folders, .mobile-folders {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  padding: 0 14px 10px;
+}
+
+.folder-chip {
+  align-items: center;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  display: flex;
+  gap: 4px;
+  padding: 2px 4px 2px 9px;
+  transition: all 0.15s;
+}
+.folder-chip.active { background: var(--accent-soft); border-color: var(--accent); }
+
+.folder-chip-label {
+  background: none;
+  border: none;
+  color: var(--fg3);
+  cursor: pointer;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  padding: 0;
+}
+.folder-chip.active .folder-chip-label { color: var(--accent); font-weight: 600; }
+
+.folder-chip-actions {
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.folder-chip:hover .folder-chip-actions { opacity: 0.7; }
+.folder-chip-actions button {
+  background: none;
+  border: none;
+  color: var(--fg3);
+  cursor: pointer;
+  font-size: 10px;
+  padding: 2px;
+}
+.folder-chip-actions button:hover { color: var(--accent); }
+
+.folder-chip-rename-input {
+  background: var(--bg-input, var(--bg-modal));
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  color: var(--fg);
+  font-family: var(--font-ui);
+  font-size: 11px;
+  padding: 2px 6px;
+  width: 100px;
+}
+
+.article-item-folder-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  flex-shrink: 0;
+  font-size: 12px;
+  opacity: 0;
+  padding: 2px 4px;
+  transition: opacity 0.15s;
+}
+.article-item:hover .article-item-folder-btn,
+.mobile-article-item .article-item-folder-btn {
+  opacity: 0.55;
+}
+.article-item-folder-btn:hover { opacity: 1 !important; }
+
+/* Mini-grafo estático no hover da lista (desktop) */
+.mini-graph-preview {
+  background: var(--bg-modal);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+  pointer-events: none;
+  z-index: 900;
+}
+
+/* Popover de atribuição de pasta (FolderPicker) */
+.folder-picker {
+  background: var(--bg-modal);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+  min-width: 180px;
+  padding: 8px;
+}
+
+.folder-picker-title {
+  color: var(--fg2);
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  padding: 2px 6px 6px;
+  text-transform: uppercase;
+}
+
+.folder-picker-list { list-style: none; margin: 0; padding: 0; max-height: 220px; overflow-y: auto; }
+
+.folder-picker-list button {
+  background: none;
+  border: none;
+  border-radius: 6px;
+  color: var(--fg);
+  cursor: pointer;
+  display: block;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  padding: 6px 8px;
+  text-align: left;
+  width: 100%;
+}
+.folder-picker-list button:hover { background: var(--bg-hover); }
+.folder-picker-list button.active { color: var(--accent); font-weight: 600; }
+
+.folder-picker-new-btn {
+  background: none;
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  color: var(--fg2);
+  cursor: pointer;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  margin-top: 4px;
+  padding: 6px 8px;
+  width: 100%;
+}
+.folder-picker-new-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+.folder-picker-create { display: flex; gap: 4px; margin-top: 4px; }
+.folder-picker-create input {
+  background: var(--bg-input, var(--bg-modal));
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--fg);
+  flex: 1;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  min-width: 0;
+  padding: 5px 7px;
 }
 
 /* Editor de tags no cabeçalho do artigo */

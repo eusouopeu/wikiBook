@@ -825,6 +825,119 @@ export const ReviewModal: React.FC<{
   );
 };
 
+// ── Buscar na página ──────────────────────────────────────────────────────────
+// Destaca ocorrências de `query` no container ativo (artigo ou resumo) com
+// <mark>, navegável. Mutação de DOM direta (fora do controle do React), no
+// mesmo espírito do efeito de fallback de imagem quebrada mais abaixo —
+// seguro porque só roda entre re-renders do dangerouslySetInnerHTML, nunca
+// durante um deles.
+function clearFindMarks(container: HTMLElement) {
+  container.querySelectorAll("mark.find-match").forEach(mark => {
+    const parent = mark.parentNode;
+    if (!parent) return;
+    parent.replaceChild(document.createTextNode(mark.textContent ?? ""), mark);
+    parent.normalize();
+  });
+}
+
+function highlightFindMatches(container: HTMLElement, query: string): HTMLElement[] {
+  clearFindMarks(container);
+  const q = query.trim().toLowerCase();
+  if (!q) return [];
+
+  const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      if (!node.nodeValue || !node.nodeValue.toLowerCase().includes(q)) return NodeFilter.FILTER_SKIP;
+      const tag = node.parentElement?.tagName;
+      if (tag === "MARK" || tag === "SCRIPT" || tag === "STYLE") return NodeFilter.FILTER_REJECT;
+      return NodeFilter.FILTER_ACCEPT;
+    },
+  });
+  const textNodes: Text[] = [];
+  let n: Node | null;
+  while ((n = walker.nextNode())) textNodes.push(n as Text);
+
+  const matches: HTMLElement[] = [];
+  for (const node of textNodes) {
+    const text = node.nodeValue ?? "";
+    const lower = text.toLowerCase();
+    const frag = document.createDocumentFragment();
+    let cursor = 0;
+    let idx = lower.indexOf(q, cursor);
+    while (idx !== -1) {
+      if (idx > cursor) frag.appendChild(document.createTextNode(text.slice(cursor, idx)));
+      const mark = document.createElement("mark");
+      mark.className = "find-match";
+      mark.textContent = text.slice(idx, idx + q.length);
+      frag.appendChild(mark);
+      matches.push(mark);
+      cursor = idx + q.length;
+      idx = lower.indexOf(q, cursor);
+    }
+    if (cursor < text.length) frag.appendChild(document.createTextNode(text.slice(cursor)));
+    node.parentNode?.replaceChild(frag, node);
+  }
+  return matches;
+}
+
+const FindInPageBar: React.FC<{
+  query: string; count: number; index: number;
+  onQueryChange: (q: string) => void;
+  onNext: () => void; onPrev: () => void; onClose: () => void;
+}> = ({ query, count, index, onQueryChange, onNext, onPrev, onClose }) => {
+  const inputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => { inputRef.current?.focus(); }, []);
+  return (
+    <div className="find-in-page-bar">
+      <input
+        ref={inputRef} type="text" value={query} placeholder="Buscar na página…"
+        onChange={e => onQueryChange(e.target.value)}
+        onKeyDown={e => {
+          if (e.key === "Enter") { e.preventDefault(); e.shiftKey ? onPrev() : onNext(); }
+          if (e.key === "Escape") { e.preventDefault(); onClose(); }
+        }}
+      />
+      <span className="find-in-page-count">{count > 0 ? `${index + 1}/${count}` : "0/0"}</span>
+      <button type="button" title="Anterior" onClick={onPrev} disabled={count === 0}>↑</button>
+      <button type="button" title="Próximo" onClick={onNext} disabled={count === 0}>↓</button>
+      <button type="button" className="find-in-page-close" title="Fechar" onClick={onClose}>✕</button>
+    </div>
+  );
+};
+
+// ── Sumário (Conteúdo) — lista de seções do artigo, estilo app da Wikipedia ──
+interface TocItem { id: string; text: string; level: number; }
+
+function slugifyHeading(text: string, used: Set<string>): string {
+  const base = text.toLowerCase()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "secao";
+  let id = base, n = 2;
+  while (used.has(id)) id = `${base}-${n++}`;
+  used.add(id);
+  return id;
+}
+
+const SectionsTocPanel: React.FC<{
+  items: TocItem[]; onJump: (id: string) => void; onClose: () => void;
+}> = ({ items, onJump, onClose }) => (
+  <div className="modal-overlay" onClick={onClose}>
+    <div className="modal toc-modal" onClick={e => e.stopPropagation()}>
+      <h2>Conteúdo</h2>
+      <ul className="toc-sections-list">
+        {items.map(item => (
+          <li key={item.id} className={`toc-sections-item toc-level-${item.level}`}>
+            <button type="button" onClick={() => onJump(item.id)}>{item.text}</button>
+          </li>
+        ))}
+      </ul>
+      <div className="modal-actions">
+        <button onClick={onClose}>Fechar</button>
+      </div>
+    </div>
+  </div>
+);
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Componente principal
 // ─────────────────────────────────────────────────────────────────────────────
@@ -853,17 +966,26 @@ export const ArticleView: React.FC<Props> = ({ article }) => {
   const [flashcards, setFlashcards] = useState<Flashcard[]>([]);
   const [flashcardsLoading, setFlashcardsLoading] = useState(false);
   const [reviewOpen, setReviewOpen] = useState(false);
+  // Buscar na página
+  const [findOpen, setFindOpen] = useState(false);
+  const [findQuery, setFindQuery] = useState("");
+  const [findCount, setFindCount] = useState(0);
+  const [findIndex, setFindIndex] = useState(0);
+  const findMatchesRef = useRef<HTMLElement[]>([]);
+  // Sumário (Conteúdo)
+  const [tocOpen, setTocOpen] = useState(false);
+  const [tocItems, setTocItems] = useState<TocItem[]>([]);
 
   const { contextMenu, showContextMenu, hideContextMenu,
           fetchFromWikipedia, generateWithClaude, addLink, removeLink,
-          openArticle, articles, saveArticle, deleteArticle, loadArticles,
+          openArticle, articles, saveArticle, deleteArticle, restoreArticle, loadArticles,
           updateTags, updateExcerptMarkdown, updateExcerptOutline,
           showToast } = useStore(useShallow(s => ({
     contextMenu: s.contextMenu, showContextMenu: s.showContextMenu,
     hideContextMenu: s.hideContextMenu, fetchFromWikipedia: s.fetchFromWikipedia,
     generateWithClaude: s.generateWithClaude, addLink: s.addLink,
     removeLink: s.removeLink, openArticle: s.openArticle, articles: s.articles,
-    saveArticle: s.saveArticle, deleteArticle: s.deleteArticle,
+    saveArticle: s.saveArticle, deleteArticle: s.deleteArticle, restoreArticle: s.restoreArticle,
     loadArticles: s.loadArticles, updateTags: s.updateTags,
     updateExcerptMarkdown: s.updateExcerptMarkdown, updateExcerptOutline: s.updateExcerptOutline,
     showToast: s.showToast,
@@ -901,8 +1023,81 @@ export const ArticleView: React.FC<Props> = ({ article }) => {
     setChatInput("");
     setEditingExcerptId(null);
     setReviewOpen(false);
+    setFindOpen(false);
+    setFindQuery("");
+    setTocOpen(false);
     loadFlashcards();
   }, [article.id, loadFlashcards]);
+
+  // ── Buscar na página: (re)destaca as ocorrências no container ativo ────────
+  useEffect(() => {
+    const container = showSummary ? summaryRef.current : containerRef.current;
+    if (!findOpen || !container) {
+      [containerRef.current, summaryRef.current].forEach(el => el && clearFindMarks(el));
+      findMatchesRef.current = [];
+      setFindCount(0);
+      return;
+    }
+    const matches = highlightFindMatches(container, findQuery);
+    findMatchesRef.current = matches;
+    setFindCount(matches.length);
+    setFindIndex(0);
+  }, [findOpen, findQuery, showSummary, article.id]);
+
+  // Marca o resultado atual e rola até ele
+  useEffect(() => {
+    findMatchesRef.current.forEach((m, i) => m.classList.toggle("find-match-current", i === findIndex));
+    findMatchesRef.current[findIndex]?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [findIndex, findCount]);
+
+  const handleFindNext = useCallback(() => {
+    setFindIndex(i => findMatchesRef.current.length ? (i + 1) % findMatchesRef.current.length : 0);
+  }, []);
+  const handleFindPrev = useCallback(() => {
+    setFindIndex(i => findMatchesRef.current.length ? (i - 1 + findMatchesRef.current.length) % findMatchesRef.current.length : 0);
+  }, []);
+  const handleFindClose = useCallback(() => { setFindOpen(false); setFindQuery(""); }, []);
+
+  // Atalho Cmd/Ctrl+F abre a busca-na-página enquanto este artigo está montado
+  useEffect(() => {
+    function handler(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "f" && !isEditing) {
+        e.preventDefault();
+        setFindOpen(true);
+      }
+    }
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [isEditing]);
+
+  // ── Sumário (Conteúdo): extrai os headings do artigo renderizado ───────────
+  // Só roda quando o container do artigo está montado (aba "Artigo", não "Resumo") —
+  // o sumário reflete a última varredura enquanto o usuário estiver na aba Resumo.
+  useEffect(() => {
+    if (showSummary) return;
+    const container = containerRef.current;
+    if (!container) { setTocItems([]); return; }
+    const headings = Array.from(container.querySelectorAll<HTMLElement>("h1, h2, h3, h4"));
+    const used = new Set<string>();
+    const items: TocItem[] = headings.map(h => {
+      if (h.id) used.add(h.id);
+      else h.id = slugifyHeading(h.textContent ?? "", used);
+      return { id: h.id, text: h.textContent ?? "", level: Number(h.tagName[1]) };
+    });
+    setTocItems(items);
+  }, [showSummary, article.id, article.content, article.links]);
+
+  const handleJumpToHeading = useCallback((id: string) => {
+    setTocOpen(false);
+    if (showSummary) {
+      setShowSummary(false);
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }));
+    } else {
+      document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, [showSummary]);
 
   // ── Clique direito — captura seleção de texto, ou tabela/imagem sob o cursor ─
   const handleContextMenu = useCallback((e: MouseEvent) => {
@@ -982,14 +1177,36 @@ export const ArticleView: React.FC<Props> = ({ article }) => {
   }, [contextMenu, hideContextMenu, articles, fetchFromWikipedia, generateWithClaude, addLink, showToast]);
 
   // ── Excluir artigo / remover link ───────────────────────────────────────────
+  // A exclusão move o artigo para a lixeira (ver articleHandlers.js/articles.ts) —
+  // guardamos aqui os links removidos de outros artigos para poder reconstituir
+  // tudo se o usuário clicar em "Desfazer" no toast (janela de ~5s).
   const handleDeleteArticle = useCallback(async () => {
     const ok = window.confirm(
       `Excluir "${article.title}"?\n\nOs links que apontam para ele também serão removidos.`
     );
     if (!ok) return;
-    await deleteArticle(article.id);
-    showToast(`Artigo "${article.title}" excluído.`);
-  }, [article.id, article.title, deleteArticle, showToast]);
+    const removedLinks = articles.flatMap(a =>
+      a.links
+        .filter(l => l.targetId === article.id)
+        .map(l => ({ parentId: a.id, anchorText: l.anchorText, targetId: l.targetId, targetTitle: l.targetTitle }))
+    );
+    const title = article.title;
+    const id = article.id;
+    await deleteArticle(id);
+    showToast(`Artigo "${title}" excluído.`, "info", {
+      durationMs: 5000,
+      action: {
+        label: "Desfazer",
+        onClick: async () => {
+          await restoreArticle(id);
+          for (const link of removedLinks) {
+            await addLink(link.parentId, link.anchorText, link.targetId, link.targetTitle);
+          }
+          showToast(`Artigo "${title}" restaurado.`);
+        },
+      },
+    });
+  }, [article.id, article.title, articles, deleteArticle, restoreArticle, addLink, showToast]);
 
   const handleRemoveLink = useCallback(async (linkId: string) => {
     await removeLink(article.id, linkId);
@@ -1178,6 +1395,11 @@ export const ArticleView: React.FC<Props> = ({ article }) => {
         <div className="article-title-row">
           <h1 className="article-title">{article.title}</h1>
           <div className="article-header-actions">
+            <button className={`icon-btn ${findOpen ? "icon-btn-active" : ""}`} title="Buscar na página"
+                    onClick={() => setFindOpen(o => !o)}>🔎</button>
+            {tocItems.length > 0 && (
+              <button className="icon-btn" title="Conteúdo" onClick={() => setTocOpen(true)}>☰</button>
+            )}
             <button className={`icon-btn ${chatOpen ? "icon-btn-active" : ""}`} title="Perguntar ao Claude"
                     onClick={() => setChatOpen(o => !o)}>💬</button>
             <button className="icon-btn" title="Revisar flashcards deste artigo"
@@ -1221,6 +1443,15 @@ export const ArticleView: React.FC<Props> = ({ article }) => {
           </button>
         </div>
       </div>
+
+      {/* ── Buscar na página ─────────────────────────────────────────────── */}
+      {findOpen && (
+        <FindInPageBar
+          query={findQuery} count={findCount} index={findIndex}
+          onQueryChange={setFindQuery}
+          onNext={handleFindNext} onPrev={handleFindPrev} onClose={handleFindClose}
+        />
+      )}
 
       {/* ── Linha divisória ─────────────────────────────────────────────── */}
       <div className="wiki-divider" />
@@ -1339,6 +1570,11 @@ export const ArticleView: React.FC<Props> = ({ article }) => {
 
       </div>
 
+      {/* ── Sumário (Conteúdo) ──────────────────────────────────────────────── */}
+      {tocOpen && (
+        <SectionsTocPanel items={tocItems} onJump={handleJumpToHeading} onClose={() => setTocOpen(false)} />
+      )}
+
       {/* ── Menu de contexto ─────────────────────────────────────────────── */}
       {contextMenu.visible && contextMenu.parentArticleId === article.id && (
         <ContextMenu
@@ -1399,9 +1635,6 @@ const ContextMenu: React.FC<ContextMenuProps> = ({
   onSearchWiki, onSearchClaude, onSaveExcerpt, onSaveTable, onSaveImage, onClose,
 }) => {
   const hasText = text.length > 0;
-  const label = hasText
-    ? (text.length > 30 ? text.slice(0, 28) + "…" : text)
-    : hasImage ? "Imagem" : hasTable ? "Tabela" : "";
 
   useEffect(() => {
     let handler: (() => void) | undefined;
@@ -1437,34 +1670,35 @@ const ContextMenu: React.FC<ContextMenuProps> = ({
   return (
     <div ref={menuRef} className="context-menu" style={{ position: "fixed", top: pos.top, left: pos.left, zIndex: 1000 }}
          onClick={e => e.stopPropagation()}>
-      <div className="context-menu-header">"{label}"</div>
       {hasText && (
         <>
-          <button className="context-menu-item" onClick={onSearchWiki}>🔍 Pesquisar na Wikipédia</button>
-          <button className="context-menu-item" onClick={onSearchClaude}>✦ Gerar artigo com Claude</button>
-          <hr className="context-menu-divider" />
-          <button className="context-menu-item context-menu-save" onClick={() => onSaveExcerpt("default")}>
-            📌 Salvar trecho
+          <button className="context-menu-item" title="Pesquisar na Wikipédia" onClick={onSearchWiki}>🔍</button>
+          <button className="context-menu-item" title="Gerar artigo com Claude" onClick={onSearchClaude}>✦</button>
+          <span className="context-menu-divider" />
+          <button className="context-menu-item context-menu-save" title="Salvar trecho"
+                  onClick={() => onSaveExcerpt("default")}>📌</button>
+          <button className="context-menu-item context-menu-save" title="Salvar como conceito"
+                  onClick={() => onSaveExcerpt("concept")}>
+            <span className="ctx-cat-swatch ctx-cat-concept" />
           </button>
-          <button className="context-menu-item context-menu-save" onClick={() => onSaveExcerpt("concept")}>
-            <span className="ctx-cat-swatch ctx-cat-concept" /> Salvar como conceito
+          <button className="context-menu-item context-menu-save" title="Salvar como lista"
+                  onClick={() => onSaveExcerpt("list")}>
+            <span className="ctx-cat-swatch ctx-cat-list" />
           </button>
-          <button className="context-menu-item context-menu-save" onClick={() => onSaveExcerpt("list")}>
-            <span className="ctx-cat-swatch ctx-cat-list" /> Salvar como lista
-          </button>
-          <button className="context-menu-item context-menu-save" onClick={() => onSaveExcerpt("numeric")}>
-            <span className="ctx-cat-swatch ctx-cat-numeric" /> Salvar como dados numéricos
+          <button className="context-menu-item context-menu-save" title="Salvar como dados numéricos"
+                  onClick={() => onSaveExcerpt("numeric")}>
+            <span className="ctx-cat-swatch ctx-cat-numeric" />
           </button>
         </>
       )}
       {hasTable && (
-        <button className="context-menu-item context-menu-save" onClick={onSaveTable}>📊 Salvar tabela em…</button>
+        <button className="context-menu-item context-menu-save" title="Salvar tabela em…" onClick={onSaveTable}>📊</button>
       )}
       {hasImage && (
-        <button className="context-menu-item context-menu-save" onClick={onSaveImage}>🖼 Salvar imagem em…</button>
+        <button className="context-menu-item context-menu-save" title="Salvar imagem em…" onClick={onSaveImage}>🖼</button>
       )}
-      <hr className="context-menu-divider" />
-      <button className="context-menu-item context-menu-cancel" onClick={onClose}>Cancelar</button>
+      <span className="context-menu-divider" />
+      <button className="context-menu-item context-menu-cancel" title="Cancelar" onClick={onClose}>✕</button>
     </div>
   );
 };

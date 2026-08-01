@@ -23,7 +23,14 @@ export function StatusOverlay() {
         </div>
       )}
       {toast && (
-        <div className={`toast toast-${toast.type}`}>{toast.message}</div>
+        <div className={`toast toast-${toast.type}`}>
+          {toast.message}
+          {toast.action && (
+            <button type="button" className="toast-action-btn" onClick={toast.action.onClick}>
+              {toast.action.label}
+            </button>
+          )}
+        </div>
       )}
     </div>
   );

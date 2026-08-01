@@ -4,7 +4,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { create } from "zustand";
-import type { Article, ArticleLink, ExcerptOutlineItem, GraphNode, GraphEdge } from "../shared/types";
+import type { Article, ArticleLink, ExcerptOutlineItem, Folder, GraphNode, GraphEdge } from "../shared/types";
 
 // Tipo do bridge exposto pelo preload
 declare global {
@@ -44,13 +44,17 @@ interface AppState {
   wikipediaLang: string;
   // Filtro por tag na sidebar (null = todas)
   selectedTag: string | null;
+  // ── Pastas ────────────────────────────────────────────────────────────────
+  folders: Folder[];
+  // Filtro por pasta na sidebar (null = todas)
+  selectedFolder: string | null;
   // Escopo do grafo: global (tudo) ou local (artigo ativo + vizinhos)
   graphScope: "global" | "local";
   localDepth: 1 | 2;
   // Tarefa em andamento (ex.: geração via Claude disparada pelo menu de contexto)
   pendingTask: string | null;
-  // Notificação transitória
-  toast: { message: string; type: "info" | "error" } | null;
+  // Notificação transitória — action opcional (ex.: "Desfazer" na exclusão de artigo)
+  toast: { message: string; type: "info" | "error"; action?: { label: string; onClick: () => void } } | null;
   // Contexto do menu de clique direito no artigo — tableHtml/imageSrc/imageAlt
   // ficam presentes só quando o clique foi sobre uma tabela ou imagem
   contextMenu: {
@@ -69,6 +73,7 @@ interface AppState {
   openArticle: (id: string) => Promise<void>;
   saveArticle: (article: Partial<Article> & { title: string }) => Promise<Article>;
   deleteArticle: (id: string) => Promise<void>;
+  restoreArticle: (id: string) => Promise<Article>;
 
   fetchFromWikipedia: (query: string, parentId?: string | null, exactTitle?: string) => Promise<Article>;
   generateWithClaude: (title: string, parentId?: string | null) => Promise<Article>;
@@ -81,12 +86,21 @@ interface AppState {
   setSearchOpen: (open: boolean) => void;
   setWikipediaLang: (lang: string) => Promise<void>;
   setSelectedTag: (tag: string | null) => void;
+  loadFolders: () => Promise<void>;
+  createFolder: (name: string) => Promise<Folder>;
+  renameFolder: (id: string, name: string) => Promise<void>;
+  deleteFolder: (id: string) => Promise<void>;
+  setArticleFolder: (articleId: string, folderId: string | null) => Promise<void>;
+  setSelectedFolder: (id: string | null) => void;
   setGraphScope: (scope: "global" | "local") => void;
   setLocalDepth: (depth: 1 | 2) => void;
   updateTags: (articleId: string, tags: string[]) => Promise<void>;
   updateExcerptMarkdown: (articleId: string, excerptId: string, editedMarkdown: string) => Promise<void>;
   updateExcerptOutline: (articleId: string, outline: ExcerptOutlineItem[]) => Promise<void>;
-  showToast: (message: string, type?: "info" | "error") => void;
+  showToast: (
+    message: string, type?: "info" | "error",
+    opts?: { action?: { label: string; onClick: () => void }; durationMs?: number }
+  ) => void;
   showContextMenu: (x: number, y: number, parentId: string, opts?: {
     selectedText?: string; tableHtml?: string; imageSrc?: string; imageAlt?: string;
   }) => void;
@@ -205,6 +219,8 @@ export const useStore = create<AppState>((set, get) => ({
   isSearchOpen: false,
   wikipediaLang: "pt",
   selectedTag: null,
+  folders: [],
+  selectedFolder: null,
   graphScope: "global",
   localDepth: 1,
   pendingTask: null,
@@ -224,6 +240,7 @@ export const useStore = create<AppState>((set, get) => ({
       const lang = await ipc<string | undefined>("config:get", { key: "wikipediaLang" });
       if (lang) set({ wikipediaLang: lang });
     } catch { /* mantém o padrão "pt" */ }
+    await get().loadFolders();
   },
 
   // ── openArticle ─────────────────────────────────────────────────────────────
@@ -258,6 +275,9 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   // ── deleteArticle ───────────────────────────────────────────────────────────
+  // Move o artigo para a lixeira (article:delete não apaga mais em definitivo —
+  // ver articleHandlers.js/articles.ts). O caller (ArticleView) é responsável
+  // por guardar os links removidos e oferecer "Desfazer" via restoreArticle.
   deleteArticle: async (id) => {
     await ipc("article:delete", { id });
     set(s => {
@@ -269,6 +289,19 @@ export const useStore = create<AppState>((set, get) => ({
         graphNodes: nodes, graphEdges: edges,
       };
     });
+  },
+
+  // ── restoreArticle ──────────────────────────────────────────────────────────
+  // Desfaz uma exclusão recente (dentro da janela da lixeira). Não restaura
+  // sozinho os links removidos de outros artigos — o caller reaplica via addLink.
+  restoreArticle: async (id) => {
+    const article = await ipc<Article>("article:restore", { id });
+    set(s => {
+      const articles = [article, ...s.articles.filter(a => a.id !== article.id)];
+      const { nodes, edges } = computeGraphData(articles);
+      return { articles, graphNodes: nodes, graphEdges: edges };
+    });
+    return article;
   },
 
   // ── fetchFromWikipedia ──────────────────────────────────────────────────────
@@ -375,6 +408,51 @@ export const useStore = create<AppState>((set, get) => ({
     await ipc("config:set", { key: "wikipediaLang", value: lang });
   },
   setSelectedTag: (tag) => set({ selectedTag: tag }),
+
+  // ── Pastas ────────────────────────────────────────────────────────────────
+  // Persistidas como um valor único (array serializado) via config:get/
+  // config:set — não há handler IPC dedicado, reaproveita o mecanismo de
+  // config já existente. Serializado explicitamente porque o config:set do
+  // mobile (Capacitor Preferences) só aceita valores string — passar o array
+  // direto vira "[object Object]" lá (o desktop, que grava em JSON puro,
+  // toleraria o array cru, mas manter os dois shells na mesma convenção evita
+  // esse tipo de divergência silenciosa).
+  loadFolders: async () => {
+    try {
+      const raw = await ipc<string | undefined>("config:get", { key: "folders" });
+      set({ folders: raw ? (JSON.parse(raw) as Folder[]) : [] });
+    } catch {
+      set({ folders: [] });
+    }
+  },
+  createFolder: async (name) => {
+    const folder: Folder = { id: crypto.randomUUID(), name: name.trim(), createdAt: new Date().toISOString() };
+    const folders = [...get().folders, folder];
+    set({ folders });
+    await ipc("config:set", { key: "folders", value: JSON.stringify(folders) });
+    return folder;
+  },
+  renameFolder: async (id, name) => {
+    const folders = get().folders.map(f => f.id === id ? { ...f, name: name.trim() } : f);
+    set({ folders });
+    await ipc("config:set", { key: "folders", value: JSON.stringify(folders) });
+  },
+  deleteFolder: async (id) => {
+    const folders = get().folders.filter(f => f.id !== id);
+    set({ folders, selectedFolder: get().selectedFolder === id ? null : get().selectedFolder });
+    await ipc("config:set", { key: "folders", value: JSON.stringify(folders) });
+    // Artigos que estavam na pasta excluída voltam para "Sem pasta"
+    const affected = get().articles.filter(a => a.folderId === id);
+    for (const article of affected) {
+      await get().saveArticle({ ...article, folderId: null });
+    }
+  },
+  setArticleFolder: async (articleId, folderId) => {
+    const article = get().articles.find(a => a.id === articleId);
+    if (!article) return;
+    await get().saveArticle({ ...article, folderId });
+  },
+  setSelectedFolder: (id) => set({ selectedFolder: id }),
   setGraphScope: (scope) => set({ graphScope: scope }),
   setLocalDepth: (depth) => set({ localDepth: depth }),
   updateTags: async (articleId, tags) => {
@@ -390,12 +468,12 @@ export const useStore = create<AppState>((set, get) => ({
     const article = await ipc<Article>("article:updateExcerptOutline", { articleId, outline });
     set(s => ({ articles: s.articles.map(a => a.id === articleId ? article : a) }));
   },
-  showToast: (message, type = "info") => {
-    set({ toast: { message, type } });
+  showToast: (message, type = "info", opts) => {
+    set({ toast: { message, type, action: opts?.action } });
     setTimeout(() => {
       // Só limpa se ainda for o mesmo toast
       if (get().toast?.message === message) set({ toast: null });
-    }, 3500);
+    }, opts?.durationMs ?? 3500);
   },
   showContextMenu: (x, y, parentId, opts = {}) =>
     set({ contextMenu: {

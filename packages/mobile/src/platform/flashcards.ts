@@ -11,6 +11,7 @@ import type { Flashcard, FlashcardGrade } from "@lexicon/shared";
 import { getArticle, htmlToMarkdown } from "./articles";
 
 const FLASHCARDS_DIR = "flashcards";
+const FLASHCARDS_TRASH_DIR = `${FLASHCARDS_DIR}/.trash`;
 
 async function ensureFlashcardsDir() {
   try {
@@ -20,8 +21,20 @@ async function ensureFlashcardsDir() {
   }
 }
 
+async function ensureFlashcardsTrashDir() {
+  try {
+    await Filesystem.mkdir({ path: FLASHCARDS_TRASH_DIR, directory: Directory.Data, recursive: true });
+  } catch {
+    // já existe
+  }
+}
+
 function flashcardsPath(articleId: string) {
   return `${FLASHCARDS_DIR}/${articleId}.json`;
+}
+
+function flashcardsTrashPath(articleId: string) {
+  return `${FLASHCARDS_TRASH_DIR}/${articleId}.json`;
 }
 
 async function readFlashcards(articleId: string): Promise<Flashcard[]> {
@@ -46,11 +59,27 @@ async function writeFlashcards(articleId: string, cards: Flashcard[]) {
   });
 }
 
-export async function deleteFlashcards(articleId: string): Promise<void> {
+// Move (não apaga) para flashcards/.trash/ — restaurável junto do artigo via
+// article:restore.
+export async function trashFlashcards(articleId: string): Promise<void> {
   try {
-    await Filesystem.deleteFile({ path: flashcardsPath(articleId), directory: Directory.Data });
+    await ensureFlashcardsTrashDir();
+    await Filesystem.rename({
+      from: flashcardsPath(articleId), to: flashcardsTrashPath(articleId), directory: Directory.Data,
+    });
   } catch {
     // já não existia
+  }
+}
+
+export async function restoreFlashcards(articleId: string): Promise<void> {
+  try {
+    await ensureFlashcardsDir();
+    await Filesystem.rename({
+      from: flashcardsTrashPath(articleId), to: flashcardsPath(articleId), directory: Directory.Data,
+    });
+  } catch {
+    // não havia flashcards para restaurar
   }
 }
 

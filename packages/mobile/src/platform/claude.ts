@@ -51,8 +51,37 @@ Regras:
 - Responda em português brasileiro
 `.trim();
 
+const SYSTEM_SEARCH_RANK = `
+Você é um mecanismo de busca semântica para uma base de conhecimento pessoal.
+Dada uma consulta e uma lista de artigos candidatos (id, título e resumo),
+devolva os ids dos artigos mais relevantes para a consulta — inclusive quando a
+palavra exata da consulta não aparece no artigo, mas o significado é relacionado.
+Regras:
+- Responda APENAS com um array JSON de ids, em ordem decrescente de relevância
+- Sem texto antes ou depois, sem bloco de código markdown
+- No máximo 15 ids
+- Se nenhum artigo for relevante, responda com um array vazio: []
+`.trim();
+
+// Retry com backoff exponencial só para falhas transitórias (rate limit, erro
+// 5xx do servidor, erro de rede) — erros de request malformado ou credencial
+// inválida (400/401/403) falham já na 1ª tentativa, sem retry. Mesma política
+// do desktop (packages/desktop/src/main/handlers/claudeHandlers.js).
+const RETRYABLE_STATUS = new Set([429, 500, 502, 503, 504]);
+const RETRY_DELAYS_MS = [500, 1500, 4000];
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function getHeader(headers: Record<string, string> | undefined, name: string): string | undefined {
+  if (!headers) return undefined;
+  const key = Object.keys(headers).find(k => k.toLowerCase() === name.toLowerCase());
+  return key ? headers[key] : undefined;
+}
+
 async function callClaude(apiKey: string, systemPrompt: string, userMessage: string, maxTokens = 800): Promise<string> {
-  const res = await CapacitorHttp.post({
+  const options = {
     url: "https://api.anthropic.com/v1/messages",
     headers: {
       "x-api-key": apiKey,
@@ -65,15 +94,33 @@ async function callClaude(apiKey: string, systemPrompt: string, userMessage: str
       system: systemPrompt,
       messages: [{ role: "user", content: userMessage }],
     },
-  });
+  };
 
-  if (res.status !== 200) {
-    const body = typeof res.data === "string" ? res.data : JSON.stringify(res.data);
-    throw new Error(`Anthropic API status ${res.status}: ${body}`);
+  for (let attempt = 0; ; attempt++) {
+    let res;
+    try {
+      res = await CapacitorHttp.post(options);
+    } catch (networkErr) {
+      if (attempt >= RETRY_DELAYS_MS.length) throw networkErr;
+      await sleep(RETRY_DELAYS_MS[attempt] + Math.random() * 200);
+      continue;
+    }
+
+    if (res.status === 200) {
+      const data = typeof res.data === "string" ? JSON.parse(res.data) : res.data;
+      return data.content[0].text.trim();
+    }
+
+    const canRetry = RETRYABLE_STATUS.has(res.status) && attempt < RETRY_DELAYS_MS.length;
+    if (!canRetry) {
+      const body = typeof res.data === "string" ? res.data : JSON.stringify(res.data);
+      throw new Error(`Anthropic API status ${res.status}: ${body}`);
+    }
+
+    const retryAfter = Number(getHeader(res.headers, "retry-after"));
+    const delay = Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : RETRY_DELAYS_MS[attempt];
+    await sleep(delay + Math.random() * 200);
   }
-
-  const data = typeof res.data === "string" ? JSON.parse(res.data) : res.data;
-  return data.content[0].text.trim();
 }
 
 export async function summarize(text: string, title = ""): Promise<string> {
@@ -106,4 +153,29 @@ export async function ask(
     `\nPergunta: ${question}`,
   ].filter(Boolean).join("\n");
   return callClaude(apiKey, SYSTEM_ASK, userMsg, 500);
+}
+
+// Busca semântica opcional: rankeia os artigos mais relevantes para a consulta
+// por significado, não só substring. Candidatos limitados a ~200 e resumo
+// truncado a 150 caracteres cada, para controlar custo de tokens.
+export async function searchRank(
+  query: string, candidates: Array<{ id: string; title: string; summary: string }>
+): Promise<string[]> {
+  const apiKey = await getConfigValue("anthropicApiKey");
+  if (!apiKey) throw new Error("API key da Anthropic não configurada.");
+
+  const capped = candidates.slice(0, 200);
+  const list = capped
+    .map(c => `${c.id}: ${c.title} — ${(c.summary || "").slice(0, 150).replace(/\n/g, " ")}`)
+    .join("\n");
+  const userMsg = `Consulta: ${query}\n\nArtigos candidatos:\n${list}`;
+
+  const raw = await callClaude(apiKey, SYSTEM_SEARCH_RANK, userMsg, 400);
+  const cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "").trim();
+  let ids: unknown;
+  try { ids = JSON.parse(cleaned); } catch { ids = []; }
+  if (!Array.isArray(ids)) ids = [];
+
+  const knownIds = new Set(capped.map(c => c.id));
+  return (ids as unknown[]).filter((id): id is string => typeof id === "string" && knownIds.has(id));
 }

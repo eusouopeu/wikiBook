@@ -9,4 +9,5 @@ export { default as App } from "./App";
 export { useStore, computeLocalSubgraph } from "./store/useStore";
 export { ArticleView, ReviewModal } from "./components/ArticleView";
 export { GraphView } from "./components/GraphView";
+export { FolderPicker } from "./components/FolderPicker";
 export * from "./shared/types";

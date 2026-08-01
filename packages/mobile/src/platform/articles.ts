@@ -12,6 +12,7 @@ import { CapacitorHttp } from "@capacitor/core";
 import type { Article, ArticleExcerpt, ExcerptOutlineItem } from "@lexicon/shared";
 
 const ARTICLES_DIR = "articles";
+const TRASH_DIR = `${ARTICLES_DIR}/.trash`;
 
 async function ensureDir() {
   try {
@@ -21,8 +22,20 @@ async function ensureDir() {
   }
 }
 
+async function ensureTrashDir() {
+  try {
+    await Filesystem.mkdir({ path: TRASH_DIR, directory: Directory.Data, recursive: true });
+  } catch {
+    // já existe
+  }
+}
+
 function articlePath(id: string) {
   return `${ARTICLES_DIR}/${id}.json`;
+}
+
+function trashPath(id: string) {
+  return `${TRASH_DIR}/${id}.json`;
 }
 
 async function readArticle(id: string): Promise<Article | null> {
@@ -48,10 +61,43 @@ async function writeArticle(article: Article) {
     directory: Directory.Data,
     encoding: Encoding.UTF8,
   });
+  invalidateArticlesCache();
+}
+
+// Cache em memória da listagem completa — evita reler e reparsear TODOS os
+// JSONs a cada article:list. Invalidado (não atualizado incrementalmente) em
+// toda escrita — writeArticle() já cobre a maioria; delete/restore, que usam
+// Filesystem.rename direto sem passar por writeArticle, invalidam explicitamente.
+let articlesCache: Article[] | null = null;
+function invalidateArticlesCache() { articlesCache = null; }
+
+const TRASH_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;   // 30 dias
+let trashPurged = false;
+
+// Limpeza oportunista de itens da lixeira com mais de 30 dias — roda no
+// máximo uma vez por sessão do app (chamada de dentro de listAllArticles)
+async function purgeOldTrashOnce() {
+  if (trashPurged) return;
+  trashPurged = true;
+  try {
+    await ensureTrashDir();
+    const { files } = await Filesystem.readdir({ path: TRASH_DIR, directory: Directory.Data });
+    const now = Date.now();
+    for (const f of files) {
+      if (!f.name.endsWith(".json")) continue;
+      if (now - f.mtime > TRASH_MAX_AGE_MS) {
+        await Filesystem.deleteFile({ path: `${TRASH_DIR}/${f.name}`, directory: Directory.Data });
+      }
+    }
+  } catch {
+    // limpeza é best-effort — nunca deve quebrar o bootstrap
+  }
 }
 
 async function listAllArticles(): Promise<Article[]> {
   await ensureDir();
+  await purgeOldTrashOnce();
+  if (articlesCache) return articlesCache;
   let entries;
   try {
     entries = await Filesystem.readdir({ path: ARTICLES_DIR, directory: Directory.Data });
@@ -63,7 +109,8 @@ async function listAllArticles(): Promise<Article[]> {
     .filter(name => name.endsWith(".json"))
     .map(name => name.replace(/\.json$/, ""));
   const articles = await Promise.all(ids.map(readArticle));
-  return articles.filter((a): a is Article => a !== null);
+  articlesCache = articles.filter((a): a is Article => a !== null);
+  return articlesCache;
 }
 
 function slugify(title: string): string {
@@ -103,9 +150,15 @@ export async function saveArticle(partial: Partial<Article> & { title: string })
   return article;
 }
 
+// Move (não apaga) o artigo para articles/.trash/ — permite desfazer via
+// restoreArticle. Links de outros artigos que apontavam para ele são
+// removidos normalmente (o store guarda essa informação antes de chamar isto,
+// e reaplica via addLink no "Desfazer").
 export async function deleteArticle(id: string): Promise<void> {
   try {
-    await Filesystem.deleteFile({ path: articlePath(id), directory: Directory.Data });
+    await ensureTrashDir();
+    await Filesystem.rename({ from: articlePath(id), to: trashPath(id), directory: Directory.Data });
+    invalidateArticlesCache();
   } catch {
     // já não existia
   }
@@ -115,8 +168,20 @@ export async function deleteArticle(id: string): Promise<void> {
     art.links = art.links.filter(l => l.targetId !== id);
     if (art.links.length !== before) await writeArticle(art);
   }
-  // TODO(flashcards): quando platform/flashcards.ts existir, remover também
-  // flashcards/<id>.json aqui — mesma limpeza que articleHandlers.js faz hoje.
+}
+
+// Desfaz uma exclusão recente — devolve o JSON de articles/.trash/ para a
+// posição original. Links removidos de outros artigos são reaplicados pelo
+// caller (store.deleteArticle guarda o que precisa antes de deletar).
+export async function restoreArticle(id: string): Promise<Article> {
+  await ensureDir();
+  try {
+    await Filesystem.rename({ from: trashPath(id), to: articlePath(id), directory: Directory.Data });
+    invalidateArticlesCache();
+  } catch {
+    throw new Error("Artigo não encontrado na lixeira (pode já ter sido limpo).");
+  }
+  return getArticle(id);
 }
 
 export async function addLink(

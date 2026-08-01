@@ -47,8 +47,20 @@ export interface Article {
   excerpts: ArticleExcerpt[];
   excerptOutline?: ExcerptOutlineItem[];
   tags: string[];
+  // Pasta única (lista plana, sem aninhamento) — null/ausente = "Sem pasta"
+  folderId?: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+// ── Pastas ─────────────────────────────────────────────────────────────────
+// Persistidas como um único valor JSON via config:get/config:set (chave
+// "folders") — não precisam de handlers IPC próprios, o mecanismo de config
+// já existe nos dois shells.
+export interface Folder {
+  id: string;
+  name: string;
+  createdAt: string;
 }
 
 export interface ArticleLink {
@@ -113,6 +125,7 @@ export type IpcChannel =
   | "article:get"
   | "article:save"
   | "article:delete"
+  | "article:restore"
   | "article:addLink"
   | "article:removeLink"
   | "article:appendExcerpt"
@@ -127,6 +140,7 @@ export type IpcChannel =
   | "claude:summarize"
   | "claude:generate"
   | "claude:ask"
+  | "claude:searchRank"
   | "flashcards:regenerate"
   | "flashcards:list"
   | "flashcards:listDue"
