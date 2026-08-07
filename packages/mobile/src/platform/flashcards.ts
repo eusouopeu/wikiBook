@@ -37,16 +37,27 @@ function flashcardsTrashPath(articleId: string) {
   return `${FLASHCARDS_TRASH_DIR}/${articleId}.json`;
 }
 
+// Cache em memória por articleId — evita reler e reparsear os arquivos de
+// todos os artigos a cada listDue (mesmo padrão do cache de artigos em
+// articleHandlers.js). Invalidado (atualizado, não só limpo) em toda escrita;
+// trash/restore removem a entrada explicitamente por não passarem por write.
+const flashcardsCache = new Map<string, Flashcard[]>();
+
 async function readFlashcards(articleId: string): Promise<Flashcard[]> {
+  const cached = flashcardsCache.get(articleId);
+  if (cached) return cached;
   await ensureFlashcardsDir();
+  let cards: Flashcard[] = [];
   try {
     const res = await Filesystem.readFile({
       path: flashcardsPath(articleId), directory: Directory.Data, encoding: Encoding.UTF8,
     });
-    return JSON.parse(res.data as string);
+    cards = JSON.parse(res.data as string);
   } catch {
-    return [];
+    cards = [];
   }
+  flashcardsCache.set(articleId, cards);
+  return cards;
 }
 
 async function writeFlashcards(articleId: string, cards: Flashcard[]) {
@@ -57,6 +68,7 @@ async function writeFlashcards(articleId: string, cards: Flashcard[]) {
     directory: Directory.Data,
     encoding: Encoding.UTF8,
   });
+  flashcardsCache.set(articleId, cards);
 }
 
 // Move (não apaga) para flashcards/.trash/ — restaurável junto do artigo via
@@ -69,6 +81,8 @@ export async function trashFlashcards(articleId: string): Promise<void> {
     });
   } catch {
     // já não existia
+  } finally {
+    flashcardsCache.delete(articleId);
   }
 }
 
@@ -80,6 +94,8 @@ export async function restoreFlashcards(articleId: string): Promise<void> {
     });
   } catch {
     // não havia flashcards para restaurar
+  } finally {
+    flashcardsCache.delete(articleId);
   }
 }
 
@@ -362,15 +378,8 @@ export async function listDue(): Promise<Flashcard[]> {
     return [];
   }
   for (const f of entries.files.filter(f => f.name.endsWith(".json"))) {
-    try {
-      const res = await Filesystem.readFile({
-        path: `${FLASHCARDS_DIR}/${f.name}`, directory: Directory.Data, encoding: Encoding.UTF8,
-      });
-      const cards: Flashcard[] = JSON.parse(res.data as string);
-      for (const c of cards) if (c.due <= now) due.push(c);
-    } catch {
-      // arquivo corrompido — ignora
-    }
+    const cards = await readFlashcards(f.name.replace(".json", ""));
+    for (const c of cards) if (c.due <= now) due.push(c);
   }
   due.sort((a, b) => a.due.localeCompare(b.due));
   return due;

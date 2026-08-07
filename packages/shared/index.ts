@@ -10,4 +10,5 @@ export { useStore, computeLocalSubgraph } from "./store/useStore";
 export { ArticleView, ReviewModal } from "./components/ArticleView";
 export { GraphView } from "./components/GraphView";
 export { FolderPicker } from "./components/FolderPicker";
+export { VirtualList } from "./components/VirtualList";
 export * from "./shared/types";

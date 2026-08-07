@@ -5,11 +5,12 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useStore, computeLocalSubgraph } from "./store/useStore";
-import type { Flashcard, FlashcardGrade } from "./shared/types";
+import type { Article, Flashcard, FlashcardGrade } from "./shared/types";
 import { GraphView } from "./components/GraphView";
 import { ArticleView, ReviewModal } from "./components/ArticleView";
 import { FolderPicker } from "./components/FolderPicker";
 import { MiniGraphPreview } from "./components/MiniGraphPreview";
+import { VirtualList } from "./components/VirtualList";
 
 // ── Controles de zoom do grafo ────────────────────────────────────────────────
 // Chama os métodos D3 expostos no SVGElement pelo GraphView
@@ -208,9 +209,10 @@ const SettingsModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
 
 // ── Toast + indicador de tarefa em andamento ──────────────────────────────────
 const StatusOverlay: React.FC = () => {
-  const toast = useStore(s => s.toast);
+  const toasts = useStore(s => s.toasts);
   const pendingTask = useStore(s => s.pendingTask);
-  if (!toast && !pendingTask) return null;
+  const dismissToast = useStore(s => s.dismissToast);
+  if (toasts.length === 0 && !pendingTask) return null;
   return (
     <div className="status-overlay">
       {pendingTask && (
@@ -219,16 +221,20 @@ const StatusOverlay: React.FC = () => {
           {pendingTask}
         </div>
       )}
-      {toast && (
-        <div className={`toast toast-${toast.type}`}>
+      {toasts.map(toast => (
+        <div key={toast.id} className={`toast toast-${toast.type}`} onClick={() => dismissToast(toast.id)}>
           {toast.message}
           {toast.action && (
-            <button type="button" className="toast-action-btn" onClick={toast.action.onClick}>
+            <button
+              type="button"
+              className="toast-action-btn"
+              onClick={e => { e.stopPropagation(); toast.action!.onClick(); }}
+            >
               {toast.action.label}
             </button>
           )}
         </div>
-      )}
+      ))}
     </div>
   );
 };
@@ -250,7 +256,7 @@ export default function App() {
     graphNodes, graphEdges,
     loadArticles, openArticle, setView,
     searchQuery, setSearchQuery,
-    selectedTag, setSelectedTag, showToast,
+    selectedTags, toggleSelectedTag, showToast,
     graphScope, setGraphScope, localDepth, setLocalDepth,
     folders, selectedFolder, setSelectedFolder,
     createFolder, renameFolder, deleteFolder, setArticleFolder,
@@ -301,7 +307,7 @@ export default function App() {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
 
-  useEffect(() => { setHighlightedIndex(-1); }, [searchQuery, selectedTag, selectedFolder]);
+  useEffect(() => { setHighlightedIndex(-1); }, [searchQuery, selectedTags, selectedFolder]);
 
   // Elemento SVG do grafo, recebido do GraphView após a montagem
   // (usado pelos botões de zoom em GraphControls)
@@ -413,7 +419,7 @@ export default function App() {
       return articles
         .filter(a =>
           rank.has(a.id) &&
-          (!selectedTag || (a.tags ?? []).includes(selectedTag)) &&
+          selectedTags.every(t => (a.tags ?? []).includes(t)) &&
           (!selectedFolder || a.folderId === selectedFolder)
         )
         .sort((a, b) => rank.get(a.id)! - rank.get(b.id)!);
@@ -421,7 +427,7 @@ export default function App() {
 
     let result = articles.filter(a =>
       (!q || (searchIndex.get(a.id) ?? "").includes(q)) &&
-      (!selectedTag || (a.tags ?? []).includes(selectedTag)) &&
+      selectedTags.every(t => (a.tags ?? []).includes(t)) &&
       (!selectedFolder || a.folderId === selectedFolder)
     );
     // Com busca ativa, artigos com match no título vêm primeiro
@@ -432,7 +438,7 @@ export default function App() {
       ];
     }
     return result;
-  }, [articles, searchQuery, selectedTag, selectedFolder, searchIndex, semanticSearch, semanticResultIds]);
+  }, [articles, searchQuery, selectedTags, selectedFolder, searchIndex, semanticSearch, semanticResultIds]);
 
   // Exportação Markdown/Obsidian
   async function handleExport() {
@@ -551,8 +557,8 @@ export default function App() {
             {allTags.map(t => (
               <button
                 key={t}
-                className={`sidebar-tag ${selectedTag === t ? "active" : ""}`}
-                onClick={() => setSelectedTag(selectedTag === t ? null : t)}
+                className={`sidebar-tag ${selectedTags.includes(t) ? "active" : ""}`}
+                onClick={() => toggleSelectedTag(t)}
               >
                 #{t}
               </button>
@@ -570,38 +576,44 @@ export default function App() {
           + Novo artigo
         </button>
 
-        <ul className="article-list">
-          {filteredArticles.map((a, i) => (
-            <li
-              key={a.id}
-              className={`article-item ${a.id === activeArticleId ? "active" : ""} ${i === highlightedIndex ? "highlighted" : ""}`}
-              onClick={() => { openArticle(a.id); setView("article"); }}
-              onMouseEnter={e => scheduleHoverPreview(a.id, (e.currentTarget as HTMLElement).getBoundingClientRect())}
-              onMouseLeave={cancelHoverPreview}
-            >
-              <span className={`dot dot-${a.source}`} />
-              <span className="article-item-title">{a.title}</span>
-              {a.links.length > 0 && (
-                <span className="link-count">{a.links.length}</span>
-              )}
-              <button
-                type="button" className="article-item-folder-btn" title="Mover para pasta"
-                onClick={e => {
-                  e.stopPropagation();
-                  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                  setFolderPickerFor({ articleId: a.id, x: rect.left, y: rect.bottom + 4 });
-                }}
-              >
-                📁
-              </button>
-            </li>
-          ))}
-          {filteredArticles.length === 0 && (
+        {filteredArticles.length === 0 ? (
+          <ul className="article-list">
             <li className="empty-list">
-              {searchQuery || selectedTag || selectedFolder ? "Nenhum resultado." : "Nenhum artigo ainda."}
+              {searchQuery || selectedTags.length > 0 || selectedFolder ? "Nenhum resultado." : "Nenhum artigo ainda."}
             </li>
-          )}
-        </ul>
+          </ul>
+        ) : (
+          <VirtualList
+            className="article-list"
+            items={filteredArticles}
+            itemHeight={30}
+            itemKey={(a: Article) => a.id}
+            renderItem={(a: Article, i: number) => (
+              <div
+                className={`article-item ${a.id === activeArticleId ? "active" : ""} ${i === highlightedIndex ? "highlighted" : ""}`}
+                onClick={() => { openArticle(a.id); setView("article"); }}
+                onMouseEnter={e => scheduleHoverPreview(a.id, (e.currentTarget as HTMLElement).getBoundingClientRect())}
+                onMouseLeave={cancelHoverPreview}
+              >
+                <span className={`dot dot-${a.source}`} />
+                <span className="article-item-title">{a.title}</span>
+                {a.links.length > 0 && (
+                  <span className="link-count">{a.links.length}</span>
+                )}
+                <button
+                  type="button" className="article-item-folder-btn" title="Mover para pasta"
+                  onClick={e => {
+                    e.stopPropagation();
+                    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                    setFolderPickerFor({ articleId: a.id, x: rect.left, y: rect.bottom + 4 });
+                  }}
+                >
+                  📁
+                </button>
+              </div>
+            )}
+          />
+        )}
 
         {hoverPreview && (
           <MiniGraphPreview

@@ -11,19 +11,20 @@
     "open:android": "npm run sync && npx cap open android"
   },
   "dependencies": {
-    "@lexicon/shared": "*",
     "@capacitor/core": "^8.4.2",
+    "@capacitor/dialog": "^8.0.1",
     "@capacitor/filesystem": "^8.1.2",
     "@capacitor/preferences": "^8.0.1",
     "@capacitor/share": "^8.0.1",
+    "@lexicon/shared": "*",
     "capacitor-secure-storage-plugin": "^0.13.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
+    "@capacitor/android": "^8.4.2",
     "@capacitor/cli": "^8.4.2",
     "@capacitor/ios": "^8.4.2",
-    "@capacitor/android": "^8.4.2",
     "@types/react": "^18.3.1",
     "@types/react-dom": "^18.3.0"
   }

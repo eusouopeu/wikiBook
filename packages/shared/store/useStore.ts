@@ -42,8 +42,10 @@ interface AppState {
   isSearchOpen: boolean;
   // Idioma da Wikipedia (persistido em config.json)
   wikipediaLang: string;
-  // Filtro por tag na sidebar (null = todas)
-  selectedTag: string | null;
+  // Filtro por tags na sidebar (vazio = todas) — múltiplas tags selecionadas
+  // filtram por interseção, permitindo cruzar artigos por mais de um tema
+  // simultaneamente, ortogonal às pastas (hierárquicas, uma só por artigo).
+  selectedTags: string[];
   // ── Pastas ────────────────────────────────────────────────────────────────
   folders: Folder[];
   // Filtro por pasta na sidebar (null = todas)
@@ -53,8 +55,12 @@ interface AppState {
   localDepth: 1 | 2;
   // Tarefa em andamento (ex.: geração via Claude disparada pelo menu de contexto)
   pendingTask: string | null;
-  // Notificação transitória — action opcional (ex.: "Desfazer" na exclusão de artigo)
-  toast: { message: string; type: "info" | "error"; action?: { label: string; onClick: () => void } } | null;
+  // Fila de notificações transitórias — action opcional (ex.: "Desfazer" na
+  // exclusão de artigo). Fila em vez de slot único: no mobile, ações em
+  // sequência (salvar, gerar flashcard, exportar) disparam toasts
+  // consecutivos, e um slot único faz o segundo sobrescrever o primeiro
+  // antes de o usuário lê-lo.
+  toasts: Array<{ id: string; message: string; type: "info" | "error"; action?: { label: string; onClick: () => void } }>;
   // Contexto do menu de clique direito no artigo — tableHtml/imageSrc/imageAlt
   // ficam presentes só quando o clique foi sobre uma tabela ou imagem
   contextMenu: {
@@ -85,7 +91,8 @@ interface AppState {
   setSearchQuery: (q: string) => void;
   setSearchOpen: (open: boolean) => void;
   setWikipediaLang: (lang: string) => Promise<void>;
-  setSelectedTag: (tag: string | null) => void;
+  toggleSelectedTag: (tag: string) => void;
+  clearSelectedTags: () => void;
   loadFolders: () => Promise<void>;
   createFolder: (name: string) => Promise<Folder>;
   renameFolder: (id: string, name: string) => Promise<void>;
@@ -101,6 +108,7 @@ interface AppState {
     message: string, type?: "info" | "error",
     opts?: { action?: { label: string; onClick: () => void }; durationMs?: number }
   ) => void;
+  dismissToast: (id: string) => void;
   showContextMenu: (x: number, y: number, parentId: string, opts?: {
     selectedText?: string; tableHtml?: string; imageSrc?: string; imageAlt?: string;
   }) => void;
@@ -114,6 +122,9 @@ interface AppState {
 // O raio é: BASE * (1.2 ^ (maxDepth - depth)) — nós-pai sempre maiores.
 function computeGraphData(articles: Article[]): { nodes: GraphNode[]; edges: GraphEdge[] } {
   const BASE_RADIUS = 28;
+  // Teto no fator de crescimento — sem isso, grafos com 6-7 níveis de
+  // profundidade deixam os nós-raiz desproporcionalmente enormes.
+  const MAX_GROWTH_FACTOR = 3;
 
   // Monta mapas de adjacência: targetId → [parentId] e parentId → [targetId]
   const parentMap = new Map<string, string[]>();
@@ -161,7 +172,8 @@ function computeGraphData(articles: Article[]): { nodes: GraphNode[]; edges: Gra
   const nodes: GraphNode[] = articles.map(art => {
     const depth = depths.get(art.id) ?? 0;
     // Efeito cascata: quanto menor o depth (mais "pai"), maior o nó
-    const radius = BASE_RADIUS * Math.pow(1.2, maxDepth - depth);
+    const growthFactor = Math.min(Math.pow(1.2, maxDepth - depth), MAX_GROWTH_FACTOR);
+    const radius = BASE_RADIUS * growthFactor;
     return {
       id: art.id,
       title: art.title,
@@ -218,13 +230,13 @@ export const useStore = create<AppState>((set, get) => ({
   searchQuery: "",
   isSearchOpen: false,
   wikipediaLang: "pt",
-  selectedTag: null,
+  selectedTags: [],
   folders: [],
   selectedFolder: null,
   graphScope: "global",
   localDepth: 1,
   pendingTask: null,
-  toast: null,
+  toasts: [],
   contextMenu: {
     visible: false, x: 0, y: 0,
     selectedText: "", parentArticleId: null,
@@ -407,7 +419,12 @@ export const useStore = create<AppState>((set, get) => ({
     set({ wikipediaLang: lang });
     await ipc("config:set", { key: "wikipediaLang", value: lang });
   },
-  setSelectedTag: (tag) => set({ selectedTag: tag }),
+  toggleSelectedTag: (tag) => set(s => ({
+    selectedTags: s.selectedTags.includes(tag)
+      ? s.selectedTags.filter(t => t !== tag)
+      : [...s.selectedTags, tag],
+  })),
+  clearSelectedTags: () => set({ selectedTags: [] }),
 
   // ── Pastas ────────────────────────────────────────────────────────────────
   // Persistidas como um valor único (array serializado) via config:get/
@@ -469,12 +486,16 @@ export const useStore = create<AppState>((set, get) => ({
     set(s => ({ articles: s.articles.map(a => a.id === articleId ? article : a) }));
   },
   showToast: (message, type = "info", opts) => {
-    set({ toast: { message, type, action: opts?.action } });
-    setTimeout(() => {
-      // Só limpa se ainda for o mesmo toast
-      if (get().toast?.message === message) set({ toast: null });
-    }, opts?.durationMs ?? 3500);
+    const id = crypto.randomUUID();
+    set(s => {
+      // Mantém no máximo 3 empilhados — descarta o mais antigo em vez de
+      // deixar a pilha crescer sem limite.
+      const toasts = [...s.toasts, { id, message, type, action: opts?.action }];
+      return { toasts: toasts.length > 3 ? toasts.slice(toasts.length - 3) : toasts };
+    });
+    setTimeout(() => get().dismissToast(id), opts?.durationMs ?? 3500);
   },
+  dismissToast: (id) => set(s => ({ toasts: s.toasts.filter(t => t.id !== id) })),
   showContextMenu: (x, y, parentId, opts = {}) =>
     set({ contextMenu: {
       visible: true, x, y, parentArticleId: parentId,

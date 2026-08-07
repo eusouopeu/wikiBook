@@ -947,6 +947,14 @@ export const ArticleView: React.FC<Props> = ({ article }) => {
   const summaryRef   = useRef<HTMLDivElement>(null);
   const [showSummary, setShowSummary]         = useState(false);
   const [isLoadingSummary, setIsLoadingSummary] = useState(false);
+  // Se o resumo automático falhou na criação (ver useStore.ts/fetchFromWikipedia),
+  // o artigo é salvo com esse texto fixo — força a aba "Resumo" ao abrir, para
+  // que o botão "↺ Regenerar resumo" já existente fique visível de cara, sem
+  // o usuário precisar descobrir a aba manualmente ou recriar o artigo.
+  const summaryFailed = article.summary.trim() === "• Resumo não disponível.";
+  useEffect(() => {
+    if (summaryFailed) setShowSummary(true);
+  }, [article.id, summaryFailed]);
   const [saveModal, setSaveModal] = useState<{
     visible: boolean; kind: "text" | "table" | "image"; category: ExcerptCategory;
     html: string; src?: string; alt?: string;
@@ -959,6 +967,12 @@ export const ArticleView: React.FC<Props> = ({ article }) => {
   const [chatMessages, setChatMessages] = useState<Array<{ role: "user" | "assistant"; text: string }>>([]);
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
+  // Índices de mensagens do assistente já salvas como trecho no artigo — evita
+  // duplicar ao clicar "Salvar" mais de uma vez na mesma resposta
+  const [savedChatIndices, setSavedChatIndices] = useState<Set<number>>(new Set());
+  // Sugestões de link descartadas pelo usuário nesta sessão de visualização
+  // (não persistido — reabrir o artigo mostra as sugestões de novo)
+  const [dismissedTerms, setDismissedTerms] = useState<Set<string>>(new Set());
   // Edição de trechos salvos (texto)
   const [editingExcerptId, setEditingExcerptId] = useState<string | null>(null);
   const [excerptEditDraft, setExcerptEditDraft] = useState("");
@@ -1325,6 +1339,7 @@ export const ArticleView: React.FC<Props> = ({ article }) => {
       const res = await window.lexicon.invoke("claude:summarize", {
         title: article.title,
         text: article.content.replace(/<[^>]+>/g, " ").slice(0, 6000),
+        bypassCache: true,
       });
       if (res.ok && res.data) await saveArticle({ ...article, summary: (res.data as any).summary });
     } finally { setIsLoadingSummary(false); }
@@ -1365,6 +1380,24 @@ export const ArticleView: React.FC<Props> = ({ article }) => {
     }
   }, [chatInput, article, articles]);
 
+  // Persiste uma resposta do chat como trecho do próprio artigo (mesmo
+  // mecanismo de excerto já existente) — decisão explícita do usuário, já
+  // que por design o chat em si não guarda histórico entre sessões.
+  const handleSaveChatAnswer = useCallback(async (index: number, text: string) => {
+    const res = await window.lexicon.invoke("article:appendExcerpt", {
+      targetId: article.id, targetTitle: article.title,
+      html: `<p>${escapeHtml(text)}</p>`, kind: "text", category: "default",
+      sourceArticleId: article.id, sourceArticleTitle: article.title,
+    });
+    if (res.ok) {
+      setSavedChatIndices(s => new Set(s).add(index));
+      await loadArticles();
+      showToast("Resposta salva como trecho do artigo.");
+    } else {
+      showToast(res.error ?? "Falha ao salvar resposta.", "error");
+    }
+  }, [article.id, article.title, loadArticles, showToast]);
+
   // Manual: content é Markdown → HTML + links por texto puro.
   // Wikipedia: content é HTML com spans .wiki-term para ancorar os links.
   const processedHtml = article.source === "manual"
@@ -1378,6 +1411,41 @@ export const ArticleView: React.FC<Props> = ({ article }) => {
       .filter(l => l.targetId === article.id)
       .map(l => ({ sourceId: a.id, sourceTitle: a.title, anchorText: l.anchorText }))
   );
+
+  // Sugestão automática de links: os termos que eram <a> no HTML original da
+  // Wikipedia viram <span class="wiki-term"> na importação (ver wikipedia.ts)
+  // — a marcação de "isso era um conceito linkável" não se perde, só o href.
+  // Cruza esses termos com títulos já existentes na base e sugere o link, em
+  // vez de exigir que o usuário selecione o trecho manualmente toda vez.
+  const linkSuggestions = useMemo(() => {
+    if (article.source !== "wikipedia" || !article.content) return [];
+    const linkedTargetIds = new Set(article.links.map(l => l.targetId));
+    const titleIndex = new Map(
+      articles.filter(a => a.id !== article.id).map(a => [a.title.toLowerCase(), a])
+    );
+    const seen = new Set<string>();
+    const suggestions: Array<{ term: string; target: Article }> = [];
+    const re = /<span class="wiki-term">([\s\S]*?)<\/span>/g;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(article.content)) !== null) {
+      const raw = m[1].replace(/<[^>]+>/g, "").trim();
+      if (!raw) continue;
+      const key = raw.toLowerCase();
+      if (seen.has(key)) continue;
+      const target = titleIndex.get(key);
+      if (!target || linkedTargetIds.has(target.id)) continue;
+      seen.add(key);
+      suggestions.push({ term: raw, target });
+    }
+    return suggestions.slice(0, 20);
+  }, [article.source, article.content, article.links, article.id, articles]);
+
+  const visibleSuggestions = linkSuggestions.filter(s => !dismissedTerms.has(s.term));
+
+  const handleAcceptSuggestion = useCallback(async (term: string, target: Article) => {
+    await addLink(article.id, term, target.id, target.title);
+    showToast(`Link criado: "${term}" → ${target.title}`);
+  }, [article.id, addLink, showToast]);
 
   // Transforma bullet points do Claude em HTML com âncoras de seção
   const summaryHtml = article.summary
@@ -1470,7 +1538,20 @@ export const ArticleView: React.FC<Props> = ({ article }) => {
                 </p>
               )}
               {chatMessages.map((m, i) => (
-                <div key={i} className={`ask-claude-msg ask-claude-${m.role}`}>{m.text}</div>
+                <div key={i} className={`ask-claude-msg ask-claude-${m.role}`}>
+                  {m.text}
+                  {m.role === "assistant" && (
+                    <button
+                      type="button"
+                      className="ask-claude-save-btn"
+                      disabled={savedChatIndices.has(i)}
+                      onClick={() => handleSaveChatAnswer(i, m.text)}
+                      title="Salvar esta resposta como trecho do artigo"
+                    >
+                      {savedChatIndices.has(i) ? "✓ Salvo" : "💾 Salvar no artigo"}
+                    </button>
+                  )}
+                </div>
               ))}
               {chatLoading && (
                 <div className="ask-claude-msg ask-claude-assistant ask-claude-loading">Pensando…</div>
@@ -1508,6 +1589,26 @@ export const ArticleView: React.FC<Props> = ({ article }) => {
           </div>
         )}
 
+        {/* Sugestões de link automáticas — termos que eram <a> na Wikipedia
+            original e batem com títulos já existentes na base */}
+        {visibleSuggestions.length > 0 && !showSummary && (
+          <div className="wiki-toc link-suggestions">
+            <div className="wiki-toc-title">Links sugeridos</div>
+            <ol className="wiki-toc-list">
+              {visibleSuggestions.map(({ term, target }) => (
+                <li key={term}>
+                  <span className="suggestion-term">{term}</span>
+                  <span className="toc-target"> → {target.title}</span>
+                  <button className="suggestion-accept-btn" title="Criar link"
+                          onClick={() => handleAcceptSuggestion(term, target)}>✓</button>
+                  <button className="toc-remove-btn" title="Descartar sugestão"
+                          onClick={() => setDismissedTerms(s => new Set(s).add(term))}>✕</button>
+                </li>
+              ))}
+            </ol>
+          </div>
+        )}
+
         {/* Conteúdo principal */}
         {isEditing ? (
           <div className="manual-editor">
@@ -1525,6 +1626,11 @@ export const ArticleView: React.FC<Props> = ({ article }) => {
           </div>
         ) : showSummary ? (
           <div ref={summaryRef} className="wiki-content summary-content">
+            {summaryFailed && (
+              <p className="summary-failed-notice">
+                O resumo automático falhou ao criar este artigo. Tente gerar novamente.
+              </p>
+            )}
             <div dangerouslySetInnerHTML={{ __html: summaryHtml }} />
             <div className="summary-actions">
               <button className="wiki-btn" onClick={handleRegenerateSummary} disabled={isLoadingSummary}>

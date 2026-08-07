@@ -35,15 +35,33 @@ function ensureFlashcardsDir() {
 }
 function flashcardsPath(articleId) { return path.join(FLASHCARDS_DIR, `${articleId}.json`); }
 
+// Cache em memória por articleId — evita reler e reparsear os JSONs de todos
+// os artigos a cada flashcards:listDue (mesmo padrão de articleHandlers.js/
+// articlesCache). Invalidado (atualizado, não apenas limpo) em toda escrita.
+const flashcardsCache = new Map();
+
 function readFlashcards(articleId) {
+  if (flashcardsCache.has(articleId)) return flashcardsCache.get(articleId);
   ensureFlashcardsDir();
   const p = flashcardsPath(articleId);
-  if (!fs.existsSync(p)) return [];
-  try { return JSON.parse(fs.readFileSync(p, "utf8")); } catch { return []; }
+  let cards = [];
+  if (fs.existsSync(p)) {
+    try { cards = JSON.parse(fs.readFileSync(p, "utf8")); } catch { cards = []; }
+  }
+  flashcardsCache.set(articleId, cards);
+  return cards;
 }
 function writeFlashcards(articleId, cards) {
   ensureFlashcardsDir();
   fs.writeFileSync(flashcardsPath(articleId), JSON.stringify(cards, null, 2), "utf8");
+  flashcardsCache.set(articleId, cards);
+}
+
+// article:delete/restore movem o arquivo de flashcards direto (rename, sem
+// passar por writeFlashcards) — chamado por articleHandlers.js para manter
+// o cache coerente nesses casos.
+function invalidateFlashcardsCache(articleId) {
+  flashcardsCache.delete(articleId);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -376,10 +394,8 @@ function createFlashcardHandlers(ipcMain) {
       const now = new Date().toISOString();
       const due = [];
       for (const f of fs.readdirSync(FLASHCARDS_DIR).filter(f => f.endsWith(".json"))) {
-        try {
-          const cards = JSON.parse(fs.readFileSync(path.join(FLASHCARDS_DIR, f), "utf8"));
-          for (const c of cards) if (c.due <= now) due.push(c);
-        } catch { /* arquivo corrompido — ignora */ }
+        const cards = readFlashcards(f.replace(".json", ""));
+        for (const c of cards) if (c.due <= now) due.push(c);
       }
       due.sort((a, b) => a.due.localeCompare(b.due));
       return { ok: true, data: due };
@@ -399,4 +415,4 @@ function createFlashcardHandlers(ipcMain) {
   });
 }
 
-module.exports = { createFlashcardHandlers, parseFlashcardsFromText };
+module.exports = { createFlashcardHandlers, parseFlashcardsFromText, invalidateFlashcardsCache };

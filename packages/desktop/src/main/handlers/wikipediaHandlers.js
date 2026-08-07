@@ -97,8 +97,20 @@ function sanitizeWikipediaHtml(html) {
 
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Cache em memória por termo normalizado (lang + query/título em minúsculas,
+// sem espaços nas pontas) — evita chamadas de rede duplicadas quando o
+// usuário busca/reabre o mesmo termo mais de uma vez na mesma sessão. Sem
+// TTL: o conteúdo da Wikipedia é estável o suficiente para a duração do app,
+// e o cache é descartado ao fechar.
+const searchCache = new Map();
+const fetchCache = new Map();
+function cacheKey(lang, term) { return `${lang}::${term.trim().toLowerCase()}`; }
+
 // Busca títulos candidatos na API de search
 async function searchWikipedia(query, lang, limit) {
+  const key = cacheKey(lang, `${query}::${limit}`);
+  if (searchCache.has(key)) return searchCache.get(key);
+
   const searchUrl =
     `https://${lang}.wikipedia.org/w/api.php?` +
     `action=query&list=search&srsearch=${encodeURIComponent(query)}` +
@@ -109,7 +121,9 @@ async function searchWikipedia(query, lang, limit) {
     throw new Error(`Wikipedia retornou status ${searchRes.status}`);
   }
   const searchData = JSON.parse(searchRes.body);
-  return searchData?.query?.search ?? [];
+  const results = searchData?.query?.search ?? [];
+  searchCache.set(key, results);
+  return results;
 }
 
 function createWikipediaHandlers(ipcMain) {
@@ -138,6 +152,9 @@ function createWikipediaHandlers(ipcMain) {
   // lang: código de idioma (padrão "pt")
   ipcMain.handle("wikipedia:fetch", async (_evt, { query, exactTitle, lang = "pt" }) => {
     try {
+      const fetchKey = cacheKey(lang, exactTitle ?? query ?? "");
+      if (fetchCache.has(fetchKey)) return { ok: true, data: fetchCache.get(fetchKey) };
+
       let pageTitle = exactTitle;
       if (!pageTitle) {
         // Passo 1: busca o título exato via API de search
@@ -175,15 +192,17 @@ function createWikipediaHandlers(ipcMain) {
         if (text.length > 60) paragraphs.push(text);
       }
 
-      return {
-        ok: true,
-        data: {
-          title: pageTitle,
-          html: cleanHtml,
-          plainTextExtract: paragraphs.join("\n\n"),
-          sourceUrl: `https://${lang}.wikipedia.org/wiki/${encodeURIComponent(pageTitle)}`,
-        },
+      const data = {
+        title: pageTitle,
+        html: cleanHtml,
+        plainTextExtract: paragraphs.join("\n\n"),
+        sourceUrl: `https://${lang}.wikipedia.org/wiki/${encodeURIComponent(pageTitle)}`,
       };
+      fetchCache.set(fetchKey, data);
+      // Também indexa pelo título resolvido — cobre o caso de busca por
+      // termo aproximado seguida de reabertura pelo título exato.
+      fetchCache.set(cacheKey(lang, pageTitle), data);
+      return { ok: true, data };
     } catch (e) {
       return { ok: false, error: e.message };
     }

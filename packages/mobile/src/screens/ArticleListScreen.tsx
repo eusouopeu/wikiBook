@@ -10,8 +10,9 @@
 // pelo mesmo motivo.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { useStore, ReviewModal, FolderPicker } from "@lexicon/shared";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Dialog } from "@capacitor/dialog";
+import { useStore, ReviewModal, FolderPicker, VirtualList } from "@lexicon/shared";
 import type { Article, Flashcard, FlashcardGrade } from "@lexicon/shared";
 
 const SOURCE_COLOR: Record<Article["source"], string> = {
@@ -30,7 +31,7 @@ interface Props {
 export function ArticleListScreen({ onOpenArticle, onNewArticle, onSettings, onOpenGraph }: Props) {
   const {
     articles, activeArticleId, loadArticles,
-    searchQuery, setSearchQuery, selectedTag, setSelectedTag, showToast,
+    searchQuery, setSearchQuery, selectedTags, toggleSelectedTag, showToast,
     folders, selectedFolder, setSelectedFolder,
     createFolder, renameFolder, deleteFolder, setArticleFolder,
   } = useStore();
@@ -52,8 +53,17 @@ export function ArticleListScreen({ onOpenArticle, onNewArticle, onSettings, onO
     if (renamingFolderId && renameDraft.trim()) await renameFolder(renamingFolderId, renameDraft.trim());
     setRenamingFolderId(null);
   }
+  // Dialog.confirm em vez de window.confirm(): dentro da WebView do Capacitor,
+  // o confirm() nativo do browser renderiza com estilo inconsistente com o
+  // resto do app — ruim justo numa confirmação destrutiva.
   async function handleDeleteFolder(id: string, name: string) {
-    if (!window.confirm(`Excluir a pasta "${name}"?\n\nOs artigos dentro dela voltam para "Sem pasta".`)) return;
+    const { value } = await Dialog.confirm({
+      title: "Excluir pasta",
+      message: `Excluir a pasta "${name}"?\n\nOs artigos dentro dela voltam para "Sem pasta".`,
+      okButtonTitle: "Excluir",
+      cancelButtonTitle: "Cancelar",
+    });
+    if (!value) return;
     await deleteFolder(id);
   }
 
@@ -116,6 +126,11 @@ export function ArticleListScreen({ onOpenArticle, onNewArticle, onSettings, onO
   const [semanticSearch, setSemanticSearch] = useState(false);
   const [semanticLoading, setSemanticLoading] = useState(false);
   const [semanticResultIds, setSemanticResultIds] = useState<string[] | null>(null);
+  // A chamada via CapacitorHttp não expõe cancelamento real (sem AbortSignal),
+  // então usamos um token de requisição: cada busca dispara com um número
+  // sequencial, e só a resposta cujo número ainda é o mais recente é aplicada
+  // — descarta respostas obsoletas de buscas anteriores mais lentas.
+  const searchRequestId = useRef(0);
 
   useEffect(() => {
     if (!semanticSearch || searchQuery.trim().length < 3) {
@@ -124,16 +139,19 @@ export function ArticleListScreen({ onOpenArticle, onNewArticle, onSettings, onO
     }
     setSemanticLoading(true);
     const id = setTimeout(async () => {
+      const requestId = ++searchRequestId.current;
       try {
         const res = await window.lexicon.invoke("claude:searchRank", {
           query: searchQuery.trim(),
           candidates: articles.map(a => ({ id: a.id, title: a.title, summary: a.summary })),
         });
+        if (requestId !== searchRequestId.current) return;
         setSemanticResultIds(res.ok ? (res.data as { ids: string[] }).ids : null);
       } catch {
+        if (requestId !== searchRequestId.current) return;
         setSemanticResultIds(null);
       } finally {
-        setSemanticLoading(false);
+        if (requestId === searchRequestId.current) setSemanticLoading(false);
       }
     }, 400);
     return () => clearTimeout(id);
@@ -147,7 +165,7 @@ export function ArticleListScreen({ onOpenArticle, onNewArticle, onSettings, onO
       return articles
         .filter(a =>
           rank.has(a.id) &&
-          (!selectedTag || (a.tags ?? []).includes(selectedTag)) &&
+          selectedTags.every(t => (a.tags ?? []).includes(t)) &&
           (!selectedFolder || a.folderId === selectedFolder)
         )
         .sort((a, b) => rank.get(a.id)! - rank.get(b.id)!);
@@ -155,7 +173,7 @@ export function ArticleListScreen({ onOpenArticle, onNewArticle, onSettings, onO
 
     let result = articles.filter(a =>
       (!q || (searchIndex.get(a.id) ?? "").includes(q)) &&
-      (!selectedTag || (a.tags ?? []).includes(selectedTag)) &&
+      selectedTags.every(t => (a.tags ?? []).includes(t)) &&
       (!selectedFolder || a.folderId === selectedFolder)
     );
     if (q) {
@@ -165,7 +183,7 @@ export function ArticleListScreen({ onOpenArticle, onNewArticle, onSettings, onO
       ];
     }
     return result;
-  }, [articles, searchQuery, selectedTag, selectedFolder, searchIndex, semanticSearch, semanticResultIds]);
+  }, [articles, searchQuery, selectedTags, selectedFolder, searchIndex, semanticSearch, semanticResultIds]);
 
   return (
     <div className="mobile-screen">
@@ -239,8 +257,8 @@ export function ArticleListScreen({ onOpenArticle, onNewArticle, onSettings, onO
           {allTags.map(t => (
             <button
               key={t}
-              className={`mobile-tag ${selectedTag === t ? "active" : ""}`}
-              onClick={() => setSelectedTag(selectedTag === t ? null : t)}
+              className={`mobile-tag ${selectedTags.includes(t) ? "active" : ""}`}
+              onClick={() => toggleSelectedTag(t)}
             >
               #{t}
             </button>
@@ -256,34 +274,40 @@ export function ArticleListScreen({ onOpenArticle, onNewArticle, onSettings, onO
 
       <button className="mobile-new-article-btn" onClick={onNewArticle}>+ Novo artigo</button>
 
-      <ul className="mobile-article-list">
-        {filteredArticles.map(a => (
-          <li
-            key={a.id}
-            className={`mobile-article-item ${a.id === activeArticleId ? "active" : ""}`}
-            onClick={() => onOpenArticle(a.id)}
-          >
-            <span className="mobile-dot" style={{ background: SOURCE_COLOR[a.source] }} />
-            <span className="mobile-article-title">{a.title}</span>
-            {a.links.length > 0 && <span className="mobile-link-count">{a.links.length}</span>}
-            <button
-              type="button" className="article-item-folder-btn" title="Mover para pasta"
-              onClick={e => {
-                e.stopPropagation();
-                const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                setFolderPickerFor({ articleId: a.id, x: rect.left, y: rect.bottom + 4 });
-              }}
-            >
-              📁
-            </button>
-          </li>
-        ))}
-        {filteredArticles.length === 0 && (
+      {filteredArticles.length === 0 ? (
+        <ul className="mobile-article-list">
           <li className="mobile-empty">
-            {searchQuery || selectedTag || selectedFolder ? "Nenhum resultado." : "Nenhum artigo ainda."}
+            {searchQuery || selectedTags.length > 0 || selectedFolder ? "Nenhum resultado." : "Nenhum artigo ainda."}
           </li>
-        )}
-      </ul>
+        </ul>
+      ) : (
+        <VirtualList
+          className="mobile-article-list"
+          items={filteredArticles}
+          itemHeight={46}
+          itemKey={(a: Article) => a.id}
+          renderItem={(a: Article) => (
+            <div
+              className={`mobile-article-item ${a.id === activeArticleId ? "active" : ""}`}
+              onClick={() => onOpenArticle(a.id)}
+            >
+              <span className="mobile-dot" style={{ background: SOURCE_COLOR[a.source] }} />
+              <span className="mobile-article-title">{a.title}</span>
+              {a.links.length > 0 && <span className="mobile-link-count">{a.links.length}</span>}
+              <button
+                type="button" className="article-item-folder-btn" title="Mover para pasta"
+                onClick={e => {
+                  e.stopPropagation();
+                  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                  setFolderPickerFor({ articleId: a.id, x: rect.left, y: rect.bottom + 4 });
+                }}
+              >
+                📁
+              </button>
+            </div>
+          )}
+        />
+      )}
 
       {folderPickerFor && (
         <FolderPicker

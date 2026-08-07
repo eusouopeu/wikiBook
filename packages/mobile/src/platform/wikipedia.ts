@@ -46,7 +46,19 @@ function sanitizeWikipediaHtml(html: string): string {
 
 const WIKI_UA = "Lexicon/1.0 (app pessoal; contato@exemplo.com) Capacitor";
 
+// Cache em memória por termo normalizado — evita chamadas de rede duplicadas
+// quando o usuário busca/reabre o mesmo termo mais de uma vez na mesma
+// sessão. Sem TTL: descartado ao fechar o app, e o conteúdo da Wikipedia é
+// estável o suficiente para a duração de uma sessão.
+const searchCache = new Map<string, Array<{ title: string; snippet: string }>>();
+const fetchCache = new Map<string, { title: string; html: string; plainTextExtract: string; sourceUrl: string }>();
+function cacheKey(lang: string, term: string) { return `${lang}::${term.trim().toLowerCase()}`; }
+
 async function searchWikipedia(query: string, lang: string, limit: number) {
+  const key = cacheKey(lang, `${query}::${limit}`);
+  const cached = searchCache.get(key);
+  if (cached) return cached;
+
   const res = await CapacitorHttp.get({
     url: `https://${lang}.wikipedia.org/w/api.php`,
     params: {
@@ -57,7 +69,9 @@ async function searchWikipedia(query: string, lang: string, limit: number) {
   });
   if (res.status !== 200) throw new Error(`Wikipedia retornou status ${res.status}`);
   const data = typeof res.data === "string" ? JSON.parse(res.data) : res.data;
-  return data?.query?.search ?? [];
+  const results = data?.query?.search ?? [];
+  searchCache.set(key, results);
+  return results;
 }
 
 export async function search(query: string, lang: string): Promise<Array<{ title: string; snippet: string }>> {
@@ -71,6 +85,10 @@ export async function search(query: string, lang: string): Promise<Array<{ title
 export async function fetchArticle(
   query: string | undefined, exactTitle: string | undefined, lang: string
 ): Promise<{ title: string; html: string; plainTextExtract: string; sourceUrl: string }> {
+  const fetchKey = cacheKey(lang, exactTitle ?? query ?? "");
+  const cachedFetch = fetchCache.get(fetchKey);
+  if (cachedFetch) return cachedFetch;
+
   let pageTitle = exactTitle;
   if (!pageTitle) {
     const results = await searchWikipedia(query ?? "", lang, 1);
@@ -98,10 +116,13 @@ export async function fetchArticle(
     if (text.length > 60) paragraphs.push(text);
   }
 
-  return {
+  const data = {
     title: pageTitle,
     html: cleanHtml,
     plainTextExtract: paragraphs.join("\n\n"),
     sourceUrl: `https://${lang}.wikipedia.org/wiki/${encodeURIComponent(pageTitle)}`,
   };
+  fetchCache.set(fetchKey, data);
+  fetchCache.set(cacheKey(lang, pageTitle), data);
+  return data;
 }

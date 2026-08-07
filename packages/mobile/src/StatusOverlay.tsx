@@ -11,9 +11,10 @@ import React from "react";
 import { useStore } from "@lexicon/shared";
 
 export function StatusOverlay() {
-  const toast = useStore(s => s.toast);
+  const toasts = useStore(s => s.toasts);
   const pendingTask = useStore(s => s.pendingTask);
-  if (!toast && !pendingTask) return null;
+  const dismissToast = useStore(s => s.dismissToast);
+  if (toasts.length === 0 && !pendingTask) return null;
   return (
     <div className="status-overlay">
       {pendingTask && (
@@ -22,16 +23,20 @@ export function StatusOverlay() {
           {pendingTask}
         </div>
       )}
-      {toast && (
-        <div className={`toast toast-${toast.type}`}>
+      {toasts.map(toast => (
+        <div key={toast.id} className={`toast toast-${toast.type}`} onClick={() => dismissToast(toast.id)}>
           {toast.message}
           {toast.action && (
-            <button type="button" className="toast-action-btn" onClick={toast.action.onClick}>
+            <button
+              type="button"
+              className="toast-action-btn"
+              onClick={e => { e.stopPropagation(); toast.action!.onClick(); }}
+            >
               {toast.action.label}
             </button>
           )}
         </div>
-      )}
+      ))}
     </div>
   );
 }

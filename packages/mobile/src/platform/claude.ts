@@ -123,22 +123,45 @@ async function callClaude(apiKey: string, systemPrompt: string, userMessage: str
   }
 }
 
-export async function summarize(text: string, title = ""): Promise<string> {
+// Cache em memória por termo normalizado — mesmo raciocínio do desktop
+// (claudeHandlers.js): reabrir/recriar o mesmo título não deve pagar por uma
+// chamada nova à API paga da Anthropic. Sem TTL, descartado ao fechar o app.
+// Não cobre ask() (contextual, cada pergunta é distinta) nem searchRank()
+// (a lista de candidatos muda a cada digitação).
+const summarizeCache = new Map<string, string>();
+const generateCache = new Map<string, string>();
+function normTerm(s: string) { return s.trim().toLowerCase(); }
+
+// bypassCache: usado pelo botão "↺ Regenerar resumo", onde o usuário pede
+// explicitamente uma resposta nova — ainda grava o resultado no cache.
+export async function summarize(text: string, title = "", bypassCache = false): Promise<string> {
+  const cacheKey = normTerm(title) || normTerm(text.slice(0, 200));
+  if (!bypassCache) {
+    const cached = summarizeCache.get(cacheKey);
+    if (cached) return cached;
+  }
   const apiKey = await getConfigValue("anthropicApiKey");
   if (!apiKey) throw new Error("API key da Anthropic não configurada.");
   const userMsg = title
     ? `Título: ${title}\n\nTexto:\n${text.slice(0, 6000)}`
     : text.slice(0, 6000);
-  return callClaude(apiKey, SYSTEM_SUMMARIZE, userMsg, 600);
+  const summary = await callClaude(apiKey, SYSTEM_SUMMARIZE, userMsg, 600);
+  summarizeCache.set(cacheKey, summary);
+  return summary;
 }
 
 export async function generate(title: string, context = ""): Promise<string> {
+  const cacheKey = `${normTerm(title)}::${normTerm(context.slice(0, 200))}`;
+  const cached = generateCache.get(cacheKey);
+  if (cached) return cached;
   const apiKey = await getConfigValue("anthropicApiKey");
   if (!apiKey) throw new Error("API key da Anthropic não configurada.");
   const userMsg = context
     ? `Conceito: ${title}\n\nContexto adicional (artigos relacionados na minha base):\n${context.slice(0, 2000)}`
     : `Conceito: ${title}`;
-  return callClaude(apiKey, SYSTEM_GENERATE, userMsg, 800);
+  const summary = await callClaude(apiKey, SYSTEM_GENERATE, userMsg, 800);
+  generateCache.set(cacheKey, summary);
+  return summary;
 }
 
 export async function ask(

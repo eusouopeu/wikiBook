@@ -130,13 +130,33 @@ Regras:
 
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Cache em memória por termo normalizado — chamar summarize/generate de novo
+// para o mesmo título (reabrir um artigo da Wikipedia já resumido, gerar o
+// mesmo conceito duas vezes) reaproveita a resposta anterior em vez de pagar
+// por uma chamada nova à API paga da Anthropic. Sem TTL: descartado ao
+// fechar o app. Não se aplica a claude:ask (conversa contextual, cada
+// pergunta é distinta por natureza) nem a claude:searchRank (a lista de
+// candidatos muda a cada digitação).
+const summarizeCache = new Map();
+const generateCache = new Map();
+function normTerm(s) { return (s ?? "").trim().toLowerCase(); }
+
 function createClaudeHandlers(ipcMain) {
 
   // ── claude:summarize { text, title? } → { summary: string } ─────────────────
   // Gera resumo em bullet points a partir de texto já existente (ex.: extraído
   // da Wikipedia). Chamado automaticamente ao salvar um artigo da Wikipedia.
-  ipcMain.handle("claude:summarize", async (_evt, { text, title = "" }) => {
+  // bypassCache: true no payload pula a leitura do cache (mas ainda grava o
+  // resultado novo nele) — usado pelo botão "↺ Regenerar resumo" do
+  // ArticleView, onde o usuário pede explicitamente uma resposta nova, não a
+  // já vista antes.
+  ipcMain.handle("claude:summarize", async (_evt, { text, title = "", bypassCache = false }) => {
     try {
+      const cacheKey = normTerm(title) || normTerm(text.slice(0, 200));
+      if (!bypassCache && summarizeCache.has(cacheKey)) {
+        return { ok: true, data: { summary: summarizeCache.get(cacheKey) } };
+      }
+
       const { getConfig } = require("./configHandlers");
       const apiKey = getConfig("anthropicApiKey");
       if (!apiKey) {
@@ -148,6 +168,7 @@ function createClaudeHandlers(ipcMain) {
         : text.slice(0, 6000);
 
       const summary = await callClaude(apiKey, SYSTEM_SUMMARIZE, userMsg, 600);
+      summarizeCache.set(cacheKey, summary);
       return { ok: true, data: { summary } };
     } catch (e) {
       return { ok: false, error: e.message };
@@ -160,6 +181,9 @@ function createClaudeHandlers(ipcMain) {
   // context: texto opcional de outros artigos relacionados para dar contexto
   ipcMain.handle("claude:generate", async (_evt, { title, context = "" }) => {
     try {
+      const cacheKey = `${normTerm(title)}::${normTerm(context.slice(0, 200))}`;
+      if (generateCache.has(cacheKey)) return { ok: true, data: { summary: generateCache.get(cacheKey) } };
+
       const { getConfig } = require("./configHandlers");
       const apiKey = getConfig("anthropicApiKey");
       if (!apiKey) {
@@ -171,6 +195,7 @@ function createClaudeHandlers(ipcMain) {
         : `Conceito: ${title}`;
 
       const summary = await callClaude(apiKey, SYSTEM_GENERATE, userMsg, 800);
+      generateCache.set(cacheKey, summary);
       return { ok: true, data: { summary } };
     } catch (e) {
       return { ok: false, error: e.message };

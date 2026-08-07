@@ -694,6 +694,15 @@ html, body, #root {
 
 .summary-actions { margin-top: 20px; }
 
+.summary-failed-notice {
+  background: rgba(192, 57, 43, 0.1);
+  border: 1px solid #c0392b;
+  border-radius: 6px;
+  color: #e74c3c;
+  margin-bottom: 16px;
+  padding: 8px 12px;
+}
+
 .wiki-btn {
   background: var(--bg-input);
   border: 1px solid var(--border);
@@ -1219,6 +1228,20 @@ mark.find-match-current {
 }
 .wiki-toc-list li:hover .toc-remove-btn { opacity: 0.7; }
 .toc-remove-btn:hover { color: #c0392b; opacity: 1 !important; }
+
+.link-suggestions { border-style: dashed; }
+.suggestion-term { color: var(--fg); font-size: 13px; }
+.suggestion-accept-btn {
+  background: none;
+  border: none;
+  color: var(--fg3);
+  cursor: pointer;
+  font-size: 12px;
+  margin-left: 6px;
+  padding: 1px 4px;
+  transition: color 0.15s;
+}
+.suggestion-accept-btn:hover { color: #1d9e75; }
 
 /* Select nos modais (idioma da Wikipedia) */
 .modal select {
@@ -1768,6 +1791,19 @@ mark.find-match-current {
   max-width: 90%;
 }
 .ask-claude-loading { color: var(--fg3); font-style: italic; }
+.ask-claude-save-btn {
+  background: none;
+  border: 1px solid var(--border-light);
+  border-radius: 4px;
+  color: var(--fg3);
+  cursor: pointer;
+  display: block;
+  font-size: 11px;
+  margin-top: 6px;
+  padding: 2px 8px;
+}
+.ask-claude-save-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.ask-claude-save-btn:disabled { cursor: default; opacity: 0.6; }
 .ask-claude-form { display: flex; gap: 8px; }
 .ask-claude-form input {
   background: var(--bg-input);

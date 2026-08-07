@@ -357,6 +357,9 @@ function createArticleHandlers(ipcMain) {
         if (!fs.existsSync(FLASHCARDS_TRASH_DIR)) fs.mkdirSync(FLASHCARDS_TRASH_DIR, { recursive: true });
         fs.renameSync(flashcardsPath, path.join(FLASHCARDS_TRASH_DIR, `${id}.json`));
       }
+      // Require tardio (não no topo do arquivo) para evitar dependência
+      // circular — flashcardHandlers.js já requer articleHandlers.js.
+      require("./flashcardHandlers").invalidateFlashcardsCache(id);
       return { ok: true };
     } catch (e) { return { ok: false, error: e.message }; }
   });
@@ -380,6 +383,7 @@ function createArticleHandlers(ipcMain) {
         if (!fs.existsSync(FLASHCARDS_DIR)) fs.mkdirSync(FLASHCARDS_DIR, { recursive: true });
         fs.renameSync(flashcardsTrashPath, path.join(FLASHCARDS_DIR, `${id}.json`));
       }
+      require("./flashcardHandlers").invalidateFlashcardsCache(id);
       return { ok: true, data: readArticle(id) };
     } catch (e) { return { ok: false, error: e.message }; }
   });

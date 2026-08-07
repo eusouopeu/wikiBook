@@ -68,7 +68,7 @@ async function invoke(channel: string, payload?: any): Promise<IpcResponse> {
         return { ok: true, data: await wikipedia.fetchArticle(payload.query, payload.exactTitle, payload.lang ?? "pt") };
 
       case "claude:summarize":
-        return { ok: true, data: { summary: await claude.summarize(payload.text, payload.title ?? "") } };
+        return { ok: true, data: { summary: await claude.summarize(payload.text, payload.title ?? "", payload.bypassCache ?? false) } };
       case "claude:generate":
         return { ok: true, data: { summary: await claude.generate(payload.title, payload.context ?? "") } };
       case "claude:ask":
