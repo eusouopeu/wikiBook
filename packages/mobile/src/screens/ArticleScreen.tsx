@@ -29,6 +29,7 @@ export function ArticleScreen({ article, onBack }: Props) {
     <div className="mobile-article-screen">
       <div className="mobile-article-screen-nav">
         <button className="mobile-back-btn" onClick={onBack}>‹ Artigos</button>
+        <span className="mobile-article-screen-title">{article.title}</span>
       </div>
       <div className="mobile-article-screen-body">
         <ArticleView article={article} />

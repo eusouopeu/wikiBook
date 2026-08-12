@@ -22,9 +22,9 @@ interface Props {
 
 const GraphControls: React.FC<{ canvasRef: React.RefObject<HTMLCanvasElement | null> }> = ({ canvasRef }) => (
   <div className="graph-controls">
-    <button title="Aproximar" onClick={() => (canvasRef.current as any)?.__zoomIn()}>＋</button>
-    <button title="Afastar" onClick={() => (canvasRef.current as any)?.__zoomOut()}>－</button>
-    <button title="Resetar" onClick={() => (canvasRef.current as any)?.__zoomReset()}>⌖</button>
+    <button title="Aproximar" aria-label="Aproximar" onClick={() => (canvasRef.current as any)?.__zoomIn()}>＋</button>
+    <button title="Afastar" aria-label="Afastar" onClick={() => (canvasRef.current as any)?.__zoomOut()}>－</button>
+    <button title="Resetar" aria-label="Resetar" onClick={() => (canvasRef.current as any)?.__zoomReset()}>⌖</button>
   </div>
 );
 

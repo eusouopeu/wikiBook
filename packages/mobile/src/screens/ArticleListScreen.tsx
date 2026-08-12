@@ -34,6 +34,7 @@ export function ArticleListScreen({ onOpenArticle, onNewArticle, onSettings, onO
     searchQuery, setSearchQuery, selectedTags, toggleSelectedTag, showToast,
     folders, selectedFolder, setSelectedFolder,
     createFolder, renameFolder, deleteFolder, setArticleFolder,
+    listDensity, setListDensity, setPendingTask,
   } = useStore();
 
   const [dueCount, setDueCount] = useState(0);
@@ -85,19 +86,29 @@ export function ArticleListScreen({ onOpenArticle, onNewArticle, onSettings, onO
   // pasta" no mobile, quem decide o destino final é o usuário no share sheet
   // (Arquivos, iCloud Drive, Google Drive, AirDrop…).
   async function handleExportMarkdown() {
-    const res = await window.lexicon.invoke("article:exportMarkdown");
-    if (!res.ok) { showToast(res.error ?? "Falha na exportação.", "error"); return; }
-    const { count } = res.data as { count: number };
-    if (count === 0) { showToast("Nenhum artigo para exportar."); return; }
-    showToast(`${count} artigo${count > 1 ? "s" : ""} pronto${count > 1 ? "s" : ""} — escolha o destino.`);
+    setPendingTask("Exportando artigos…");
+    try {
+      const res = await window.lexicon.invoke("article:exportMarkdown");
+      if (!res.ok) { showToast(res.error ?? "Falha na exportação.", "error"); return; }
+      const { count } = res.data as { count: number };
+      if (count === 0) { showToast("Nenhum artigo para exportar."); return; }
+      showToast(`${count} artigo${count > 1 ? "s" : ""} pronto${count > 1 ? "s" : ""} — escolha o destino.`);
+    } finally {
+      setPendingTask(null);
+    }
   }
 
   async function handleExportFlashcardsCsv() {
-    const res = await window.lexicon.invoke("article:exportFlashcardsCsv");
-    if (!res.ok) { showToast(res.error ?? "Falha ao exportar flashcards.", "error"); return; }
-    const { count } = res.data as { count: number };
-    if (count === 0) { showToast("Nenhum trecho de texto salvo para exportar."); return; }
-    showToast(`${count} flashcard${count > 1 ? "s" : ""} pronto${count > 1 ? "s" : ""} — escolha o destino.`);
+    setPendingTask("Exportando flashcards…");
+    try {
+      const res = await window.lexicon.invoke("article:exportFlashcardsCsv");
+      if (!res.ok) { showToast(res.error ?? "Falha ao exportar flashcards.", "error"); return; }
+      const { count } = res.data as { count: number };
+      if (count === 0) { showToast("Nenhum trecho de texto salvo para exportar."); return; }
+      showToast(`${count} flashcard${count > 1 ? "s" : ""} pronto${count > 1 ? "s" : ""} — escolha o destino.`);
+    } finally {
+      setPendingTask(null);
+    }
   }
 
   useEffect(() => { loadArticles(); refreshDueCount(); }, [loadArticles, refreshDueCount]);
@@ -190,10 +201,18 @@ export function ArticleListScreen({ onOpenArticle, onNewArticle, onSettings, onO
       <header className="mobile-header">
         <h1>Lexicon</h1>
         <div className="mobile-header-actions">
-          <button className="mobile-icon-btn" title="Exportar Markdown" onClick={handleExportMarkdown}>⤓</button>
-          <button className="mobile-icon-btn" title="Exportar flashcards (CSV)" onClick={handleExportFlashcardsCsv}>🎴</button>
-          <button className="mobile-icon-btn" title="Grafo" onClick={onOpenGraph}>🕸</button>
-          <button className="mobile-icon-btn" title="Configurações" onClick={onSettings}>⚙</button>
+          <button className="mobile-icon-btn" title="Exportar Markdown" aria-label="Exportar Markdown" onClick={handleExportMarkdown}>⤓</button>
+          <button className="mobile-icon-btn" title="Exportar flashcards (CSV)" aria-label="Exportar flashcards (CSV)" onClick={handleExportFlashcardsCsv}>🎴</button>
+          <button
+            className="mobile-icon-btn"
+            title={listDensity === "compact" ? "Lista compacta — toque para expandir" : "Lista expandida — toque para compactar"}
+            aria-label={listDensity === "compact" ? "Alternar para lista expandida" : "Alternar para lista compacta"}
+            onClick={() => setListDensity(listDensity === "compact" ? "comfortable" : "compact")}
+          >
+            {listDensity === "compact" ? "☰" : "▤"}
+          </button>
+          <button className="mobile-icon-btn" title="Grafo" aria-label="Abrir grafo" onClick={onOpenGraph}>🕸</button>
+          <button className="mobile-icon-btn" title="Configurações" aria-label="Configurações" onClick={onSettings}>⚙</button>
         </div>
       </header>
 
@@ -240,9 +259,9 @@ export function ArticleListScreen({ onOpenArticle, onNewArticle, onSettings, onO
                     📁 {f.name}
                   </button>
                   <span className="folder-chip-actions">
-                    <button type="button" title="Renomear pasta"
+                    <button type="button" title="Renomear pasta" aria-label="Renomear pasta"
                             onClick={() => handleRenameFolderStart(f.id, f.name)}>✎</button>
-                    <button type="button" title="Excluir pasta"
+                    <button type="button" title="Excluir pasta" aria-label="Excluir pasta"
                             onClick={() => handleDeleteFolder(f.id, f.name)}>🗑</button>
                   </span>
                 </>
@@ -282,9 +301,9 @@ export function ArticleListScreen({ onOpenArticle, onNewArticle, onSettings, onO
         </ul>
       ) : (
         <VirtualList
-          className="mobile-article-list"
+          className={`mobile-article-list mobile-article-list-${listDensity}`}
           items={filteredArticles}
-          itemHeight={46}
+          itemHeight={listDensity === "compact" ? 46 : 64}
           itemKey={(a: Article) => a.id}
           renderItem={(a: Article) => (
             <div
@@ -292,10 +311,18 @@ export function ArticleListScreen({ onOpenArticle, onNewArticle, onSettings, onO
               onClick={() => onOpenArticle(a.id)}
             >
               <span className="mobile-dot" style={{ background: SOURCE_COLOR[a.source] }} />
-              <span className="mobile-article-title">{a.title}</span>
+              <div className="mobile-article-main">
+                <span className="mobile-article-title">{a.title}</span>
+                {listDensity === "comfortable" && (
+                  <span className="mobile-article-snippet">
+                    {(a.summary || "").replace(/^•\s*/, "").slice(0, 70) || "Sem resumo."}
+                  </span>
+                )}
+              </div>
               {a.links.length > 0 && <span className="mobile-link-count">{a.links.length}</span>}
               <button
                 type="button" className="article-item-folder-btn" title="Mover para pasta"
+                aria-label={`Mover "${a.title}" para pasta`}
                 onClick={e => {
                   e.stopPropagation();
                   const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();

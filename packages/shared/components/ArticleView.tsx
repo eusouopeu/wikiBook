@@ -2,7 +2,7 @@
 // packages/shared/components/ArticleView.tsx
 // ─────────────────────────────────────────────────────────────────────────────
 
-import React, { useRef, useEffect, useLayoutEffect, useState, useCallback, useMemo } from "react";
+import React, { useRef, useEffect, useLayoutEffect, useState, useCallback, useMemo, useId } from "react";
 import { useShallow } from "zustand/react/shallow";
 import DOMPurify from "dompurify";
 import type { Article, ArticleExcerpt, ExcerptCategory, ExcerptOutlineItem, Flashcard, FlashcardGrade } from "../shared/types";
@@ -22,6 +22,16 @@ function sanitize(html: string): string {
     // cores personalizáveis de destaque/texto ([texto]{bg=...}/{color=...})
     ADD_ATTR: ["data-article-id", "style"],
   });
+}
+
+// Transforma bullet points do Claude em HTML com âncoras de seção
+function summaryToHtml(summary: string): string {
+  return summary
+    ? summary.split("\n").filter(Boolean).map(line => {
+        const text = escapeHtml(line.startsWith("•") ? line : "• " + line);
+        return `<p class="summary-bullet">${text}</p>`;
+      }).join("")
+    : "<p class='no-content'>Nenhum resumo disponível.</p>";
 }
 
 // ── Injeta links internos em HTML de artigo manual ────────────────────────────
@@ -161,31 +171,31 @@ const ExcerptEditToolbar: React.FC<{
 
   return (
     <div className="excerpt-toolbar">
-      <button type="button" title="Negrito — ⌘B (**texto**)" onClick={() => wrap("**", "**")}><strong>B</strong></button>
+      <button type="button" title="Negrito — ⌘B (**texto**)" aria-label="Negrito — ⌘B (**texto**)" onClick={() => wrap("**", "**")}><strong>B</strong></button>
       <button type="button" className="hl-swatch hl-swatch-yellow"
-              title="Amarelo: destaque padrão, vira flashcard cloze — ⌘⇧1 (==texto==)"
+              title="Amarelo: destaque padrão, vira flashcard cloze — ⌘⇧1 (==texto==)" aria-label="Amarelo: destaque padrão, vira flashcard cloze — ⌘⇧1 (==texto==)"
               onClick={() => wrap("==", "==")}>A</button>
       <button type="button" className="hl-swatch hl-swatch-def"
-              title="Azul: definição de conceito — ⌘⇧2 ([texto]{.def})"
+              title="Azul: definição de conceito — ⌘⇧2 ([texto]{.def})" aria-label="Azul: definição de conceito — ⌘⇧2 ([texto]{.def})"
               onClick={() => wrap("[", "]{.def}")}>D</button>
       <button type="button" className="hl-swatch hl-swatch-enum"
-              title="Verde: divisão de estrutura / enumeração — ⌘⇧3 ([texto]{.enum})"
+              title="Verde: divisão de estrutura / enumeração — ⌘⇧3 ([texto]{.enum})" aria-label="Verde: divisão de estrutura / enumeração — ⌘⇧3 ([texto]{.enum})"
               onClick={() => wrap("[", "]{.enum}")}>E</button>
       <button type="button" className="hl-swatch hl-swatch-num"
-              title="Roxo: dado numérico importante — ⌘⇧4 ([texto]{.num})"
+              title="Roxo: dado numérico importante — ⌘⇧4 ([texto]{.num})" aria-label="Roxo: dado numérico importante — ⌘⇧4 ([texto]{.num})"
               onClick={() => wrap("[", "]{.num}")}>N</button>
       <button type="button" className="hl-swatch hl-swatch-orange"
-              title="Laranja — ⌘⇧5 (++texto++)"
+              title="Laranja — ⌘⇧5 (++texto++)" aria-label="Laranja — ⌘⇧5 (++texto++)"
               onClick={() => wrap("++", "++")}>L</button>
       <span className="excerpt-toolbar-color-group">
         <input type="color" value={bgColor} onChange={e => setBgColor(e.target.value)} title="Cor do marca-texto" />
-        <button type="button" title="Aplicar marca-texto colorido" onClick={() => wrap("[", `]{bg=${bgColor}}`)}>
+        <button type="button" title="Aplicar marca-texto colorido" aria-label="Aplicar marca-texto colorido" onClick={() => wrap("[", `]{bg=${bgColor}}`)}>
           Marcar
         </button>
       </span>
       <span className="excerpt-toolbar-color-group">
         <input type="color" value={textColor} onChange={e => setTextColor(e.target.value)} title="Cor do texto" />
-        <button type="button" title="Aplicar cor no texto" onClick={() => wrap("[", `]{color=${textColor}}`)}>
+        <button type="button" title="Aplicar cor no texto" aria-label="Aplicar cor no texto" onClick={() => wrap("[", `]{color=${textColor}}`)}>
           Colorir
         </button>
       </span>
@@ -224,14 +234,24 @@ const TableExcerptEditor: React.FC<{
   };
 
   const addRow = () => setMatrix(m => [...m, Array(colCount).fill("")]);
-  const removeRow = (r: number) => setMatrix(m => m.length > 1 ? m.filter((_, ri) => ri !== r) : m);
+  const removeRow = (r: number) => {
+    if (matrix.length <= 1) return;
+    const hasContent = matrix[r].some(cell => cell.trim().length > 0);
+    if (hasContent && !window.confirm("Esta linha tem conteúdo preenchido. Remover mesmo assim?")) return;
+    setMatrix(m => m.filter((_, ri) => ri !== r));
+  };
   const addCol = () => setMatrix(m => m.map(row => {
     const copy = [...row];
     while (copy.length < colCount) copy.push("");
     copy.push("");
     return copy;
   }));
-  const removeCol = () => setMatrix(m => colCount > 1 ? m.map(row => row.slice(0, colCount - 1)) : m);
+  const removeCol = () => {
+    if (colCount <= 1) return;
+    const hasContent = matrix.some(row => (row[colCount - 1] ?? "").trim().length > 0);
+    if (hasContent && !window.confirm("Esta coluna tem conteúdo preenchido. Remover mesmo assim?")) return;
+    setMatrix(m => m.map(row => row.slice(0, colCount - 1)));
+  };
 
   return (
     <div className="excerpt-editor table-editor">
@@ -253,7 +273,7 @@ const TableExcerptEditor: React.FC<{
                   </td>
                 ))}
                 <td className="table-editor-rowctrl">
-                  <button type="button" title="Remover linha" onClick={() => removeRow(r)}
+                  <button type="button" title="Remover linha" aria-label="Remover linha" onClick={() => removeRow(r)}
                           disabled={matrix.length <= 1}>✕</button>
                 </td>
               </tr>
@@ -416,6 +436,7 @@ interface ExcerptsPanelProps {
   onReorder: (outline: ExcerptOutlineItem[]) => void;
   editingExcerptId: string | null;
   editDraft: string;
+  editBaseline: string;
   onStartEdit: (excerptId: string) => void;
   onEditDraftChange: (text: string) => void;
   onSaveEdit: () => void;
@@ -427,7 +448,7 @@ const EXCERPT_KIND_ICON: Record<string, string> = { text: "📝", table: "📊",
 
 const ExcerptsPanel: React.FC<ExcerptsPanelProps> = ({
   article, outline, onOpenSource, onRemoveExcerpt, onReorder,
-  editingExcerptId, editDraft, onStartEdit, onEditDraftChange, onSaveEdit,
+  editingExcerptId, editDraft, editBaseline, onStartEdit, onEditDraftChange, onSaveEdit,
   onSaveTableEdit, onCancelEdit,
 }) => {
   const excerptById = useMemo(() => new Map(article.excerpts.map(e => [e.id, e])), [article.excerpts]);
@@ -502,7 +523,7 @@ const ExcerptsPanel: React.FC<ExcerptsPanelProps> = ({
                   onDragOver={handleDragOver} onDrop={e => handleDrop(e, index)}>
                 <span className="drag-handle" title="Arrastar">⠿</span>
                 <span className="excerpt-heading-text">{item.text}</span>
-                <button className="excerpt-remove-btn" title="Remover heading"
+                <button className="excerpt-remove-btn" title="Remover heading" aria-label="Remover heading"
                         onClick={() => handleRemoveHeading(item.id)}>✕</button>
               </li>
             );
@@ -530,6 +551,7 @@ const ExcerptsPanel: React.FC<ExcerptsPanelProps> = ({
                 {editable && !isEditing && (
                   <button className="excerpt-edit-btn"
                           title={kind === "table" ? "Editar tabela" : "Editar trecho"}
+                          aria-label={kind === "table" ? "Editar tabela" : "Editar trecho"}
                           onClick={() => onStartEdit(ex.id)}>✎</button>
                 )}
               </div>
@@ -551,6 +573,11 @@ const ExcerptsPanel: React.FC<ExcerptsPanelProps> = ({
                     Formatação (negrito, marca-textos) não conta como edição.
                   </p>
                   <div className="excerpt-editor-actions">
+                    {editDraft !== editBaseline && (
+                      <span className="unsaved-indicator" title="Alterações ainda não salvas">
+                        ● Não salvo
+                      </span>
+                    )}
                     <button onClick={onCancelEdit}>Cancelar</button>
                     <button className="primary" onClick={onSaveEdit}>Salvar</button>
                   </div>
@@ -602,12 +629,17 @@ const BacklinksPanel: React.FC<{
 };
 
 // ── Editor de tags (chips no cabeçalho) ───────────────────────────────────────
+// existingTags alimenta um <datalist> com as tags já usadas em outros artigos
+// da base — evita criar quase-duplicatas (ex.: "biologia" vs "biológica") por
+// não saber que uma variante já existe.
 const TagEditor: React.FC<{
   tags: string[];
+  existingTags: string[];
   onChange: (tags: string[]) => void;
-}> = ({ tags, onChange }) => {
+}> = ({ tags, existingTags, onChange }) => {
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState("");
+  const datalistId = useId();
 
   function commit() {
     const tag = draft.trim().toLowerCase().replace(/\s+/g, "-");
@@ -616,26 +648,34 @@ const TagEditor: React.FC<{
     setAdding(false);
   }
 
+  const suggestions = existingTags.filter(t => !tags.includes(t));
+
   return (
     <div className="tag-editor">
       {tags.map(t => (
         <span key={t} className="tag-chip">
           #{t}
-          <button className="tag-remove" title="Remover tag"
+          <button className="tag-remove" title="Remover tag" aria-label="Remover tag"
                   onClick={() => onChange(tags.filter(x => x !== t))}>✕</button>
         </span>
       ))}
       {adding ? (
-        <input
-          className="tag-input" autoFocus value={draft}
-          onChange={e => setDraft(e.target.value)}
-          onKeyDown={e => {
-            if (e.key === "Enter") commit();
-            if (e.key === "Escape") { setDraft(""); setAdding(false); }
-          }}
-          onBlur={commit}
-          placeholder="nova tag…"
-        />
+        <>
+          <input
+            className="tag-input" autoFocus value={draft}
+            list={datalistId}
+            onChange={e => setDraft(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === "Enter") commit();
+              if (e.key === "Escape") { setDraft(""); setAdding(false); }
+            }}
+            onBlur={commit}
+            placeholder="nova tag…"
+          />
+          <datalist id={datalistId}>
+            {suggestions.map(t => <option key={t} value={t} />)}
+          </datalist>
+        </>
       ) : (
         <button className="tag-add-btn" onClick={() => setAdding(true)}>+ tag</button>
       )}
@@ -755,6 +795,9 @@ export const ReviewModal: React.FC<{
 }> = ({ cards, onGrade, onClose }) => {
   const [queue, setQueue] = useState(cards);
   const [revealed, setRevealed] = useState(false);
+  // Total fixado no início da sessão — a fila (queue) só encolhe conforme o
+  // usuário avalia cartões, então "total - queue.length" é a posição atual.
+  const [total] = useState(cards.length);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
@@ -787,8 +830,14 @@ export const ReviewModal: React.FC<{
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal review-modal" onClick={e => e.stopPropagation()}>
         <div className="review-modal-header">
-          <span className="review-progress">{queue.length} restante{queue.length > 1 ? "s" : ""}</span>
+          <span className="review-progress">
+            {total - queue.length + 1} de {total}
+            <span className="review-progress-remaining"> · {queue.length} restante{queue.length > 1 ? "s" : ""}</span>
+          </span>
           <span className="review-article-title">{current.articleTitle}</span>
+        </div>
+        <div className="review-progress-bar">
+          <div className="review-progress-bar-fill" style={{ width: `${((total - queue.length) / total) * 100}%` }} />
         </div>
 
         <div className="review-card">
@@ -898,9 +947,9 @@ const FindInPageBar: React.FC<{
         }}
       />
       <span className="find-in-page-count">{count > 0 ? `${index + 1}/${count}` : "0/0"}</span>
-      <button type="button" title="Anterior" onClick={onPrev} disabled={count === 0}>↑</button>
-      <button type="button" title="Próximo" onClick={onNext} disabled={count === 0}>↓</button>
-      <button type="button" className="find-in-page-close" title="Fechar" onClick={onClose}>✕</button>
+      <button type="button" title="Anterior" aria-label="Anterior" onClick={onPrev} disabled={count === 0}>↑</button>
+      <button type="button" title="Próximo" aria-label="Próximo" onClick={onNext} disabled={count === 0}>↓</button>
+      <button type="button" className="find-in-page-close" title="Fechar" aria-label="Fechar" onClick={onClose}>✕</button>
     </div>
   );
 };
@@ -947,6 +996,10 @@ export const ArticleView: React.FC<Props> = ({ article }) => {
   const summaryRef   = useRef<HTMLDivElement>(null);
   const [showSummary, setShowSummary]         = useState(false);
   const [isLoadingSummary, setIsLoadingSummary] = useState(false);
+  // Prévia do resumo regenerado — nunca sobrescreve o resumo atual direto;
+  // o usuário compara e decide aplicar ou descartar (evita perder o resumo
+  // anterior se a nova geração vier pior).
+  const [summaryPreview, setSummaryPreview] = useState<string | null>(null);
   // Se o resumo automático falhou na criação (ver useStore.ts/fetchFromWikipedia),
   // o artigo é salvo com esse texto fixo — força a aba "Resumo" ao abrir, para
   // que o botão "↺ Regenerar resumo" já existente fique visível de cara, sem
@@ -976,6 +1029,7 @@ export const ArticleView: React.FC<Props> = ({ article }) => {
   // Edição de trechos salvos (texto)
   const [editingExcerptId, setEditingExcerptId] = useState<string | null>(null);
   const [excerptEditDraft, setExcerptEditDraft] = useState("");
+  const [excerptEditBaseline, setExcerptEditBaseline] = useState("");
   // Flashcards
   const [flashcards, setFlashcards] = useState<Flashcard[]>([]);
   const [flashcardsLoading, setFlashcardsLoading] = useState(false);
@@ -994,7 +1048,7 @@ export const ArticleView: React.FC<Props> = ({ article }) => {
           fetchFromWikipedia, generateWithClaude, addLink, removeLink,
           openArticle, articles, saveArticle, deleteArticle, restoreArticle, loadArticles,
           updateTags, updateExcerptMarkdown, updateExcerptOutline,
-          showToast } = useStore(useShallow(s => ({
+          showToast, selectionHintSeen, dismissSelectionHint } = useStore(useShallow(s => ({
     contextMenu: s.contextMenu, showContextMenu: s.showContextMenu,
     hideContextMenu: s.hideContextMenu, fetchFromWikipedia: s.fetchFromWikipedia,
     generateWithClaude: s.generateWithClaude, addLink: s.addLink,
@@ -1002,10 +1056,18 @@ export const ArticleView: React.FC<Props> = ({ article }) => {
     saveArticle: s.saveArticle, deleteArticle: s.deleteArticle, restoreArticle: s.restoreArticle,
     loadArticles: s.loadArticles, updateTags: s.updateTags,
     updateExcerptMarkdown: s.updateExcerptMarkdown, updateExcerptOutline: s.updateExcerptOutline,
-    showToast: s.showToast,
+    showToast: s.showToast, selectionHintSeen: s.selectionHintSeen,
+    dismissSelectionHint: s.dismissSelectionHint,
   })));
 
   const outline = useMemo(() => resolveOutline(article), [article]);
+
+  // Todas as tags já usadas na base — alimenta o autocomplete do TagEditor
+  const allTags = useMemo(() => {
+    const set = new Set<string>();
+    for (const a of articles) for (const t of a.tags ?? []) set.add(t);
+    return Array.from(set).sort();
+  }, [articles]);
 
   // Carrega os flashcards já gerados para este artigo (sem forçar regeneração)
   const loadFlashcards = useCallback(async () => {
@@ -1129,7 +1191,26 @@ export const ArticleView: React.FC<Props> = ({ article }) => {
       imageSrc: imgEl?.src,
       imageAlt: imgEl?.alt,
     });
-  }, [article.id, showContextMenu]);
+    // Usar o menu de contexto sobre uma seleção é o próprio usuário
+    // descobrindo o fluxo — não precisa mais ver a dica.
+    if (sel && !selectionHintSeen) { dismissSelectionHint(); setSelectionHint(null); }
+  }, [article.id, showContextMenu, selectionHintSeen, dismissSelectionHint]);
+
+  // ── Dica de descoberta: primeira seleção de texto num artigo ────────────────
+  // Some artigos "manuais" também suportam clique-direito; a dica cobre o
+  // fluxo mais comum (Wikipedia/Claude) sem exigir configuração adicional.
+  const [selectionHint, setSelectionHint] = useState<{ x: number; y: number } | null>(null);
+
+  const handleMouseUpForHint = useCallback(() => {
+    if (selectionHintSeen || isEditing) return;
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed || sel.rangeCount === 0) return;
+    const text = sel.toString().trim();
+    if (text.length < 2) return;
+    const rect = sel.getRangeAt(0).getBoundingClientRect();
+    if (rect.width === 0 && rect.height === 0) return;
+    setSelectionHint({ x: rect.left, y: rect.bottom + 8 });
+  }, [selectionHintSeen, isEditing]);
 
   // ── Clique em link interno ──────────────────────────────────────────────────
   const handleClick = useCallback((e: MouseEvent) => {
@@ -1141,18 +1222,62 @@ export const ArticleView: React.FC<Props> = ({ article }) => {
     }
   }, [openArticle]);
 
+  // ── Preview ao passar o mouse sobre um link interno ─────────────────────────
+  // Mostra título + início do resumo do artigo-alvo sem precisar navegar até
+  // ele — só depende do que já está em memória (articles já carrega summary
+  // de todos os artigos), sem chamada extra.
+  const [linkPreview, setLinkPreview] = useState<{ articleId: string; x: number; y: number } | null>(null);
+  const linkPreviewTimerRef = useRef<number | null>(null);
+
+  const handleLinkMouseOver = useCallback((e: MouseEvent) => {
+    const link = (e.target as HTMLElement).closest<HTMLAnchorElement>("a.internal-link");
+    if (!link) return;
+    const tid = link.getAttribute("data-article-id");
+    if (!tid) return;
+    const rect = link.getBoundingClientRect();
+    if (linkPreviewTimerRef.current) window.clearTimeout(linkPreviewTimerRef.current);
+    linkPreviewTimerRef.current = window.setTimeout(() => {
+      setLinkPreview({ articleId: tid, x: rect.left, y: rect.bottom + 6 });
+    }, 350);
+  }, []);
+
+  const handleLinkMouseOut = useCallback((e: MouseEvent) => {
+    const link = (e.target as HTMLElement).closest<HTMLAnchorElement>("a.internal-link");
+    if (!link) return;
+    if (linkPreviewTimerRef.current) { window.clearTimeout(linkPreviewTimerRef.current); linkPreviewTimerRef.current = null; }
+    setLinkPreview(null);
+  }, []);
+
+  useEffect(() => () => { if (linkPreviewTimerRef.current) window.clearTimeout(linkPreviewTimerRef.current); }, []);
+
   // Registra eventos nos dois containers (artigo completo e resumo)
   useEffect(() => {
     const refs = [containerRef.current, summaryRef.current].filter(Boolean);
     refs.forEach(el => {
       el!.addEventListener("contextmenu", handleContextMenu);
       el!.addEventListener("click", handleClick);
+      el!.addEventListener("mouseover", handleLinkMouseOver);
+      el!.addEventListener("mouseout", handleLinkMouseOut);
+      el!.addEventListener("mouseup", handleMouseUpForHint);
     });
     return () => refs.forEach(el => {
       el!.removeEventListener("contextmenu", handleContextMenu);
       el!.removeEventListener("click", handleClick);
+      el!.removeEventListener("mouseover", handleLinkMouseOver);
+      el!.removeEventListener("mouseout", handleLinkMouseOut);
+      el!.removeEventListener("mouseup", handleMouseUpForHint);
     });
-  }, [handleContextMenu, handleClick, showSummary]);
+  }, [handleContextMenu, handleClick, handleLinkMouseOver, handleLinkMouseOut, handleMouseUpForHint, showSummary]);
+
+  // Fecha a dica ao clicar em qualquer lugar fora dela (sem persistir "visto" —
+  // só um dispensar temporário; reaparece na próxima seleção, até o usuário
+  // efetivamente usar o menu de contexto ou ela ser fechada pelo X)
+  useEffect(() => {
+    if (!selectionHint) return;
+    const handler = () => setSelectionHint(null);
+    const id = window.setTimeout(() => document.addEventListener("mousedown", handler, { once: true }), 0);
+    return () => { window.clearTimeout(id); document.removeEventListener("mousedown", handler); };
+  }, [selectionHint]);
 
   // ── Trata imagens quebradas: reserva caixa com dimensões originais ──────────
   useEffect(() => {
@@ -1299,7 +1424,9 @@ export const ArticleView: React.FC<Props> = ({ article }) => {
     // Sem edição prévia, o rascunho vem do Markdown derivado do HTML original —
     // preserva negrito, itálico e listas da captura.
     if ((ex.kind ?? "text") === "text") {
-      setExcerptEditDraft(stripTrackedMarkup(ex.editedMarkdown ?? excerptHtmlToMarkdown(ex.html)));
+      const baseline = stripTrackedMarkup(ex.editedMarkdown ?? excerptHtmlToMarkdown(ex.html));
+      setExcerptEditDraft(baseline);
+      setExcerptEditBaseline(baseline);
     }
     setEditingExcerptId(excerptId);
   }, [article.excerpts]);
@@ -1341,9 +1468,19 @@ export const ArticleView: React.FC<Props> = ({ article }) => {
         text: article.content.replace(/<[^>]+>/g, " ").slice(0, 6000),
         bypassCache: true,
       });
-      if (res.ok && res.data) await saveArticle({ ...article, summary: (res.data as any).summary });
+      if (res.ok && res.data) setSummaryPreview((res.data as any).summary);
+      else showToast(res.error ?? "Falha ao gerar resumo.", "error");
     } finally { setIsLoadingSummary(false); }
-  }, [article, saveArticle]);
+  }, [article, showToast]);
+
+  const handleApplySummaryPreview = useCallback(async () => {
+    if (summaryPreview === null) return;
+    await saveArticle({ ...article, summary: summaryPreview });
+    setSummaryPreview(null);
+    showToast("Resumo atualizado.");
+  }, [article, summaryPreview, saveArticle, showToast]);
+
+  const handleDiscardSummaryPreview = useCallback(() => setSummaryPreview(null), []);
 
   // ── Perguntar ao Claude sobre este artigo ───────────────────────────────────
   const handleAskClaude = useCallback(async () => {
@@ -1447,13 +1584,7 @@ export const ArticleView: React.FC<Props> = ({ article }) => {
     showToast(`Link criado: "${term}" → ${target.title}`);
   }, [article.id, addLink, showToast]);
 
-  // Transforma bullet points do Claude em HTML com âncoras de seção
-  const summaryHtml = article.summary
-    ? article.summary.split("\n").filter(Boolean).map((line, i) => {
-        const text = escapeHtml(line.startsWith("•") ? line : "• " + line);
-        return `<p class="summary-bullet">${text}</p>`;
-      }).join("")
-    : "<p class='no-content'>Nenhum resumo disponível.</p>";
+  const summaryHtml = summaryToHtml(article.summary);
 
   return (
     <div className="article-view">
@@ -1463,20 +1594,20 @@ export const ArticleView: React.FC<Props> = ({ article }) => {
         <div className="article-title-row">
           <h1 className="article-title">{article.title}</h1>
           <div className="article-header-actions">
-            <button className={`icon-btn ${findOpen ? "icon-btn-active" : ""}`} title="Buscar na página"
+            <button className={`icon-btn ${findOpen ? "icon-btn-active" : ""}`} title="Buscar na página" aria-label="Buscar na página"
                     onClick={() => setFindOpen(o => !o)}>🔎</button>
             {tocItems.length > 0 && (
-              <button className="icon-btn" title="Conteúdo" onClick={() => setTocOpen(true)}>☰</button>
+              <button className="icon-btn" title="Conteúdo" aria-label="Conteúdo" onClick={() => setTocOpen(true)}>☰</button>
             )}
-            <button className={`icon-btn ${chatOpen ? "icon-btn-active" : ""}`} title="Perguntar ao Claude"
+            <button className={`icon-btn ${chatOpen ? "icon-btn-active" : ""}`} title="Perguntar ao Claude" aria-label="Perguntar ao Claude"
                     onClick={() => setChatOpen(o => !o)}>💬</button>
-            <button className="icon-btn" title="Revisar flashcards deste artigo"
+            <button className="icon-btn" title="Revisar flashcards deste artigo" aria-label="Revisar flashcards deste artigo"
                     onClick={() => setReviewOpen(true)}
                     disabled={flashcards.filter(c => c.due <= new Date().toISOString()).length === 0}>🎓</button>
             {article.source === "manual" && !isEditing && (
-              <button className="icon-btn" title="Editar artigo" onClick={handleStartEdit}>✎</button>
+              <button className="icon-btn" title="Editar artigo" aria-label="Editar artigo" onClick={handleStartEdit}>✎</button>
             )}
-            <button className="icon-btn article-delete-btn" title="Excluir artigo"
+            <button className="icon-btn article-delete-btn" title="Excluir artigo" aria-label="Excluir artigo"
                     onClick={handleDeleteArticle}>🗑</button>
           </div>
         </div>
@@ -1498,6 +1629,7 @@ export const ArticleView: React.FC<Props> = ({ article }) => {
 
         <TagEditor
           tags={article.tags ?? []}
+          existingTags={allTags}
           onChange={tags => updateTags(article.id, tags)}
         />
 
@@ -1530,6 +1662,17 @@ export const ArticleView: React.FC<Props> = ({ article }) => {
         {/* Chat contextual — pergunta usando o artigo (e vínculos) como contexto */}
         {chatOpen && (
           <div className="ask-claude-panel">
+            {chatMessages.length > 0 && (
+              <button
+                type="button"
+                className="ask-claude-clear-btn"
+                title="Limpar conversa"
+                aria-label="Limpar conversa"
+                onClick={() => { setChatMessages([]); setSavedChatIndices(new Set()); }}
+              >
+                🧹 Limpar conversa
+              </button>
+            )}
             <div className="ask-claude-messages">
               {chatMessages.length === 0 && (
                 <p className="ask-claude-hint">
@@ -1581,7 +1724,7 @@ export const ArticleView: React.FC<Props> = ({ article }) => {
                     {link.anchorText}
                   </a>
                   <span className="toc-target"> — {link.targetTitle}</span>
-                  <button className="toc-remove-btn" title="Remover link"
+                  <button className="toc-remove-btn" title="Remover link" aria-label="Remover link"
                           onClick={() => handleRemoveLink(link.id)}>✕</button>
                 </li>
               ))}
@@ -1599,9 +1742,9 @@ export const ArticleView: React.FC<Props> = ({ article }) => {
                 <li key={term}>
                   <span className="suggestion-term">{term}</span>
                   <span className="toc-target"> → {target.title}</span>
-                  <button className="suggestion-accept-btn" title="Criar link"
+                  <button className="suggestion-accept-btn" title="Criar link" aria-label="Criar link"
                           onClick={() => handleAcceptSuggestion(term, target)}>✓</button>
-                  <button className="toc-remove-btn" title="Descartar sugestão"
+                  <button className="toc-remove-btn" title="Descartar sugestão" aria-label="Descartar sugestão"
                           onClick={() => setDismissedTerms(s => new Set(s).add(term))}>✕</button>
                 </li>
               ))}
@@ -1620,6 +1763,11 @@ export const ArticleView: React.FC<Props> = ({ article }) => {
               placeholder={"Escreva em Markdown…\n\n# Título de seção\n- item de lista\n**negrito**, *itálico*, ==amarelo==, ++laranja++\n[definição]{.def}  [estrutura]{.enum}  [dado numérico]{.num}"}
             />
             <div className="manual-editor-actions">
+              {editDraft !== article.content && (
+                <span className="unsaved-indicator" title="Alterações ainda não salvas">
+                  ● Não salvo
+                </span>
+              )}
               <button onClick={() => setIsEditing(false)}>Cancelar</button>
               <button className="primary" onClick={handleSaveEdit}>Salvar</button>
             </div>
@@ -1656,6 +1804,7 @@ export const ArticleView: React.FC<Props> = ({ article }) => {
           onReorder={handleReorderOutline}
           editingExcerptId={editingExcerptId}
           editDraft={excerptEditDraft}
+          editBaseline={excerptEditBaseline}
           onStartEdit={handleStartEditExcerpt}
           onEditDraftChange={setExcerptEditDraft}
           onSaveEdit={handleSaveEditExcerpt}
@@ -1680,6 +1829,55 @@ export const ArticleView: React.FC<Props> = ({ article }) => {
       {tocOpen && (
         <SectionsTocPanel items={tocItems} onJump={handleJumpToHeading} onClose={() => setTocOpen(false)} />
       )}
+
+      {/* ── Prévia do resumo regenerado — nunca sobrescreve sem confirmação ─── */}
+      {summaryPreview !== null && (
+        <div className="modal-overlay" onClick={handleDiscardSummaryPreview}>
+          <div className="modal summary-preview-modal" onClick={e => e.stopPropagation()}>
+            <h2>Novo resumo gerado</h2>
+            <p className="excerpt-new-hint">
+              Compare com o resumo atual antes de substituir — a versão antiga se perde ao aplicar.
+            </p>
+            <div className="summary-preview-columns">
+              <div className="summary-preview-col">
+                <span className="summary-preview-label">Atual</span>
+                <div className="summary-preview-html wiki-content"
+                     dangerouslySetInnerHTML={{ __html: summaryToHtml(article.summary) }} />
+              </div>
+              <div className="summary-preview-col summary-preview-col-new">
+                <span className="summary-preview-label">Novo</span>
+                <div className="summary-preview-html wiki-content"
+                     dangerouslySetInnerHTML={{ __html: summaryToHtml(summaryPreview) }} />
+              </div>
+            </div>
+            <div className="modal-actions">
+              <button onClick={handleDiscardSummaryPreview}>Descartar</button>
+              <button className="primary" onClick={handleApplySummaryPreview}>Aplicar novo resumo</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Dica: primeira seleção de texto ensina o menu de contexto ──────── */}
+      {selectionHint && (
+        <SelectionHintBubble
+          x={selectionHint.x} y={selectionHint.y}
+          onDismiss={() => { dismissSelectionHint(); setSelectionHint(null); }}
+        />
+      )}
+
+      {/* ── Preview do artigo-alvo ao passar o mouse sobre um link interno ─── */}
+      {linkPreview && (() => {
+        const target = articles.find(a => a.id === linkPreview.articleId);
+        if (!target) return null;
+        return (
+          <LinkHoverPreview
+            x={linkPreview.x} y={linkPreview.y}
+            title={target.title}
+            snippet={(target.summary || "").replace(/^•\s*/, "").slice(0, 140) || "Sem resumo disponível."}
+          />
+        );
+      })()}
 
       {/* ── Menu de contexto ─────────────────────────────────────────────── */}
       {contextMenu.visible && contextMenu.parentArticleId === article.id && (
@@ -1719,6 +1917,74 @@ export const ArticleView: React.FC<Props> = ({ article }) => {
           onClose={() => setReviewOpen(false)}
         />
       )}
+    </div>
+  );
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SelectionHintBubble — dica de descoberta mostrada na primeira seleção de
+// texto de um artigo, ensinando o fluxo central do produto (menu de contexto
+// para criar link / salvar trecho) sem exigir um wizard de onboarding.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const SelectionHintBubble: React.FC<{ x: number; y: number; onDismiss: () => void }> = ({
+  x, y, onDismiss,
+}) => {
+  const ref = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState({ top: y, left: x });
+
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) { setPos({ top: y, left: x }); return; }
+    const margin = 8;
+    const rect = el.getBoundingClientRect();
+    const maxLeft = window.innerWidth - rect.width - margin;
+    const maxTop = window.innerHeight - rect.height - margin;
+    setPos({
+      left: Math.max(margin, Math.min(x, maxLeft)),
+      top: Math.max(margin, Math.min(y, maxTop)),
+    });
+  }, [x, y]);
+
+  return (
+    <div ref={ref} className="selection-hint-bubble"
+         style={{ position: "fixed", top: pos.top, left: pos.left, zIndex: 998 }}
+         onClick={e => e.stopPropagation()}>
+      💡 Clique com o botão direito para criar um link ou salvar este trecho.
+      <button type="button" className="selection-hint-dismiss" title="Entendi" aria-label="Fechar dica" onClick={onDismiss}>✕</button>
+    </div>
+  );
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LinkHoverPreview — prévia (título + início do resumo) ao passar o mouse
+// sobre um link interno, sem precisar navegar até o artigo-alvo.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const LinkHoverPreview: React.FC<{ x: number; y: number; title: string; snippet: string }> = ({
+  x, y, title, snippet,
+}) => {
+  const ref = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState({ top: y, left: x });
+
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) { setPos({ top: y, left: x }); return; }
+    const margin = 8;
+    const rect = el.getBoundingClientRect();
+    const maxLeft = window.innerWidth - rect.width - margin;
+    const maxTop = window.innerHeight - rect.height - margin;
+    setPos({
+      left: Math.max(margin, Math.min(x, maxLeft)),
+      top: Math.max(margin, Math.min(y, maxTop)),
+    });
+  }, [x, y]);
+
+  return (
+    <div ref={ref} className="link-hover-preview"
+         style={{ position: "fixed", top: pos.top, left: pos.left, zIndex: 999 }}>
+      <strong className="link-hover-preview-title">{title}</strong>
+      <p className="link-hover-preview-snippet">{snippet}</p>
     </div>
   );
 };
@@ -1778,33 +2044,33 @@ const ContextMenu: React.FC<ContextMenuProps> = ({
          onClick={e => e.stopPropagation()}>
       {hasText && (
         <>
-          <button className="context-menu-item" title="Pesquisar na Wikipédia" onClick={onSearchWiki}>🔍</button>
-          <button className="context-menu-item" title="Gerar artigo com Claude" onClick={onSearchClaude}>✦</button>
+          <button className="context-menu-item" title="Pesquisar na Wikipédia" aria-label="Pesquisar na Wikipédia" onClick={onSearchWiki}>🔍</button>
+          <button className="context-menu-item" title="Gerar artigo com Claude" aria-label="Gerar artigo com Claude" onClick={onSearchClaude}>✦</button>
           <span className="context-menu-divider" />
-          <button className="context-menu-item context-menu-save" title="Salvar trecho"
+          <button className="context-menu-item context-menu-save" title="Salvar trecho" aria-label="Salvar trecho"
                   onClick={() => onSaveExcerpt("default")}>📌</button>
-          <button className="context-menu-item context-menu-save" title="Salvar como conceito"
+          <button className="context-menu-item context-menu-save" title="Salvar como conceito" aria-label="Salvar como conceito"
                   onClick={() => onSaveExcerpt("concept")}>
             <span className="ctx-cat-swatch ctx-cat-concept" />
           </button>
-          <button className="context-menu-item context-menu-save" title="Salvar como lista"
+          <button className="context-menu-item context-menu-save" title="Salvar como lista" aria-label="Salvar como lista"
                   onClick={() => onSaveExcerpt("list")}>
             <span className="ctx-cat-swatch ctx-cat-list" />
           </button>
-          <button className="context-menu-item context-menu-save" title="Salvar como dados numéricos"
+          <button className="context-menu-item context-menu-save" title="Salvar como dados numéricos" aria-label="Salvar como dados numéricos"
                   onClick={() => onSaveExcerpt("numeric")}>
             <span className="ctx-cat-swatch ctx-cat-numeric" />
           </button>
         </>
       )}
       {hasTable && (
-        <button className="context-menu-item context-menu-save" title="Salvar tabela em…" onClick={onSaveTable}>📊</button>
+        <button className="context-menu-item context-menu-save" title="Salvar tabela em…" aria-label="Salvar tabela em…" onClick={onSaveTable}>📊</button>
       )}
       {hasImage && (
-        <button className="context-menu-item context-menu-save" title="Salvar imagem em…" onClick={onSaveImage}>🖼</button>
+        <button className="context-menu-item context-menu-save" title="Salvar imagem em…" aria-label="Salvar imagem em…" onClick={onSaveImage}>🖼</button>
       )}
       <span className="context-menu-divider" />
-      <button className="context-menu-item context-menu-cancel" title="Cancelar" onClick={onClose}>✕</button>
+      <button className="context-menu-item context-menu-cancel" title="Cancelar" aria-label="Cancelar" onClick={onClose}>✕</button>
     </div>
   );
 };

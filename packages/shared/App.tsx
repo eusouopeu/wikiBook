@@ -16,9 +16,9 @@ import { VirtualList } from "./components/VirtualList";
 // Chama os métodos D3 expostos no SVGElement pelo GraphView
 const GraphControls: React.FC<{ canvasRef: React.RefObject<HTMLCanvasElement | null> }> = ({ canvasRef }) => (
   <div className="graph-controls">
-    <button title="Aproximar" onClick={() => (canvasRef.current as any)?.__zoomIn()}>＋</button>
-    <button title="Afastar"   onClick={() => (canvasRef.current as any)?.__zoomOut()}>－</button>
-    <button title="Resetar"   onClick={() => (canvasRef.current as any)?.__zoomReset()}>⌖</button>
+    <button title="Aproximar" aria-label="Aproximar" onClick={() => (canvasRef.current as any)?.__zoomIn()}>＋</button>
+    <button title="Afastar" aria-label="Afastar"   onClick={() => (canvasRef.current as any)?.__zoomOut()}>－</button>
+    <button title="Resetar" aria-label="Resetar"   onClick={() => (canvasRef.current as any)?.__zoomReset()}>⌖</button>
   </div>
 );
 
@@ -154,10 +154,16 @@ const WIKI_LANGS: Array<{ code: string; label: string }> = [
   { code: "it", label: "Italiano" },
 ];
 
+const THEME_OPTIONS: Array<{ value: "system" | "light" | "dark"; label: string }> = [
+  { value: "system", label: "Sistema" },
+  { value: "light", label: "Claro" },
+  { value: "dark", label: "Escuro" },
+];
+
 const SettingsModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   const [apiKey, setApiKey] = useState("");
   const [saved, setSaved] = useState(false);
-  const { wikipediaLang, setWikipediaLang } = useStore();
+  const { wikipediaLang, setWikipediaLang, theme, setTheme } = useStore();
   useEscToClose(onClose);
 
   useEffect(() => {
@@ -195,6 +201,23 @@ const SettingsModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
               <option key={l.code} value={l.code}>{l.label} ({l.code})</option>
             ))}
           </select>
+        </label>
+        <label>
+          Tema
+          <div className="theme-toggle" role="radiogroup" aria-label="Tema da interface">
+            {THEME_OPTIONS.map(opt => (
+              <button
+                key={opt.value}
+                type="button"
+                role="radio"
+                aria-checked={theme === opt.value}
+                className={`theme-toggle-btn ${theme === opt.value ? "active" : ""}`}
+                onClick={() => setTheme(opt.value)}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
         </label>
         <div className="modal-actions">
           <button onClick={onClose}>Fechar</button>
@@ -260,6 +283,7 @@ export default function App() {
     graphScope, setGraphScope, localDepth, setLocalDepth,
     folders, selectedFolder, setSelectedFolder,
     createFolder, renameFolder, deleteFolder, setArticleFolder,
+    listDensity, setListDensity, setPendingTask,
   } = useStore();
 
   const [showNewModal, setShowNewModal] = useState(false);
@@ -442,23 +466,33 @@ export default function App() {
 
   // Exportação Markdown/Obsidian
   async function handleExport() {
-    const res = await window.lexicon.invoke("article:exportMarkdown");
-    if (!res.ok) { showToast(res.error ?? "Falha na exportação.", "error"); return; }
-    if (res.data) {
-      const { count, dir } = res.data as { count: number; dir: string };
-      showToast(`${count} artigo${count > 1 ? "s" : ""} exportado${count > 1 ? "s" : ""} para ${dir}`);
+    setPendingTask("Exportando artigos…");
+    try {
+      const res = await window.lexicon.invoke("article:exportMarkdown");
+      if (!res.ok) { showToast(res.error ?? "Falha na exportação.", "error"); return; }
+      if (res.data) {
+        const { count, dir } = res.data as { count: number; dir: string };
+        showToast(`${count} artigo${count > 1 ? "s" : ""} exportado${count > 1 ? "s" : ""} para ${dir}`);
+      }
+      // data === null → usuário cancelou o diálogo; nada a fazer
+    } finally {
+      setPendingTask(null);
     }
-    // data === null → usuário cancelou o diálogo; nada a fazer
   }
 
   // Exportação de flashcards (trechos de texto salvos) para CSV/Anki
   async function handleExportFlashcards() {
-    const res = await window.lexicon.invoke("article:exportFlashcardsCsv");
-    if (!res.ok) { showToast(res.error ?? "Falha ao exportar flashcards.", "error"); return; }
-    if (res.data === null) return;   // usuário cancelou o diálogo de salvar
-    const { count } = res.data as { count: number };
-    if (count === 0) { showToast("Nenhum trecho de texto salvo para exportar."); return; }
-    showToast(`${count} flashcard${count > 1 ? "s" : ""} exportado${count > 1 ? "s" : ""}.`);
+    setPendingTask("Exportando flashcards…");
+    try {
+      const res = await window.lexicon.invoke("article:exportFlashcardsCsv");
+      if (!res.ok) { showToast(res.error ?? "Falha ao exportar flashcards.", "error"); return; }
+      if (res.data === null) return;   // usuário cancelou o diálogo de salvar
+      const { count } = res.data as { count: number };
+      if (count === 0) { showToast("Nenhum trecho de texto salvo para exportar."); return; }
+      showToast(`${count} flashcard${count > 1 ? "s" : ""} exportado${count > 1 ? "s" : ""}.`);
+    } finally {
+      setPendingTask(null);
+    }
   }
 
   // Grafo local: artigo ativo + vizinhos até N saltos. Cai para global se não
@@ -476,9 +510,17 @@ export default function App() {
         <div className="sidebar-top">
           <span className="app-logo">Lexicon</span>
           <div className="sidebar-top-actions">
-            <button className="icon-btn" title="Exportar para Markdown (Obsidian)" onClick={handleExport}>⤓</button>
-            <button className="icon-btn" title="Exportar flashcards (CSV/Anki)" onClick={handleExportFlashcards}>🎴</button>
-            <button className="icon-btn" title="Configurações" onClick={() => setShowSettings(true)}>⚙</button>
+            <button className="icon-btn" title="Exportar para Markdown (Obsidian)" aria-label="Exportar para Markdown (Obsidian)" onClick={handleExport}>⤓</button>
+            <button className="icon-btn" title="Exportar flashcards (CSV/Anki)" aria-label="Exportar flashcards (CSV/Anki)" onClick={handleExportFlashcards}>🎴</button>
+            <button
+              className="icon-btn"
+              title={listDensity === "compact" ? "Lista compacta — clique para expandir" : "Lista expandida — clique para compactar"}
+              aria-label={listDensity === "compact" ? "Alternar para lista expandida" : "Alternar para lista compacta"}
+              onClick={() => setListDensity(listDensity === "compact" ? "comfortable" : "compact")}
+            >
+              {listDensity === "compact" ? "☰" : "▤"}
+            </button>
+            <button className="icon-btn" title="Configurações" aria-label="Configurações" onClick={() => setShowSettings(true)}>⚙</button>
           </div>
         </div>
 
@@ -539,9 +581,9 @@ export default function App() {
                       📁 {f.name}
                     </button>
                     <span className="folder-chip-actions">
-                      <button type="button" title="Renomear pasta"
+                      <button type="button" title="Renomear pasta" aria-label="Renomear pasta"
                               onClick={() => handleRenameFolderStart(f.id, f.name)}>✎</button>
-                      <button type="button" title="Excluir pasta"
+                      <button type="button" title="Excluir pasta" aria-label="Excluir pasta"
                               onClick={() => handleDeleteFolder(f.id, f.name)}>🗑</button>
                     </span>
                   </>
@@ -584,9 +626,9 @@ export default function App() {
           </ul>
         ) : (
           <VirtualList
-            className="article-list"
+            className={`article-list article-list-${listDensity}`}
             items={filteredArticles}
-            itemHeight={30}
+            itemHeight={listDensity === "compact" ? 30 : 56}
             itemKey={(a: Article) => a.id}
             renderItem={(a: Article, i: number) => (
               <div
@@ -596,12 +638,23 @@ export default function App() {
                 onMouseLeave={cancelHoverPreview}
               >
                 <span className={`dot dot-${a.source}`} />
-                <span className="article-item-title">{a.title}</span>
+                <div className="article-item-main">
+                  <span className="article-item-title">{a.title}</span>
+                  {listDensity === "comfortable" && (
+                    <span className="article-item-snippet">
+                      {(a.summary || "").replace(/^•\s*/, "").slice(0, 90) || "Sem resumo."}
+                      {folders.find(f => f.id === a.folderId) && (
+                        <span className="article-item-folder-label"> · 📁 {folders.find(f => f.id === a.folderId)!.name}</span>
+                      )}
+                    </span>
+                  )}
+                </div>
                 {a.links.length > 0 && (
                   <span className="link-count">{a.links.length}</span>
                 )}
                 <button
                   type="button" className="article-item-folder-btn" title="Mover para pasta"
+                  aria-label={`Mover "${a.title}" para pasta`}
                   onClick={e => {
                     e.stopPropagation();
                     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();

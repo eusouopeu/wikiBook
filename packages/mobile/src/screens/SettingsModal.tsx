@@ -18,10 +18,16 @@ const WIKI_LANGS: Array<{ code: string; label: string }> = [
   { code: "it", label: "Italiano" },
 ];
 
+const THEME_OPTIONS: Array<{ value: "system" | "light" | "dark"; label: string }> = [
+  { value: "system", label: "Sistema" },
+  { value: "light", label: "Claro" },
+  { value: "dark", label: "Escuro" },
+];
+
 export function SettingsModal({ onClose }: { onClose: () => void }) {
   const [apiKey, setApiKey] = useState("");
   const [saved, setSaved] = useState(false);
-  const { wikipediaLang, setWikipediaLang } = useStore();
+  const { wikipediaLang, setWikipediaLang, theme, setTheme } = useStore();
 
   useEffect(() => {
     window.lexicon.invoke("config:get", { key: "anthropicApiKey" }).then(r => {
@@ -58,6 +64,23 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
               <option key={l.code} value={l.code}>{l.label} ({l.code})</option>
             ))}
           </select>
+        </label>
+        <label>
+          Tema
+          <div className="theme-toggle" role="radiogroup" aria-label="Tema da interface">
+            {THEME_OPTIONS.map(opt => (
+              <button
+                key={opt.value}
+                type="button"
+                role="radio"
+                aria-checked={theme === opt.value}
+                className={`theme-toggle-btn ${theme === opt.value ? "active" : ""}`}
+                onClick={() => setTheme(opt.value)}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
         </label>
         <div className="modal-actions">
           <button onClick={onClose}>Fechar</button>

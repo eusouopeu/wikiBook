@@ -22,6 +22,19 @@ async function ipc<T>(channel: string, payload?: unknown): Promise<T> {
   return res.data as T;
 }
 
+// ── Tema ───────────────────────────────────────────────────────────────────
+// "system" não seta o atributo — o CSS já segue prefers-color-scheme por
+// padrão; "light"/"dark" força via :root[data-theme=…], sobrepondo o SO
+// (ver styles.css). Aplicado em document.documentElement (<html>), único
+// alvo válido de seletores :root em CSS.
+export type ThemeMode = "light" | "dark" | "system";
+
+function applyTheme(theme: ThemeMode): void {
+  if (typeof document === "undefined") return;
+  if (theme === "system") document.documentElement.removeAttribute("data-theme");
+  else document.documentElement.setAttribute("data-theme", theme);
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 interface AppState {
@@ -42,6 +55,14 @@ interface AppState {
   isSearchOpen: boolean;
   // Idioma da Wikipedia (persistido em config.json)
   wikipediaLang: string;
+  // Tema — persistido em config.json; "system" = segue o SO
+  theme: ThemeMode;
+  // Densidade da lista de artigos na sidebar — persistida em config.json
+  listDensity: "compact" | "comfortable";
+  // Se o usuário já viu a dica de "selecione texto → botão direito" — depois
+  // da primeira vez (ou do primeiro uso real do menu de contexto), nunca
+  // mais é mostrada. Persistida em config.json.
+  selectionHintSeen: boolean;
   // Filtro por tags na sidebar (vazio = todas) — múltiplas tags selecionadas
   // filtram por interseção, permitindo cruzar artigos por mais de um tema
   // simultaneamente, ortogonal às pastas (hierárquicas, uma só por artigo).
@@ -91,6 +112,9 @@ interface AppState {
   setSearchQuery: (q: string) => void;
   setSearchOpen: (open: boolean) => void;
   setWikipediaLang: (lang: string) => Promise<void>;
+  setTheme: (theme: ThemeMode) => Promise<void>;
+  setListDensity: (density: "compact" | "comfortable") => Promise<void>;
+  dismissSelectionHint: () => Promise<void>;
   toggleSelectedTag: (tag: string) => void;
   clearSelectedTags: () => void;
   loadFolders: () => Promise<void>;
@@ -114,6 +138,10 @@ interface AppState {
   }) => void;
   hideContextMenu: () => void;
   rebuildGraph: () => void;
+  // Exposto para operações longas fora das actions do store (ex.: exportação
+  // em App.tsx/ArticleListScreen.tsx) reaproveitarem o mesmo StatusOverlay já
+  // usado por fetchFromWikipedia/generateWithClaude.
+  setPendingTask: (task: string | null) => void;
 }
 
 // ── Algoritmo de profundidade para calcular tamanho dos nós ──────────────────
@@ -230,6 +258,9 @@ export const useStore = create<AppState>((set, get) => ({
   searchQuery: "",
   isSearchOpen: false,
   wikipediaLang: "pt",
+  theme: "system",
+  listDensity: "comfortable",
+  selectionHintSeen: false,
   selectedTags: [],
   folders: [],
   selectedFolder: null,
@@ -252,6 +283,21 @@ export const useStore = create<AppState>((set, get) => ({
       const lang = await ipc<string | undefined>("config:get", { key: "wikipediaLang" });
       if (lang) set({ wikipediaLang: lang });
     } catch { /* mantém o padrão "pt" */ }
+    try {
+      const theme = await ipc<string | undefined>("config:get", { key: "theme" });
+      if (theme === "light" || theme === "dark" || theme === "system") {
+        set({ theme });
+        applyTheme(theme);
+      }
+    } catch { /* mantém o padrão "system" */ }
+    try {
+      const density = await ipc<string | undefined>("config:get", { key: "listDensity" });
+      if (density === "compact" || density === "comfortable") set({ listDensity: density });
+    } catch { /* mantém o padrão "comfortable" */ }
+    try {
+      const seen = await ipc<string | undefined>("config:get", { key: "selectionHintSeen" });
+      if (seen === "true") set({ selectionHintSeen: true });
+    } catch { /* mantém o padrão false */ }
     await get().loadFolders();
   },
 
@@ -346,6 +392,7 @@ export const useStore = create<AppState>((set, get) => ({
         summary = "• Resumo não disponível.";
       }
 
+      set({ pendingTask: `Salvando "${wiki.title}"…` });
       const article = await get().saveArticle({
         title: wiki.title,
         source: "wikipedia",
@@ -375,6 +422,7 @@ export const useStore = create<AppState>((set, get) => ({
 
       const r = await ipc<{ summary: string }>("claude:generate", { title, context });
 
+      set({ pendingTask: `Salvando "${title}"…` });
       const article = await get().saveArticle({
         title,
         source: "claude",
@@ -418,6 +466,19 @@ export const useStore = create<AppState>((set, get) => ({
   setWikipediaLang: async (lang) => {
     set({ wikipediaLang: lang });
     await ipc("config:set", { key: "wikipediaLang", value: lang });
+  },
+  setTheme: async (theme) => {
+    set({ theme });
+    applyTheme(theme);
+    await ipc("config:set", { key: "theme", value: theme });
+  },
+  setListDensity: async (density) => {
+    set({ listDensity: density });
+    await ipc("config:set", { key: "listDensity", value: density });
+  },
+  dismissSelectionHint: async () => {
+    set({ selectionHintSeen: true });
+    await ipc("config:set", { key: "selectionHintSeen", value: "true" });
   },
   toggleSelectedTag: (tag) => set(s => ({
     selectedTags: s.selectedTags.includes(tag)
@@ -510,4 +571,6 @@ export const useStore = create<AppState>((set, get) => ({
     const { nodes, edges } = computeGraphData(articles);
     set({ graphNodes: nodes, graphEdges: edges });
   },
+
+  setPendingTask: (task) => set({ pendingTask: task }),
 }));
