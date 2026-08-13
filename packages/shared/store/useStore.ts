@@ -76,6 +76,12 @@ interface AppState {
   localDepth: 1 | 2;
   // Tarefa em andamento (ex.: geração via Claude disparada pelo menu de contexto)
   pendingTask: string | null;
+  // Token da operação dona da mensagem atual de pendingTask — permite que
+  // operações concorrentes (ex.: exportar enquanto uma busca na Wikipédia
+  // ainda está em voo) não apaguem o status uma da outra: cada uma só
+  // atualiza/limpa pendingTask se o token ainda for o dela. Uso interno do
+  // store (ver beginPendingTask/updatePendingTask/endPendingTask).
+  pendingTaskToken: number;
   // Fila de notificações transitórias — action opcional (ex.: "Desfazer" na
   // exclusão de artigo). Fila em vez de slot único: no mobile, ações em
   // sequência (salvar, gerar flashcard, exportar) disparam toasts
@@ -138,11 +144,17 @@ interface AppState {
   }) => void;
   hideContextMenu: () => void;
   rebuildGraph: () => void;
-  // Exposto para operações longas fora das actions do store (ex.: exportação
+  // Expostos para operações longas fora das actions do store (ex.: exportação
   // em App.tsx/ArticleListScreen.tsx) reaproveitarem o mesmo StatusOverlay já
-  // usado por fetchFromWikipedia/generateWithClaude.
-  setPendingTask: (task: string | null) => void;
+  // usado por fetchFromWikipedia/generateWithClaude, sem risco de uma limpar
+  // o status da outra se rodarem em paralelo — begin retorna um token que
+  // update/end só aplicam se ainda for a operação "dona" do pendingTask atual.
+  beginPendingTask: (task: string) => number;
+  updatePendingTask: (token: number, task: string) => void;
+  endPendingTask: (token: number) => void;
 }
+
+let pendingTaskSeq = 0;
 
 // ── Algoritmo de profundidade para calcular tamanho dos nós ──────────────────
 // Um nó-raiz (sem pai) tem depth=0.
@@ -267,6 +279,7 @@ export const useStore = create<AppState>((set, get) => ({
   graphScope: "global",
   localDepth: 1,
   pendingTask: null,
+  pendingTaskToken: 0,
   toasts: [],
   contextMenu: {
     visible: false, x: 0, y: 0,
@@ -364,7 +377,7 @@ export const useStore = create<AppState>((set, get) => ({
 
   // ── fetchFromWikipedia ──────────────────────────────────────────────────────
   fetchFromWikipedia: async (query, parentId = null, exactTitle) => {
-    set({ pendingTask: `Buscando "${exactTitle ?? query}" na Wikipédia…` });
+    const token = get().beginPendingTask(`Buscando "${exactTitle ?? query}" na Wikipédia…`);
     try {
       const wiki = await ipc<{ title: string; html: string; plainTextExtract: string }>(
         "wikipedia:fetch", { query, exactTitle, lang: get().wikipediaLang }
@@ -380,7 +393,7 @@ export const useStore = create<AppState>((set, get) => ({
       }
 
       // Gera resumo via Claude automaticamente
-      set({ pendingTask: `Resumindo "${wiki.title}" com Claude…` });
+      get().updatePendingTask(token, `Resumindo "${wiki.title}" com Claude…`);
       let summary = "";
       try {
         const r = await ipc<{ summary: string }>("claude:summarize", {
@@ -392,7 +405,7 @@ export const useStore = create<AppState>((set, get) => ({
         summary = "• Resumo não disponível.";
       }
 
-      set({ pendingTask: `Salvando "${wiki.title}"…` });
+      get().updatePendingTask(token, `Salvando "${wiki.title}"…`);
       const article = await get().saveArticle({
         title: wiki.title,
         source: "wikipedia",
@@ -405,13 +418,13 @@ export const useStore = create<AppState>((set, get) => ({
       // por chamar addLink com o texto selecionado
       return article;
     } finally {
-      set({ pendingTask: null });
+      get().endPendingTask(token);
     }
   },
 
   // ── generateWithClaude ──────────────────────────────────────────────────────
   generateWithClaude: async (title, parentId = null) => {
-    set({ pendingTask: `Gerando "${title}" com Claude…` });
+    const token = get().beginPendingTask(`Gerando "${title}" com Claude…`);
     try {
       // Coleta contexto dos artigos relacionados ao pai (se houver)
       let context = "";
@@ -422,7 +435,7 @@ export const useStore = create<AppState>((set, get) => ({
 
       const r = await ipc<{ summary: string }>("claude:generate", { title, context });
 
-      set({ pendingTask: `Salvando "${title}"…` });
+      get().updatePendingTask(token, `Salvando "${title}"…`);
       const article = await get().saveArticle({
         title,
         source: "claude",
@@ -433,7 +446,7 @@ export const useStore = create<AppState>((set, get) => ({
 
       return article;
     } finally {
-      set({ pendingTask: null });
+      get().endPendingTask(token);
     }
   },
 
@@ -572,5 +585,15 @@ export const useStore = create<AppState>((set, get) => ({
     set({ graphNodes: nodes, graphEdges: edges });
   },
 
-  setPendingTask: (task) => set({ pendingTask: task }),
+  beginPendingTask: (task) => {
+    const token = ++pendingTaskSeq;
+    set({ pendingTask: task, pendingTaskToken: token });
+    return token;
+  },
+  updatePendingTask: (token, task) => {
+    if (get().pendingTaskToken === token) set({ pendingTask: task });
+  },
+  endPendingTask: (token) => {
+    if (get().pendingTaskToken === token) set({ pendingTask: null });
+  },
 }));

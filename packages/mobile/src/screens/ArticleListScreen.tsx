@@ -34,7 +34,7 @@ export function ArticleListScreen({ onOpenArticle, onNewArticle, onSettings, onO
     searchQuery, setSearchQuery, selectedTags, toggleSelectedTag, showToast,
     folders, selectedFolder, setSelectedFolder,
     createFolder, renameFolder, deleteFolder, setArticleFolder,
-    listDensity, setListDensity, setPendingTask,
+    listDensity, setListDensity, beginPendingTask, endPendingTask,
   } = useStore();
 
   const [dueCount, setDueCount] = useState(0);
@@ -86,7 +86,7 @@ export function ArticleListScreen({ onOpenArticle, onNewArticle, onSettings, onO
   // pasta" no mobile, quem decide o destino final é o usuário no share sheet
   // (Arquivos, iCloud Drive, Google Drive, AirDrop…).
   async function handleExportMarkdown() {
-    setPendingTask("Exportando artigos…");
+    const token = beginPendingTask("Exportando artigos…");
     try {
       const res = await window.lexicon.invoke("article:exportMarkdown");
       if (!res.ok) { showToast(res.error ?? "Falha na exportação.", "error"); return; }
@@ -94,12 +94,12 @@ export function ArticleListScreen({ onOpenArticle, onNewArticle, onSettings, onO
       if (count === 0) { showToast("Nenhum artigo para exportar."); return; }
       showToast(`${count} artigo${count > 1 ? "s" : ""} pronto${count > 1 ? "s" : ""} — escolha o destino.`);
     } finally {
-      setPendingTask(null);
+      endPendingTask(token);
     }
   }
 
   async function handleExportFlashcardsCsv() {
-    setPendingTask("Exportando flashcards…");
+    const token = beginPendingTask("Exportando flashcards…");
     try {
       const res = await window.lexicon.invoke("article:exportFlashcardsCsv");
       if (!res.ok) { showToast(res.error ?? "Falha ao exportar flashcards.", "error"); return; }
@@ -107,7 +107,7 @@ export function ArticleListScreen({ onOpenArticle, onNewArticle, onSettings, onO
       if (count === 0) { showToast("Nenhum trecho de texto salvo para exportar."); return; }
       showToast(`${count} flashcard${count > 1 ? "s" : ""} pronto${count > 1 ? "s" : ""} — escolha o destino.`);
     } finally {
-      setPendingTask(null);
+      endPendingTask(token);
     }
   }
 

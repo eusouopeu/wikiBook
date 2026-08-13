@@ -11,8 +11,8 @@
 // scroll nativo do container, foco em itens fora da janela renderizada etc.).
 // ─────────────────────────────────────────────────────────────────────────────
 
-import React, { useEffect, useRef, useState } from "react";
-import { FixedSizeList, type ListChildComponentProps } from "react-window";
+import React, { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { FixedSizeList, type ListChildComponentProps, type ListOnItemsRenderedProps } from "react-window";
 
 interface VirtualListProps<T> {
   items: T[];
@@ -23,12 +23,25 @@ interface VirtualListProps<T> {
   virtualizeThreshold?: number;
 }
 
-export function VirtualList<T>({
-  items, itemHeight, itemKey, renderItem, className, virtualizeThreshold = 80,
-}: VirtualListProps<T>) {
+export interface VirtualListHandle {
+  scrollToItem: (index: number, align?: "auto" | "smart" | "center" | "end" | "start") => void;
+}
+
+function VirtualListInner<T>(
+  { items, itemHeight, itemKey, renderItem, className, virtualizeThreshold = 80 }: VirtualListProps<T>,
+  ref: React.Ref<VirtualListHandle>,
+) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<FixedSizeList>(null);
   const [height, setHeight] = useState(0);
   const virtualize = items.length > virtualizeThreshold;
+
+  // Primeiro índice atualmente visível — usado para reancorar o scroll quando
+  // `itemHeight` muda (ex.: alternar densidade da lista) e quando o chamador
+  // pede scrollToItem em índices fora da janela renderizada (ex.: navegação
+  // por teclado na busca).
+  const visibleStartRef = useRef(0);
+  const prevItemHeightRef = useRef(itemHeight);
 
   useEffect(() => {
     if (!virtualize) return;
@@ -41,6 +54,27 @@ export function VirtualList<T>({
     ro.observe(el);
     return () => ro.disconnect();
   }, [virtualize]);
+
+  // Sem isso, trocar `itemHeight` (ex.: densidade compacta ↔ confortável) faz
+  // o react-window recalcular o mapeamento pixel→índice a partir do mesmo
+  // `scrollTop` em pixels, medido com a altura antiga — a lista "pula" para um
+  // trecho diferente de itens em vez de manter o que estava no topo.
+  useEffect(() => {
+    if (prevItemHeightRef.current === itemHeight) return;
+    prevItemHeightRef.current = itemHeight;
+    listRef.current?.scrollToItem(visibleStartRef.current, "start");
+  }, [itemHeight]);
+
+  useImperativeHandle(ref, () => ({
+    scrollToItem: (index, align = "smart") => {
+      if (!virtualize) return;
+      listRef.current?.scrollToItem(index, align);
+    },
+  }), [virtualize]);
+
+  const handleItemsRendered = (props: ListOnItemsRenderedProps) => {
+    visibleStartRef.current = props.visibleStartIndex;
+  };
 
   if (!virtualize) {
     return (
@@ -56,11 +90,13 @@ export function VirtualList<T>({
     <div ref={containerRef} className={className} style={{ padding: 0 }}>
       {height > 0 && (
         <FixedSizeList
+          ref={listRef}
           height={height}
           width="100%"
           itemCount={items.length}
           itemSize={itemHeight}
           itemKey={(index: number) => itemKey(items[index], index)}
+          onItemsRendered={handleItemsRendered}
         >
           {({ index, style }: ListChildComponentProps) => (
             <div style={style}>{renderItem(items[index], index)}</div>
@@ -70,3 +106,7 @@ export function VirtualList<T>({
     </div>
   );
 }
+
+export const VirtualList = forwardRef(VirtualListInner) as <T>(
+  props: VirtualListProps<T> & { ref?: React.Ref<VirtualListHandle> }
+) => React.ReactElement;

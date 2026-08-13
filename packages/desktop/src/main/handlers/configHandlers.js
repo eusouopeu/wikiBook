@@ -58,7 +58,7 @@ function getConfig(key) {
   return SECRET_KEYS.has(key) ? decryptValue(raw) : raw;
 }
 
-function createConfigHandlers(ipcMain) {
+function createConfigHandlers(ipcMain, { onThemeChange } = {}) {
 
   // ── config:get { key? } → value | entire config ────────────────────────────
   ipcMain.handle("config:get", (_evt, { key } = {}) => {
@@ -77,6 +77,7 @@ function createConfigHandlers(ipcMain) {
     const config = loadConfig();
     config[key] = SECRET_KEYS.has(key) ? encryptValue(value) : value;
     saveConfig(config);
+    if (key === "theme") onThemeChange?.(value);
     return { ok: true };
   });
 }

@@ -10,7 +10,7 @@ import { GraphView } from "./components/GraphView";
 import { ArticleView, ReviewModal } from "./components/ArticleView";
 import { FolderPicker } from "./components/FolderPicker";
 import { MiniGraphPreview } from "./components/MiniGraphPreview";
-import { VirtualList } from "./components/VirtualList";
+import { VirtualList, type VirtualListHandle } from "./components/VirtualList";
 
 // ── Controles de zoom do grafo ────────────────────────────────────────────────
 // Chama os métodos D3 expostos no SVGElement pelo GraphView
@@ -283,7 +283,7 @@ export default function App() {
     graphScope, setGraphScope, localDepth, setLocalDepth,
     folders, selectedFolder, setSelectedFolder,
     createFolder, renameFolder, deleteFolder, setArticleFolder,
-    listDensity, setListDensity, setPendingTask,
+    listDensity, setListDensity, beginPendingTask, endPendingTask,
   } = useStore();
 
   const [showNewModal, setShowNewModal] = useState(false);
@@ -332,6 +332,14 @@ export default function App() {
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
 
   useEffect(() => { setHighlightedIndex(-1); }, [searchQuery, selectedTags, selectedFolder]);
+
+  // Acima do limiar de virtualização, o item destacado por ArrowUp/ArrowDown
+  // pode ficar fora da janela que o react-window mantém no DOM — sem isso, o
+  // destaque "some" silenciosamente ao navegar além da tela visível.
+  const articleListRef = useRef<VirtualListHandle>(null);
+  useEffect(() => {
+    if (highlightedIndex >= 0) articleListRef.current?.scrollToItem(highlightedIndex);
+  }, [highlightedIndex]);
 
   // Elemento SVG do grafo, recebido do GraphView após a montagem
   // (usado pelos botões de zoom em GraphControls)
@@ -466,7 +474,7 @@ export default function App() {
 
   // Exportação Markdown/Obsidian
   async function handleExport() {
-    setPendingTask("Exportando artigos…");
+    const token = beginPendingTask("Exportando artigos…");
     try {
       const res = await window.lexicon.invoke("article:exportMarkdown");
       if (!res.ok) { showToast(res.error ?? "Falha na exportação.", "error"); return; }
@@ -476,13 +484,13 @@ export default function App() {
       }
       // data === null → usuário cancelou o diálogo; nada a fazer
     } finally {
-      setPendingTask(null);
+      endPendingTask(token);
     }
   }
 
   // Exportação de flashcards (trechos de texto salvos) para CSV/Anki
   async function handleExportFlashcards() {
-    setPendingTask("Exportando flashcards…");
+    const token = beginPendingTask("Exportando flashcards…");
     try {
       const res = await window.lexicon.invoke("article:exportFlashcardsCsv");
       if (!res.ok) { showToast(res.error ?? "Falha ao exportar flashcards.", "error"); return; }
@@ -491,7 +499,7 @@ export default function App() {
       if (count === 0) { showToast("Nenhum trecho de texto salvo para exportar."); return; }
       showToast(`${count} flashcard${count > 1 ? "s" : ""} exportado${count > 1 ? "s" : ""}.`);
     } finally {
-      setPendingTask(null);
+      endPendingTask(token);
     }
   }
 
@@ -626,6 +634,7 @@ export default function App() {
           </ul>
         ) : (
           <VirtualList
+            ref={articleListRef}
             className={`article-list article-list-${listDensity}`}
             items={filteredArticles}
             itemHeight={listDensity === "compact" ? 30 : 56}

@@ -1395,6 +1395,19 @@ mark.find-match-current {
   transition: color 0.15s;
 }
 .suggestion-accept-btn:hover { color: #1d9e75; }
+.link-suggestions-count { color: var(--fg3); font-size: 12px; font-weight: normal; }
+.link-suggestions-more-btn {
+  background: none;
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  color: var(--fg3);
+  cursor: pointer;
+  font-size: 12px;
+  margin-top: 6px;
+  padding: 4px 10px;
+  transition: color 0.15s, border-color 0.15s;
+}
+.link-suggestions-more-btn:hover { color: var(--fg); border-color: var(--fg3); }
 
 /* Select nos modais (idioma da Wikipedia) */
 .modal select {

@@ -8,6 +8,7 @@ import DOMPurify from "dompurify";
 import type { Article, ArticleExcerpt, ExcerptCategory, ExcerptOutlineItem, Flashcard, FlashcardGrade } from "../shared/types";
 import { useStore } from "../store/useStore";
 import { computeTrackedEdit, stripTrackedMarkup } from "../lib/excerptDiff";
+import { confirmDialog } from "../lib/confirmDialog";
 import {
   escapeHtml, inlineMarkdown, markdownToHtml, excerptHtmlToMarkdown,
   parseMarkdownTable, serializeMarkdownTable, markdownTableToHtml,
@@ -234,10 +235,10 @@ const TableExcerptEditor: React.FC<{
   };
 
   const addRow = () => setMatrix(m => [...m, Array(colCount).fill("")]);
-  const removeRow = (r: number) => {
+  const removeRow = async (r: number) => {
     if (matrix.length <= 1) return;
     const hasContent = matrix[r].some(cell => cell.trim().length > 0);
-    if (hasContent && !window.confirm("Esta linha tem conteúdo preenchido. Remover mesmo assim?")) return;
+    if (hasContent && !(await confirmDialog("Esta linha tem conteúdo preenchido. Remover mesmo assim?"))) return;
     setMatrix(m => m.filter((_, ri) => ri !== r));
   };
   const addCol = () => setMatrix(m => m.map(row => {
@@ -246,10 +247,10 @@ const TableExcerptEditor: React.FC<{
     copy.push("");
     return copy;
   }));
-  const removeCol = () => {
+  const removeCol = async () => {
     if (colCount <= 1) return;
     const hasContent = matrix.some(row => (row[colCount - 1] ?? "").trim().length > 0);
-    if (hasContent && !window.confirm("Esta coluna tem conteúdo preenchido. Remover mesmo assim?")) return;
+    if (hasContent && !(await confirmDialog("Esta coluna tem conteúdo preenchido. Remover mesmo assim?"))) return;
     setMatrix(m => m.map(row => row.slice(0, colCount - 1)));
   };
 
@@ -1026,6 +1027,8 @@ export const ArticleView: React.FC<Props> = ({ article }) => {
   // Sugestões de link descartadas pelo usuário nesta sessão de visualização
   // (não persistido — reabrir o artigo mostra as sugestões de novo)
   const [dismissedTerms, setDismissedTerms] = useState<Set<string>>(new Set());
+  // Quantas sugestões de link mostrar de uma vez ("carregar mais" avança isso)
+  const [suggestionLimit, setSuggestionLimit] = useState(20);
   // Edição de trechos salvos (texto)
   const [editingExcerptId, setEditingExcerptId] = useState<string | null>(null);
   const [excerptEditDraft, setExcerptEditDraft] = useState("");
@@ -1574,10 +1577,11 @@ export const ArticleView: React.FC<Props> = ({ article }) => {
       seen.add(key);
       suggestions.push({ term: raw, target });
     }
-    return suggestions.slice(0, 20);
+    return suggestions;
   }, [article.source, article.content, article.links, article.id, articles]);
 
   const visibleSuggestions = linkSuggestions.filter(s => !dismissedTerms.has(s.term));
+  const shownSuggestions = visibleSuggestions.slice(0, suggestionLimit);
 
   const handleAcceptSuggestion = useCallback(async (term: string, target: Article) => {
     await addLink(article.id, term, target.id, target.title);
@@ -1736,9 +1740,16 @@ export const ArticleView: React.FC<Props> = ({ article }) => {
             original e batem com títulos já existentes na base */}
         {visibleSuggestions.length > 0 && !showSummary && (
           <div className="wiki-toc link-suggestions">
-            <div className="wiki-toc-title">Links sugeridos</div>
+            <div className="wiki-toc-title">
+              Links sugeridos
+              {visibleSuggestions.length > shownSuggestions.length && (
+                <span className="link-suggestions-count">
+                  {" "}— mostrando {shownSuggestions.length} de {visibleSuggestions.length}
+                </span>
+              )}
+            </div>
             <ol className="wiki-toc-list">
-              {visibleSuggestions.map(({ term, target }) => (
+              {shownSuggestions.map(({ term, target }) => (
                 <li key={term}>
                   <span className="suggestion-term">{term}</span>
                   <span className="toc-target"> → {target.title}</span>
@@ -1749,6 +1760,15 @@ export const ArticleView: React.FC<Props> = ({ article }) => {
                 </li>
               ))}
             </ol>
+            {visibleSuggestions.length > shownSuggestions.length && (
+              <button
+                type="button"
+                className="link-suggestions-more-btn"
+                onClick={() => setSuggestionLimit(n => n + 20)}
+              >
+                Carregar mais ({visibleSuggestions.length - shownSuggestions.length} restantes)
+              </button>
+            )}
           </div>
         )}
 
@@ -1927,6 +1947,12 @@ export const ArticleView: React.FC<Props> = ({ article }) => {
 // para criar link / salvar trecho) sem exigir um wizard de onboarding.
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Toque longo dispara o mesmo "contextmenu" no mobile (ver ArticleScreen.tsx
+// no shell mobile) — sem instrução própria, a dica herdava texto de mouse
+// ("clique com o botão direito"), que não existe em iOS/Android.
+const isTouchPlatform =
+  typeof window !== "undefined" && ("ontouchstart" in window || navigator.maxTouchPoints > 0);
+
 const SelectionHintBubble: React.FC<{ x: number; y: number; onDismiss: () => void }> = ({
   x, y, onDismiss,
 }) => {
@@ -1950,7 +1976,9 @@ const SelectionHintBubble: React.FC<{ x: number; y: number; onDismiss: () => voi
     <div ref={ref} className="selection-hint-bubble"
          style={{ position: "fixed", top: pos.top, left: pos.left, zIndex: 998 }}
          onClick={e => e.stopPropagation()}>
-      💡 Clique com o botão direito para criar um link ou salvar este trecho.
+      💡 {isTouchPlatform
+        ? "Toque e segure para criar um link ou salvar este trecho."
+        : "Clique com o botão direito para criar um link ou salvar este trecho."}
       <button type="button" className="selection-hint-dismiss" title="Entendi" aria-label="Fechar dica" onClick={onDismiss}>✕</button>
     </div>
   );

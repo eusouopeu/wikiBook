@@ -249,6 +249,39 @@ function parseFlashcardsFromText(text) {
   return drafts;
 }
 
+// Achata rascunhos em pares frente/verso "prontos para estudo" — mesma
+// divisão de cards que mergeFlashcards usa para gerar os flashcards revisados
+// no app (um card por grupo de cloze presente, duas direções para
+// "reversed"), mas sem estado de agendamento. Usado pela exportação CSV para
+// Anki, para que o card exportado seja o mesmo que o usuário revisa aqui —
+// antes a exportação ignorava esse parser e gerava um card genérico por
+// trecho inteiro, sem nenhuma relação com o que é estudado no app.
+function flattenDraftsForExport(drafts) {
+  const cards = [];
+  for (const draft of drafts) {
+    if (draft.kind === "reversed") {
+      cards.push({ front: draft.front, back: draft.back });
+      cards.push({ front: draft.back, back: draft.front });
+    } else if (draft.kind === "cloze" || draft.kind === "enum-cloze") {
+      // Um card por grupo de cloze (c1 amarelo, c2 laranja, …): o grupo do
+      // card vira {{c1::…}} (sintaxe de cloze deletion do Anki); os demais
+      // grupos ficam visíveis como texto puro, igual ao preview do app.
+      const groups = [...new Set(
+        [...(draft.clozeText ?? "").matchAll(/\{\{c(\d+)::/g)].map(m => Number(m[1]))
+      )].sort((a, b) => a - b);
+      for (const g of (groups.length ? groups : [1])) {
+        const front = (draft.clozeText ?? "")
+          .replace(new RegExp(`\\{\\{c${g}::(.+?)\\}\\}`, "g"), (_m, inner) => `{{c1::${inner}}}`)
+          .replace(/\{\{c\d+::(.+?)\}\}/g, (_m, inner) => inner);
+        cards.push({ front, back: "" });
+      }
+    } else {
+      cards.push({ front: draft.front, back: draft.back });
+    }
+  }
+  return cards;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // SM-2 simplificado
 // ─────────────────────────────────────────────────────────────────────────────
@@ -415,4 +448,4 @@ function createFlashcardHandlers(ipcMain) {
   });
 }
 
-module.exports = { createFlashcardHandlers, parseFlashcardsFromText, invalidateFlashcardsCache };
+module.exports = { createFlashcardHandlers, parseFlashcardsFromText, flattenDraftsForExport, invalidateFlashcardsCache };

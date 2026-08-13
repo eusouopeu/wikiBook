@@ -5,6 +5,7 @@
 // ArticleView.tsx em @lexicon/shared funcionem sem nenhuma alteração.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { Dialog } from "@capacitor/dialog";
 import * as articles from "./articles";
 import * as config from "./config";
 import * as wikipedia from "./wikipedia";
@@ -52,6 +53,19 @@ async function invoke(channel: string, payload?: any): Promise<IpcResponse> {
         };
       case "article:updateExcerptOutline":
         return { ok: true, data: await articles.updateExcerptOutline(payload.articleId, payload.outline) };
+
+      // Confirmação nativa cross-platform (ver packages/shared/lib/confirmDialog.ts)
+      // — Dialog.confirm em vez de window.confirm(), que dentro da WebView do
+      // Capacitor renderiza com estilo inconsistente com o resto do app.
+      case "dialog:confirm": {
+        const { value } = await Dialog.confirm({
+          title: payload?.title ?? "Confirmar",
+          message: payload?.message ?? "",
+          okButtonTitle: "Confirmar",
+          cancelButtonTitle: "Cancelar",
+        });
+        return { ok: true, data: { confirmed: value } };
+      }
 
       case "config:get":
         return {

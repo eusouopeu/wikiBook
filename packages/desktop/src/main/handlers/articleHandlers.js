@@ -557,17 +557,24 @@ function createArticleHandlers(ipcMain) {
   // ── article:exportFlashcardsCsv ─────────────────────────────────────────────
   // Exporta trechos de texto salvos como flashcards (Frente/Verso) num CSV
   // importável pelo Anki. Tabelas e imagens não viram flashcard de texto.
+  // Roda o mesmo parser de flashcards (parseFlashcardsFromText) usado pela
+  // revisão SM-2 dentro do app, para que o card exportado seja o mesmo que o
+  // usuário revisa aqui — inclusive os grupos de cloze, já na sintaxe
+  // {{c1::…}} que o Anki reconhece nativamente.
   ipcMain.handle("article:exportFlashcardsCsv", async () => {
     try {
+      const { parseFlashcardsFromText, flattenDraftsForExport } = require("./flashcardHandlers");
       const articles = listAllArticles();
       const rows = [];
       for (const art of articles) {
         for (const ex of art.excerpts ?? []) {
           if ((ex.kind ?? "text") !== "text") continue;
-          rows.push([
-            `Trecho de "${ex.sourceArticleTitle}" (em "${art.title}")`,
-            ex.plainText,
-          ]);
+          const md = ex.editedMarkdown ?? htmlToMarkdown(ex.html ?? "") ?? ex.plainText;
+          if (!md) continue;
+          const tag = `lexicon::${art.title}`.replace(/\s+/g, "_");
+          for (const { front, back } of flattenDraftsForExport(parseFlashcardsFromText(md))) {
+            if (front) rows.push([front, back, tag]);
+          }
         }
       }
       if (rows.length === 0) return { ok: true, data: { count: 0 } };

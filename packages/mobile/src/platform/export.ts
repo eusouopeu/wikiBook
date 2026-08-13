@@ -19,6 +19,7 @@ import { Filesystem, Directory, Encoding } from "@capacitor/filesystem";
 import { Share } from "@capacitor/share";
 import type { Article } from "@lexicon/shared";
 import { listArticles, htmlToMarkdown } from "./articles";
+import { parseFlashcardsFromText, flattenDraftsForExport } from "./flashcards";
 
 const EXPORT_DIR = "lexicon-export";
 const ASSETS_DIR = `${EXPORT_DIR}/assets`;
@@ -165,19 +166,23 @@ export async function exportMarkdown(): Promise<{ count: number }> {
 }
 
 // ── article:exportFlashcardsCsv ─────────────────────────────────────────────
-// Exporta trechos de texto salvos (excerpts, não os flashcards de repetição
-// espaçada) como flashcards Frente/Verso num CSV importável pelo Anki —
-// mesmo escopo do desktop.
+// Exporta trechos de texto salvos como flashcards num CSV importável pelo
+// Anki — roda o mesmo parser (parseFlashcardsFromText) usado pela revisão
+// SM-2 dentro do app, para que o card exportado seja o mesmo que o usuário
+// revisa aqui (inclusive os grupos de cloze, já em sintaxe {{c1::…}}), em vez
+// de um card genérico por trecho inteiro sem relação com o que é estudado.
 export async function exportFlashcardsCsv(): Promise<{ count: number }> {
   const articles = await listArticles();
   const rows: string[][] = [];
   for (const art of articles) {
     for (const ex of art.excerpts ?? []) {
       if ((ex.kind ?? "text") !== "text") continue;
-      rows.push([
-        `Trecho de "${ex.sourceArticleTitle}" (em "${art.title}")`,
-        ex.plainText,
-      ]);
+      const md = ex.editedMarkdown ?? htmlToMarkdown(ex.html ?? "") ?? ex.plainText;
+      if (!md) continue;
+      const tag = `lexicon::${art.title}`.replace(/\s+/g, "_");
+      for (const { front, back } of flattenDraftsForExport(parseFlashcardsFromText(md))) {
+        if (front) rows.push([front, back, tag]);
+      }
     }
   }
   if (rows.length === 0) return { count: 0 };
