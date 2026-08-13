@@ -12,7 +12,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Dialog } from "@capacitor/dialog";
-import { useStore, ReviewModal, FolderPicker, VirtualList } from "@lexicon/shared";
+import { useStore, ReviewModal, FolderPicker, VirtualList, LogoMark } from "@lexicon/shared";
 import type { Article, Flashcard, FlashcardGrade } from "@lexicon/shared";
 
 const SOURCE_COLOR: Record<Article["source"], string> = {
@@ -199,7 +199,7 @@ export function ArticleListScreen({ onOpenArticle, onNewArticle, onSettings, onO
   return (
     <div className="mobile-screen">
       <header className="mobile-header">
-        <h1>Lexicon</h1>
+        <h1 className="mobile-header-logo"><LogoMark size={22} /> Wikibook</h1>
         <div className="mobile-header-actions">
           <button className="mobile-icon-btn" title="Exportar Markdown" aria-label="Exportar Markdown" onClick={handleExportMarkdown}>⤓</button>
           <button className="mobile-icon-btn" title="Exportar flashcards (CSV)" aria-label="Exportar flashcards (CSV)" onClick={handleExportFlashcardsCsv}>🎴</button>

@@ -15,7 +15,7 @@ const https = require("https");
 const { URL } = require("url");
 
 // User-Agent obrigatório pela Wikipedia — sem ele retorna 403
-const WIKI_UA = "Lexicon/1.0 (app pessoal; contato@exemplo.com) Node.js";
+const WIKI_UA = "Wikibook/1.0 (app pessoal; contato@exemplo.com) Node.js";
 
 const REQUEST_TIMEOUT_MS = 20_000;
 

@@ -34,6 +34,7 @@ function createWindow() {
     minHeight: 600,
     titleBarStyle: "hiddenInset",   // macOS: barra integrada ao conteúdo
     backgroundColor: backgroundColorFor(savedTheme),
+    icon: path.join(__dirname, "../../build/icon.png"),
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -51,6 +52,12 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  // Em dev, o dock do macOS usa o ícone do Electron por padrão — em produção
+  // (build empacotado) o "icon" do electron-builder já cuida disso.
+  if (process.platform === "darwin" && process.env.NODE_ENV === "development") {
+    app.dock?.setIcon(path.join(__dirname, "../../build/icon.png"));
+  }
+
   // Registra todos os handlers IPC
   createArticleHandlers(ipcMain);
   createWikipediaHandlers(ipcMain);

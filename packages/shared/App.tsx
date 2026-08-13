@@ -9,6 +9,7 @@ import type { Article, Flashcard, FlashcardGrade } from "./shared/types";
 import { GraphView } from "./components/GraphView";
 import { ArticleView, ReviewModal } from "./components/ArticleView";
 import { FolderPicker } from "./components/FolderPicker";
+import { LogoMark } from "./components/LogoMark";
 import { MiniGraphPreview } from "./components/MiniGraphPreview";
 import { VirtualList, type VirtualListHandle } from "./components/VirtualList";
 
@@ -516,7 +517,7 @@ export default function App() {
       {/* ── Sidebar ─────────────────────────────────────────────────────── */}
       <aside className="sidebar">
         <div className="sidebar-top">
-          <span className="app-logo">Lexicon</span>
+          <span className="app-logo"><LogoMark size={20} /> Wikibook</span>
           <div className="sidebar-top-actions">
             <button className="icon-btn" title="Exportar para Markdown (Obsidian)" aria-label="Exportar para Markdown (Obsidian)" onClick={handleExport}>⤓</button>
             <button className="icon-btn" title="Exportar flashcards (CSV/Anki)" aria-label="Exportar flashcards (CSV/Anki)" onClick={handleExportFlashcards}>🎴</button>

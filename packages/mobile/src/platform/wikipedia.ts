@@ -44,7 +44,7 @@ function sanitizeWikipediaHtml(html: string): string {
     .trim();
 }
 
-const WIKI_UA = "Lexicon/1.0 (app pessoal; contato@exemplo.com) Capacitor";
+const WIKI_UA = "Wikibook/1.0 (app pessoal; contato@exemplo.com) Capacitor";
 
 // Cache em memória por termo normalizado — evita chamadas de rede duplicadas
 // quando o usuário busca/reabre o mesmo termo mais de uma vez na mesma

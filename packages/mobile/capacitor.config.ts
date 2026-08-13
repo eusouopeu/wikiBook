@@ -2,7 +2,7 @@ import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'br.pedro.lexicon.mobile',
-  appName: 'Lexicon',
+  appName: 'Wikibook',
   webDir: 'dist',
   // Requisições nativas (fora do fetch/XHR do WebView) — necessário para a API
   // da Anthropic, que não expõe CORS para chamada direta do browser/WebView.
