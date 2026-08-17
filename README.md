@@ -105,6 +105,17 @@ exportar manualmente.
 4. O link fica registrado no artigo-pai (o texto selecionado vira um link azul clicável)
 5. O artigo-filho aparece no grafo conectado ao pai
 
+### Sincronizar entre dispositivos (opcional)
+Por padrão os dados são só locais. Para usar o app em mais de um dispositivo,
+suba o servidor self-hosted em `packages/sync-server` (Node.js + SQLite,
+`npm install && npm start` — ver o README do pacote) e nas Configurações de
+cada dispositivo:
+1. Aponte "Servidor de sincronização" para o endereço onde ele está rodando
+2. No primeiro dispositivo, clique em "Gerar novo token" e copie-o
+3. Cole o mesmo token nos outros dispositivos, apontando para o mesmo servidor
+4. Clique em "Sincronizar agora" em qualquer um deles quando quiser enviar/
+   receber mudanças — não é automático em segundo plano
+
 ### Visualização em grafo
 - Clique na aba "Grafo" para ver todos os artigos e suas conexões
 - **Tamanho dos nós em cascata**: artigos-raiz (criados diretamente, sem pai) são os

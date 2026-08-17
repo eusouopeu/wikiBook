@@ -11,6 +11,7 @@ const { createWikipediaHandlers } = require("./handlers/wikipediaHandlers");
 const { createClaudeHandlers } = require("./handlers/claudeHandlers");
 const { createConfigHandlers, getConfig } = require("./handlers/configHandlers");
 const { createFlashcardHandlers } = require("./handlers/flashcardHandlers");
+const { createSyncHandlers } = require("./handlers/syncHandlers");
 
 let mainWindow = null;
 
@@ -69,6 +70,7 @@ app.whenReady().then(() => {
     },
   });
   createFlashcardHandlers(ipcMain);
+  createSyncHandlers(ipcMain);
 
   // Confirmação nativa cross-platform (ver packages/shared/lib/confirmDialog.ts)
   // — usada por componentes compartilhados com o mobile, onde window.confirm()

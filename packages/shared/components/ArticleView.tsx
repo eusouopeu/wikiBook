@@ -5,7 +5,7 @@
 import React, { useRef, useEffect, useLayoutEffect, useState, useCallback, useMemo, useId } from "react";
 import { useShallow } from "zustand/react/shallow";
 import DOMPurify from "dompurify";
-import type { Article, ArticleExcerpt, ExcerptCategory, ExcerptOutlineItem, Flashcard, FlashcardGrade } from "../shared/types";
+import type { Article, ArticleExcerpt, ArticleHistoryEntry, ExcerptCategory, ExcerptOutlineItem, Flashcard, FlashcardGrade } from "../shared/types";
 import { useStore } from "../store/useStore";
 import { computeTrackedEdit, stripTrackedMarkup } from "../lib/excerptDiff";
 import { confirmDialog } from "../lib/confirmDialog";
@@ -988,6 +988,245 @@ const SectionsTocPanel: React.FC<{
   </div>
 );
 
+// ── Histórico de versões ────────────────────────────────────────────────────
+// Extrai um texto comparável de uma versão (snapshot ou atual) para o diff:
+// artigos manuais já são Markdown; wikipedia/claude viram texto puro (tags
+// HTML fora, para o diff por token não se perder em atributos/markup).
+function comparableVersionText(source: Article["source"], content: string, summary: string): string {
+  const raw = content && content.trim() ? content : summary;
+  if (source === "manual") return raw;
+  return raw.replace(/<[^>]+>/g, " ").replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+function formatHistoryDate(iso: string): string {
+  return new Date(iso).toLocaleString("pt-BR", {
+    day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit",
+  });
+}
+
+const HistoryModal: React.FC<{
+  article: Article;
+  onClose: () => void;
+  onReverted: () => Promise<void>;
+  showToast: (message: string, type?: "info" | "error") => void;
+}> = ({ article, onClose, onReverted, showToast }) => {
+  const [entries, setEntries] = useState<ArticleHistoryEntry[] | null>(null);
+  const [expandedAt, setExpandedAt] = useState<string | null>(null);
+  const [reverting, setReverting] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    window.lexicon.invoke("article:getHistory", { id: article.id }).then(res => {
+      if (!cancelled && res.ok) setEntries((res.data as ArticleHistoryEntry[]) ?? []);
+    });
+    return () => { cancelled = true; };
+  }, [article.id]);
+
+  const handleRevert = useCallback(async (entry: ArticleHistoryEntry) => {
+    const ok = await confirmDialog(
+      `Reverter "${article.title}" para a versão de ${formatHistoryDate(entry.updatedAt)}? A versão atual também fica salva no histórico.`,
+      "Reverter versão"
+    );
+    if (!ok) return;
+    setReverting(entry.updatedAt);
+    try {
+      const res = await window.lexicon.invoke("article:revertVersion", { id: article.id, updatedAt: entry.updatedAt });
+      if (res.ok) {
+        showToast("Artigo revertido para a versão selecionada.");
+        await onReverted();
+        onClose();
+      } else {
+        showToast(res.error ?? "Falha ao reverter versão.", "error");
+      }
+    } finally {
+      setReverting(null);
+    }
+  }, [article.id, article.title, onReverted, onClose, showToast]);
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal history-modal" onClick={e => e.stopPropagation()}>
+        <h2>Histórico de versões</h2>
+        {entries === null && <p className="no-content">Carregando…</p>}
+        {entries !== null && entries.length === 0 && (
+          <p className="no-content">Nenhuma versão anterior salva ainda — o histórico começa a ser guardado na próxima edição deste artigo.</p>
+        )}
+        {entries !== null && entries.length > 0 && (
+          <ul className="history-list">
+            {entries.map(entry => {
+              const expanded = expandedAt === entry.updatedAt;
+              return (
+                <li key={entry.updatedAt} className="history-item">
+                  <div className="history-item-row">
+                    <span className="history-item-date">{formatHistoryDate(entry.updatedAt)}</span>
+                    <span className="history-item-title">{entry.title}</span>
+                    <div className="history-item-actions">
+                      <button type="button" onClick={() => setExpandedAt(expanded ? null : entry.updatedAt)}>
+                        {expanded ? "Ocultar diff" : "Ver diff"}
+                      </button>
+                      <button type="button" disabled={reverting === entry.updatedAt}
+                              onClick={() => handleRevert(entry)}>
+                        {reverting === entry.updatedAt ? "Revertendo…" : "Reverter"}
+                      </button>
+                    </div>
+                  </div>
+                  {expanded && (() => {
+                    const oldText = comparableVersionText(article.source, entry.content, entry.summary);
+                    const newText = comparableVersionText(article.source, article.content, article.summary);
+                    const diffMd = computeTrackedEdit(oldText, newText);
+                    return (
+                      <div className="history-diff" dangerouslySetInnerHTML={{ __html: sanitize(markdownToHtml(diffMd || "_Sem diferenças de texto._")) }} />
+                    );
+                  })()}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+        <div className="modal-actions">
+          <button onClick={onClose}>Fechar</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ── Anexos (imagem/PDF/qualquer arquivo) ────────────────────────────────────
+function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function attachmentIcon(mimeType: string): string {
+  if (mimeType.startsWith("image/")) return "🖼";
+  if (mimeType === "application/pdf") return "📄";
+  return "📎";
+}
+
+// Lê um File do input como base64 puro (sem o prefixo "data:...;base64,")
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      resolve(result.slice(result.indexOf(",") + 1));
+    };
+    reader.onerror = () => reject(reader.error ?? new Error("Falha ao ler o arquivo."));
+    reader.readAsDataURL(file);
+  });
+}
+
+const AttachmentsSection: React.FC<{
+  article: Article;
+  onChanged: () => Promise<void>;
+  showToast: (message: string, type?: "info" | "error") => void;
+}> = ({ article, onChanged, showToast }) => {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [preview, setPreview] = useState<{ name: string; dataUrl: string } | null>(null);
+  const attachments = article.attachments ?? [];
+
+  const handleFileSelected = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setUploading(true);
+    try {
+      const dataBase64 = await fileToBase64(file);
+      const res = await window.lexicon.invoke("article:addAttachment", {
+        articleId: article.id, name: file.name, mimeType: file.type || "application/octet-stream", dataBase64,
+      });
+      if (res.ok) await onChanged();
+      else showToast(res.error ?? "Falha ao anexar arquivo.", "error");
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "Falha ao anexar arquivo.", "error");
+    } finally {
+      setUploading(false);
+    }
+  }, [article.id, onChanged, showToast]);
+
+  const handlePreview = useCallback(async (attachmentId: string) => {
+    setBusyId(attachmentId);
+    try {
+      const res = await window.lexicon.invoke("article:getAttachmentData", { articleId: article.id, attachmentId });
+      if (res.ok) {
+        const { dataBase64, mimeType, name } = res.data as { dataBase64: string; mimeType: string; name: string };
+        setPreview({ name, dataUrl: `data:${mimeType};base64,${dataBase64}` });
+      } else {
+        showToast(res.error ?? "Falha ao abrir anexo.", "error");
+      }
+    } finally {
+      setBusyId(null);
+    }
+  }, [article.id, showToast]);
+
+  const handleExport = useCallback(async (attachmentId: string) => {
+    setBusyId(attachmentId);
+    try {
+      const res = await window.lexicon.invoke("article:exportAttachment", { articleId: article.id, attachmentId });
+      if (!res.ok) showToast(res.error ?? "Falha ao exportar anexo.", "error");
+    } finally {
+      setBusyId(null);
+    }
+  }, [article.id, showToast]);
+
+  const handleRemove = useCallback(async (attachmentId: string, name: string) => {
+    const ok = await confirmDialog(`Remover o anexo "${name}"?`, "Remover anexo");
+    if (!ok) return;
+    setBusyId(attachmentId);
+    try {
+      const res = await window.lexicon.invoke("article:removeAttachment", { articleId: article.id, attachmentId });
+      if (res.ok) await onChanged();
+      else showToast(res.error ?? "Falha ao remover anexo.", "error");
+    } finally {
+      setBusyId(null);
+    }
+  }, [article.id, onChanged, showToast]);
+
+  return (
+    <div className="attachments-section">
+      <div className="attachments-header">
+        <span className="attachments-label">Anexos{attachments.length > 0 ? ` (${attachments.length})` : ""}</span>
+        <button type="button" className="attachments-add-btn" disabled={uploading} onClick={() => fileInputRef.current?.click()}>
+          {uploading ? "Anexando…" : "+ Anexar arquivo"}
+        </button>
+        <input ref={fileInputRef} type="file" hidden onChange={handleFileSelected} />
+      </div>
+      {attachments.length > 0 && (
+        <ul className="attachments-list">
+          {attachments.map(a => (
+            <li key={a.id} className="attachment-item">
+              <span className="attachment-icon">{attachmentIcon(a.mimeType)}</span>
+              <span className="attachment-name" title={a.name}>{a.name}</span>
+              <span className="attachment-size">{formatBytes(a.size)}</span>
+              <div className="attachment-actions">
+                {a.mimeType.startsWith("image/") && (
+                  <button type="button" disabled={busyId === a.id} onClick={() => handlePreview(a.id)}>Ver</button>
+                )}
+                <button type="button" disabled={busyId === a.id} onClick={() => handleExport(a.id)}>Exportar</button>
+                <button type="button" disabled={busyId === a.id} onClick={() => handleRemove(a.id, a.name)}>Remover</button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+      {preview && (
+        <div className="modal-overlay" onClick={() => setPreview(null)}>
+          <div className="modal attachment-preview-modal" onClick={e => e.stopPropagation()}>
+            <h2>{preview.name}</h2>
+            <img src={preview.dataUrl} alt={preview.name} className="attachment-preview-img" />
+            <div className="modal-actions">
+              <button onClick={() => setPreview(null)}>Fechar</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Componente principal
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1037,6 +1276,8 @@ export const ArticleView: React.FC<Props> = ({ article }) => {
   const [flashcards, setFlashcards] = useState<Flashcard[]>([]);
   const [flashcardsLoading, setFlashcardsLoading] = useState(false);
   const [reviewOpen, setReviewOpen] = useState(false);
+  // Histórico de versões
+  const [historyOpen, setHistoryOpen] = useState(false);
   // Buscar na página
   const [findOpen, setFindOpen] = useState(false);
   const [findQuery, setFindQuery] = useState("");
@@ -1072,6 +1313,7 @@ export const ArticleView: React.FC<Props> = ({ article }) => {
     return Array.from(set).sort();
   }, [articles]);
 
+
   // Carrega os flashcards já gerados para este artigo (sem forçar regeneração)
   const loadFlashcards = useCallback(async () => {
     const res = await window.lexicon.invoke("flashcards:list", { articleId: article.id });
@@ -1102,6 +1344,7 @@ export const ArticleView: React.FC<Props> = ({ article }) => {
     setChatInput("");
     setEditingExcerptId(null);
     setReviewOpen(false);
+    setHistoryOpen(false);
     setFindOpen(false);
     setFindQuery("");
     setTocOpen(false);
@@ -1608,6 +1851,8 @@ export const ArticleView: React.FC<Props> = ({ article }) => {
             <button className="icon-btn" title="Revisar flashcards deste artigo" aria-label="Revisar flashcards deste artigo"
                     onClick={() => setReviewOpen(true)}
                     disabled={flashcards.filter(c => c.due <= new Date().toISOString()).length === 0}>🎓</button>
+            <button className="icon-btn" title="Histórico de versões" aria-label="Histórico de versões"
+                    onClick={() => setHistoryOpen(true)}>🕐</button>
             {article.source === "manual" && !isEditing && (
               <button className="icon-btn" title="Editar artigo" aria-label="Editar artigo" onClick={handleStartEdit}>✎</button>
             )}
@@ -1635,6 +1880,12 @@ export const ArticleView: React.FC<Props> = ({ article }) => {
           tags={article.tags ?? []}
           existingTags={allTags}
           onChange={tags => updateTags(article.id, tags)}
+        />
+
+        <AttachmentsSection
+          article={article}
+          onChanged={() => openArticle(article.id)}
+          showToast={showToast}
         />
 
         {/* Abas de modo (igual à "discussão / editar" da Wikipedia) */}
@@ -1935,6 +2186,16 @@ export const ArticleView: React.FC<Props> = ({ article }) => {
           cards={flashcards.filter(c => c.due <= new Date().toISOString())}
           onGrade={handleGradeCard}
           onClose={() => setReviewOpen(false)}
+        />
+      )}
+
+      {/* ── Histórico de versões ────────────────────────────────────────────── */}
+      {historyOpen && (
+        <HistoryModal
+          article={article}
+          onClose={() => setHistoryOpen(false)}
+          onReverted={() => openArticle(article.id)}
+          showToast={showToast}
         />
       )}
     </div>

@@ -42,8 +42,24 @@ const NewArticleModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   const [error, setError] = useState("");
   const [results, setResults] = useState<WikiSearchResult[]>([]);
   const [searching, setSearching] = useState(false);
-  const { fetchFromWikipedia, generateWithClaude, wikipediaLang } = useStore();
+  // Importação em lote (só para Wikipedia): um título por linha, importados em
+  // sequência — em paralelo sobrecarregaria a API da Wikipedia e o resumo
+  // automático via Claude para cada artigo.
+  const [batchMode, setBatchMode] = useState(false);
+  const [batchText, setBatchText] = useState("");
+  const [batchProgress, setBatchProgress] = useState<{ done: number; total: number } | null>(null);
+  // Template de geração (só relevante quando source === "claude") — carregado
+  // do main process para manter a lista de templates num único lugar.
+  const [templates, setTemplates] = useState<Array<{ id: string; label: string }>>([]);
+  const [templateId, setTemplateId] = useState("padrao");
+  const { fetchFromWikipedia, generateWithClaude, wikipediaLang, showToast } = useStore();
   useEscToClose(onClose);
+
+  useEffect(() => {
+    window.lexicon.invoke("claude:generateTemplates").then(res => {
+      if (res.ok) setTemplates((res.data as Array<{ id: string; label: string }>) ?? []);
+    });
+  }, []);
 
   // Prévia dos resultados da Wikipedia (busca com debounce de 400ms)
   useEffect(() => {
@@ -71,13 +87,78 @@ const NewArticleModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     setError("");
     try {
       if (source === "wikipedia") await fetchFromWikipedia(query.trim(), null, exactTitle);
-      else await generateWithClaude(query.trim());
+      else await generateWithClaude(query.trim(), null, templateId);
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
     }
+  }
+
+  async function importBatch() {
+    const titles = Array.from(new Set(
+      batchText.split("\n").map(t => t.trim()).filter(Boolean)
+    ));
+    if (titles.length === 0) return;
+    setLoading(true);
+    setError("");
+    setBatchProgress({ done: 0, total: titles.length });
+    const failures: string[] = [];
+    for (let i = 0; i < titles.length; i++) {
+      try {
+        await fetchFromWikipedia(titles[i], null, titles[i]);
+      } catch (err) {
+        failures.push(titles[i]);
+      }
+      setBatchProgress({ done: i + 1, total: titles.length });
+    }
+    setLoading(false);
+    const ok = titles.length - failures.length;
+    showToast(
+      failures.length === 0
+        ? `${ok} artigo${ok === 1 ? "" : "s"} importado${ok === 1 ? "" : "s"} da Wikipedia.`
+        : `${ok} importado${ok === 1 ? "" : "s"}, ${failures.length} falharam: ${failures.join(", ")}`,
+      failures.length === 0 ? "info" : "error",
+      { durationMs: 6000 }
+    );
+    onClose();
+  }
+
+  if (batchMode) {
+    const titleCount = batchText.split("\n").map(t => t.trim()).filter(Boolean).length;
+    return (
+      <div className="modal-overlay" onClick={onClose}>
+        <div className="modal" onClick={e => e.stopPropagation()}>
+          <h2>Importar em lote (Wikipedia)</h2>
+          <form onSubmit={e => { e.preventDefault(); importBatch(); }}>
+            <label>
+              Um título por linha
+              <textarea
+                autoFocus
+                className="batch-import-textarea"
+                rows={8}
+                value={batchText}
+                onChange={e => setBatchText(e.target.value)}
+                placeholder={"Fotossíntese\nInteligência artificial\nRevolução Francesa"}
+                disabled={loading}
+              />
+            </label>
+            {batchProgress && (
+              <p className="wiki-search-hint">
+                Importando… {batchProgress.done}/{batchProgress.total}
+              </p>
+            )}
+            <div className="modal-actions">
+              <button type="button" onClick={() => setBatchMode(false)} disabled={loading}>Voltar</button>
+              <button type="submit" className="primary" disabled={loading || titleCount === 0}>
+                {loading ? "Importando…" : `Importar ${titleCount || ""} artigo${titleCount === 1 ? "" : "s"}`}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -113,6 +194,15 @@ const NewArticleModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             </label>
           </div>
 
+          {source === "claude" && templates.length > 0 && (
+            <label>
+              Modelo do artigo
+              <select value={templateId} onChange={e => setTemplateId(e.target.value)}>
+                {templates.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
+              </select>
+            </label>
+          )}
+
           {/* Prévia dos resultados da Wikipedia — clique cria pelo título exato */}
           {source === "wikipedia" && query.trim().length >= 3 && (
             <div className="wiki-search-results">
@@ -130,6 +220,12 @@ const NewArticleModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                 </button>
               ))}
             </div>
+          )}
+
+          {source === "wikipedia" && (
+            <button type="button" className="batch-import-toggle" onClick={() => setBatchMode(true)}>
+              Importar vários títulos de uma vez →
+            </button>
           )}
 
           {error && <p className="modal-error">{error}</p>}
@@ -164,7 +260,7 @@ const THEME_OPTIONS: Array<{ value: "system" | "light" | "dark"; label: string }
 const SettingsModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   const [apiKey, setApiKey] = useState("");
   const [saved, setSaved] = useState(false);
-  const { wikipediaLang, setWikipediaLang, theme, setTheme } = useStore();
+  const { wikipediaLang, setWikipediaLang, theme, setTheme, showToast } = useStore();
   useEscToClose(onClose);
 
   useEffect(() => {
@@ -177,6 +273,57 @@ const SettingsModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     await window.lexicon.invoke("config:set", { key: "anthropicApiKey", value: apiKey });
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
+  }
+
+  // ── Sincronização (servidor self-hosted, ver packages/sync-server) ────────
+  const [syncServerUrl, setSyncServerUrl] = useState("");
+  const [syncToken, setSyncToken] = useState("");
+  const [syncLastRunAt, setSyncLastRunAt] = useState("");
+  const [syncing, setSyncing] = useState(false);
+  const [testingConn, setTestingConn] = useState(false);
+
+  useEffect(() => {
+    window.lexicon.invoke("config:get", { key: "syncServerUrl" }).then(r => { if (r.ok && r.data) setSyncServerUrl(r.data as string); });
+    window.lexicon.invoke("config:get", { key: "syncToken" }).then(r => { if (r.ok && r.data) setSyncToken(r.data as string); });
+    window.lexicon.invoke("config:get", { key: "syncLastRunAt" }).then(r => { if (r.ok && r.data) setSyncLastRunAt(r.data as string); });
+  }, []);
+
+  async function persistSyncServerUrl(value: string) {
+    setSyncServerUrl(value);
+    await window.lexicon.invoke("config:set", { key: "syncServerUrl", value });
+  }
+  async function persistSyncToken(value: string) {
+    setSyncToken(value);
+    await window.lexicon.invoke("config:set", { key: "syncToken", value });
+  }
+  async function handleGenerateToken() {
+    await persistSyncToken(crypto.randomUUID());
+    showToast("Novo token gerado — cole-o nos outros dispositivos para sincronizarem entre si.");
+  }
+  async function handleTestConnection() {
+    setTestingConn(true);
+    try {
+      const res = await window.lexicon.invoke("sync:test", { serverUrl: syncServerUrl });
+      if (res.ok) showToast("Servidor de sincronização acessível.");
+      else showToast(res.error ?? "Não foi possível conectar ao servidor.", "error");
+    } finally {
+      setTestingConn(false);
+    }
+  }
+  async function handleSyncNow() {
+    setSyncing(true);
+    try {
+      const res = await window.lexicon.invoke("sync:run", { serverUrl: syncServerUrl, token: syncToken });
+      if (res.ok) {
+        const { pushed, pulled } = res.data as { pushed: number; pulled: number };
+        showToast(`Sincronizado — ${pushed} enviados, ${pulled} atualizados a partir de outros dispositivos.`);
+        setSyncLastRunAt(new Date().toISOString());
+      } else {
+        showToast(res.error ?? "Falha ao sincronizar.", "error");
+      }
+    } finally {
+      setSyncing(false);
+    }
   }
 
   return (
@@ -220,12 +367,135 @@ const SettingsModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             ))}
           </div>
         </label>
+        <h3 className="settings-section-title">Sincronização entre dispositivos</h3>
+        <p className="settings-hint">
+          Requer um servidor próprio rodando (ver packages/sync-server). Sob demanda — use
+          "Sincronizar agora" quando quiser enviar/receber mudanças, não é automático.
+        </p>
+        <label>
+          Servidor de sincronização
+          <input
+            type="text"
+            value={syncServerUrl}
+            onChange={e => persistSyncServerUrl(e.target.value)}
+            placeholder="http://192.168.0.10:8787"
+          />
+        </label>
+        <label>
+          Token da biblioteca
+          <div className="sync-token-row">
+            <input
+              type="password"
+              value={syncToken}
+              onChange={e => persistSyncToken(e.target.value)}
+              placeholder="Cole aqui o token gerado no primeiro dispositivo"
+            />
+            <button type="button" onClick={handleGenerateToken}>Gerar novo token</button>
+          </div>
+        </label>
+        {syncLastRunAt && (
+          <p className="settings-hint">
+            Última sincronização: {new Date(syncLastRunAt).toLocaleString("pt-BR")}
+          </p>
+        )}
+        <div className="modal-actions">
+          <button onClick={handleTestConnection} disabled={testingConn || !syncServerUrl}>
+            {testingConn ? "Testando…" : "Testar conexão"}
+          </button>
+          <button className="primary" onClick={handleSyncNow} disabled={syncing || !syncServerUrl || !syncToken}>
+            {syncing ? "Sincronizando…" : "Sincronizar agora"}
+          </button>
+        </div>
+
         <div className="modal-actions">
           <button onClick={onClose}>Fechar</button>
           <button className="primary" onClick={handleSave}>
             {saved ? "✓ Salvo" : "Salvar"}
           </button>
         </div>
+      </div>
+    </div>
+  );
+};
+
+// ── Wizard de boas-vindas (primeira execução) ─────────────────────────────────
+// 3 passos: apresentação → colar API key (opcional, "Pular" disponível) →
+// tour rápido + CTA para criar o primeiro artigo. onFinish fecha o wizard;
+// onCreateFirstArticle fecha o wizard E abre o NewArticleModal em seguida.
+const OnboardingWizard: React.FC<{
+  onFinish: () => void;
+  onCreateFirstArticle: () => void;
+}> = ({ onFinish, onCreateFirstArticle }) => {
+  const [step, setStep] = useState(0);
+  const [apiKey, setApiKey] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  async function handleSaveKeyAndContinue() {
+    if (apiKey.trim()) {
+      setSaving(true);
+      try {
+        await window.lexicon.invoke("config:set", { key: "anthropicApiKey", value: apiKey.trim() });
+      } finally {
+        setSaving(false);
+      }
+    }
+    setStep(2);
+  }
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal onboarding-modal">
+        {step === 0 && (
+          <>
+            <h2>Bem-vindo ao Wikibook</h2>
+            <p>
+              Sua base de conhecimento pessoal com grafo de conceitos. Crie artigos a partir
+              da Wikipedia ou gerados pelo Claude, conecte-os entre si e revise o que aprendeu
+              com flashcards de repetição espaçada.
+            </p>
+            <div className="modal-actions">
+              <button className="primary" onClick={() => setStep(1)}>Começar</button>
+            </div>
+          </>
+        )}
+        {step === 1 && (
+          <>
+            <h2>Chave da API Anthropic</h2>
+            <p>
+              Necessária para os recursos de IA: resumo automático, geração de artigos, busca
+              semântica e flashcards. Pode ser configurada depois em ⚙ Configurações.
+            </p>
+            <label>
+              Anthropic API Key
+              <input
+                type="password" autoFocus value={apiKey}
+                onChange={e => setApiKey(e.target.value)}
+                placeholder="sk-ant-api03-…"
+              />
+            </label>
+            <div className="modal-actions">
+              <button onClick={() => setStep(2)} disabled={saving}>Pular</button>
+              <button className="primary" onClick={handleSaveKeyAndContinue} disabled={saving}>
+                {saving ? "Salvando…" : "Próximo"}
+              </button>
+            </div>
+          </>
+        )}
+        {step === 2 && (
+          <>
+            <h2>Tour rápido</h2>
+            <ul className="onboarding-tour-list">
+              <li>Use <strong>+ Novo artigo</strong> para buscar na Wikipedia ou gerar com o Claude.</li>
+              <li>Selecione um trecho de texto e clique com o botão direito para salvá-lo ou criar um flashcard.</li>
+              <li>O modo <strong>Grafo</strong> mostra como seus artigos se conectam entre si.</li>
+              <li>Revise flashcards vencidos a qualquer momento pelo ícone 🎓 no artigo.</li>
+            </ul>
+            <div className="modal-actions">
+              <button onClick={onFinish}>Concluir</button>
+              <button className="primary" onClick={onCreateFirstArticle}>Criar meu primeiro artigo</button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
@@ -285,6 +555,7 @@ export default function App() {
     folders, selectedFolder, setSelectedFolder,
     createFolder, renameFolder, deleteFolder, setArticleFolder,
     listDensity, setListDensity, beginPendingTask, endPendingTask,
+    onboardingSeen, dismissOnboarding,
   } = useStore();
 
   const [showNewModal, setShowNewModal] = useState(false);
@@ -365,7 +636,11 @@ export default function App() {
     await window.lexicon.invoke("flashcards:grade", { articleId, cardId, grade });
   }
 
-  useEffect(() => { loadArticles(); refreshDueCount(); }, [refreshDueCount]);
+  // bootstrapped: só true depois que loadArticles() resolve — inclui a leitura
+  // de onboardingSeen do config, então o wizard não pisca na tela para quem já
+  // passou por ele (mostrar antes disso resolver usaria o default local false).
+  const [bootstrapped, setBootstrapped] = useState(false);
+  useEffect(() => { loadArticles().then(() => setBootstrapped(true)); refreshDueCount(); }, [refreshDueCount]);
 
   const activeArticle = articles.find(a => a.id === activeArticleId) ?? null;
 
@@ -780,6 +1055,14 @@ export default function App() {
       {/* ── Modais ──────────────────────────────────────────────────────── */}
       {showNewModal  && <NewArticleModal  onClose={() => setShowNewModal(false)} />}
       {showSettings  && <SettingsModal    onClose={() => setShowSettings(false)} />}
+
+      {/* ── Wizard de boas-vindas (primeira execução) ───────────────────── */}
+      {bootstrapped && !onboardingSeen && (
+        <OnboardingWizard
+          onFinish={() => dismissOnboarding()}
+          onCreateFirstArticle={() => { dismissOnboarding(); setShowNewModal(true); }}
+        />
+      )}
 
       {/* ── Toast / tarefa em andamento ─────────────────────────────────── */}
       <StatusOverlay />

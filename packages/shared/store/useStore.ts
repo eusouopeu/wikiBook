@@ -63,6 +63,9 @@ interface AppState {
   // da primeira vez (ou do primeiro uso real do menu de contexto), nunca
   // mais é mostrada. Persistida em config.json.
   selectionHintSeen: boolean;
+  // Se o usuário já passou pelo wizard de boas-vindas (primeira execução) —
+  // persistida em config.json, igual a selectionHintSeen.
+  onboardingSeen: boolean;
   // Filtro por tags na sidebar (vazio = todas) — múltiplas tags selecionadas
   // filtram por interseção, permitindo cruzar artigos por mais de um tema
   // simultaneamente, ortogonal às pastas (hierárquicas, uma só por artigo).
@@ -109,7 +112,7 @@ interface AppState {
   restoreArticle: (id: string) => Promise<Article>;
 
   fetchFromWikipedia: (query: string, parentId?: string | null, exactTitle?: string) => Promise<Article>;
-  generateWithClaude: (title: string, parentId?: string | null) => Promise<Article>;
+  generateWithClaude: (title: string, parentId?: string | null, templateId?: string) => Promise<Article>;
 
   addLink: (parentId: string, anchorText: string, targetId: string, targetTitle: string) => Promise<void>;
   removeLink: (parentId: string, linkId: string) => Promise<void>;
@@ -121,6 +124,7 @@ interface AppState {
   setTheme: (theme: ThemeMode) => Promise<void>;
   setListDensity: (density: "compact" | "comfortable") => Promise<void>;
   dismissSelectionHint: () => Promise<void>;
+  dismissOnboarding: () => Promise<void>;
   toggleSelectedTag: (tag: string) => void;
   clearSelectedTags: () => void;
   loadFolders: () => Promise<void>;
@@ -273,6 +277,7 @@ export const useStore = create<AppState>((set, get) => ({
   theme: "system",
   listDensity: "comfortable",
   selectionHintSeen: false,
+  onboardingSeen: false,
   selectedTags: [],
   folders: [],
   selectedFolder: null,
@@ -310,6 +315,10 @@ export const useStore = create<AppState>((set, get) => ({
     try {
       const seen = await ipc<string | undefined>("config:get", { key: "selectionHintSeen" });
       if (seen === "true") set({ selectionHintSeen: true });
+    } catch { /* mantém o padrão false */ }
+    try {
+      const onboardingSeen = await ipc<string | undefined>("config:get", { key: "onboardingSeen" });
+      if (onboardingSeen === "true") set({ onboardingSeen: true });
     } catch { /* mantém o padrão false */ }
     await get().loadFolders();
   },
@@ -423,7 +432,7 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   // ── generateWithClaude ──────────────────────────────────────────────────────
-  generateWithClaude: async (title, parentId = null) => {
+  generateWithClaude: async (title, parentId = null, templateId = "padrao") => {
     const token = get().beginPendingTask(`Gerando "${title}" com Claude…`);
     try {
       // Coleta contexto dos artigos relacionados ao pai (se houver)
@@ -433,7 +442,7 @@ export const useStore = create<AppState>((set, get) => ({
         if (parent) context = parent.summary;
       }
 
-      const r = await ipc<{ summary: string }>("claude:generate", { title, context });
+      const r = await ipc<{ summary: string }>("claude:generate", { title, context, templateId });
 
       get().updatePendingTask(token, `Salvando "${title}"…`);
       const article = await get().saveArticle({
@@ -492,6 +501,10 @@ export const useStore = create<AppState>((set, get) => ({
   dismissSelectionHint: async () => {
     set({ selectionHintSeen: true });
     await ipc("config:set", { key: "selectionHintSeen", value: "true" });
+  },
+  dismissOnboarding: async () => {
+    set({ onboardingSeen: true });
+    await ipc("config:set", { key: "onboardingSeen", value: "true" });
   },
   toggleSelectedTag: (tag) => set(s => ({
     selectedTags: s.selectedTags.includes(tag)

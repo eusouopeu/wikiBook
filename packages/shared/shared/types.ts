@@ -36,6 +36,27 @@ export type ExcerptOutlineItem =
   | { type: "excerpt"; id: string }
   | { type: "heading"; id: string; text: string };
 
+// Snapshot de uma versão anterior de um artigo — ver article:getHistory/
+// article:revertVersion. Guardado fora do objeto Article (arquivo próprio),
+// nunca incluído no article:list.
+export interface ArticleHistoryEntry {
+  title: string;
+  content: string;
+  summary: string;
+  updatedAt: string;
+}
+
+// Arquivo anexado a um artigo (imagem/PDF/qualquer tipo) — só metadados aqui;
+// o conteúdo binário fica fora do JSON do artigo (ver article:addAttachment/
+// article:exportAttachment), nunca incluído em article:list.
+export interface ArticleAttachment {
+  id: string;
+  name: string;
+  mimeType: string;
+  size: number;
+  createdAt: string;
+}
+
 export interface Article {
   id: string;
   title: string;
@@ -46,6 +67,7 @@ export interface Article {
   links: ArticleLink[];
   excerpts: ArticleExcerpt[];
   excerptOutline?: ExcerptOutlineItem[];
+  attachments?: ArticleAttachment[];
   tags: string[];
   // Pasta única (lista plana, sem aninhamento) — null/ausente = "Sem pasta"
   folderId?: string | null;
@@ -135,10 +157,17 @@ export type IpcChannel =
   | "article:updateExcerptOutline"
   | "article:exportMarkdown"
   | "article:exportFlashcardsCsv"
+  | "article:getHistory"
+  | "article:revertVersion"
+  | "article:addAttachment"
+  | "article:removeAttachment"
+  | "article:getAttachmentData"
+  | "article:exportAttachment"
   | "wikipedia:fetch"
   | "wikipedia:search"
   | "claude:summarize"
   | "claude:generate"
+  | "claude:generateTemplates"
   | "claude:ask"
   | "claude:searchRank"
   | "flashcards:regenerate"
@@ -146,7 +175,9 @@ export type IpcChannel =
   | "flashcards:listDue"
   | "flashcards:grade"
   | "config:get"
-  | "config:set";
+  | "config:set"
+  | "sync:test"
+  | "sync:run";
 
 export interface IpcRequest<T = unknown> { channel: IpcChannel; payload?: T; }
 export interface IpcResponse<T = unknown> { ok: boolean; data?: T; error?: string; }

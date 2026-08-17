@@ -9,10 +9,15 @@
 
 import { Filesystem, Directory, Encoding } from "@capacitor/filesystem";
 import { CapacitorHttp } from "@capacitor/core";
-import type { Article, ArticleExcerpt, ExcerptOutlineItem } from "@lexicon/shared";
+import type { Article, ArticleAttachment, ArticleExcerpt, ArticleHistoryEntry, ExcerptOutlineItem } from "@lexicon/shared";
 
 const ARTICLES_DIR = "articles";
 const TRASH_DIR = `${ARTICLES_DIR}/.trash`;
+const HISTORY_DIR = `${ARTICLES_DIR}/.history`;
+const HISTORY_MAX_ENTRIES = 20;
+const ATTACHMENTS_DIR = "attachments";
+// Mesmo limite do desktop (ver articleHandlers.js/MAX_ATTACHMENT_BYTES)
+const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
 
 async function ensureDir() {
   try {
@@ -38,6 +43,69 @@ function trashPath(id: string) {
   return `${TRASH_DIR}/${id}.json`;
 }
 
+function historyPath(id: string) {
+  return `${HISTORY_DIR}/${id}.json`;
+}
+
+async function ensureHistoryDir() {
+  try {
+    await Filesystem.mkdir({ path: HISTORY_DIR, directory: Directory.Data, recursive: true });
+  } catch {
+    // já existe
+  }
+}
+
+async function readHistory(id: string): Promise<ArticleHistoryEntry[]> {
+  try {
+    const res = await Filesystem.readFile({
+      path: historyPath(id), directory: Directory.Data, encoding: Encoding.UTF8,
+    });
+    return JSON.parse(res.data as string) as ArticleHistoryEntry[];
+  } catch {
+    return [];
+  }
+}
+
+async function writeHistory(id: string, entries: ArticleHistoryEntry[]) {
+  await ensureHistoryDir();
+  await Filesystem.writeFile({
+    path: historyPath(id), data: JSON.stringify(entries, null, 2),
+    directory: Directory.Data, encoding: Encoding.UTF8,
+  });
+}
+
+// Snapshot da versão ANTERIOR à escrita — só quando title/summary/content de
+// fato mudaram, para não acumular entradas idênticas a cada "Salvar" sem
+// edição real.
+// ── Anexos (imagem/PDF) de um artigo ────────────────────────────────────────
+// Mesma modelagem do desktop: só metadados no JSON do artigo, conteúdo
+// binário em arquivo próprio (attachments/<articleId>/<attachmentId>-<nome>).
+function safeAttachmentName(name: string): string {
+  return name.replace(/[/\\:*?"<>|#^[\]]/g, "-").trim().slice(0, 120) || "arquivo";
+}
+function attachmentDirPath(articleId: string) {
+  return `${ATTACHMENTS_DIR}/${articleId}`;
+}
+function attachmentFilePath(articleId: string, attachmentId: string, name: string) {
+  return `${attachmentDirPath(articleId)}/${attachmentId}-${safeAttachmentName(name)}`;
+}
+async function ensureAttachmentDir(articleId: string) {
+  try {
+    await Filesystem.mkdir({ path: attachmentDirPath(articleId), directory: Directory.Data, recursive: true });
+  } catch {
+    // já existe
+  }
+}
+
+async function snapshotBeforeSave(oldArticle: Article) {
+  const entries = await readHistory(oldArticle.id);
+  entries.unshift({
+    title: oldArticle.title, content: oldArticle.content,
+    summary: oldArticle.summary, updatedAt: oldArticle.updatedAt,
+  });
+  await writeHistory(oldArticle.id, entries.slice(0, HISTORY_MAX_ENTRIES));
+}
+
 async function readArticle(id: string): Promise<Article | null> {
   try {
     const res = await Filesystem.readFile({
@@ -51,6 +119,13 @@ async function readArticle(id: string): Promise<Article | null> {
   } catch {
     return null;
   }
+}
+
+// Exportado para platform/sync.ts — grava um Article vindo do servidor tal
+// como está (sem carimbar updatedAt/gerar id, diferente de saveArticle) E
+// invalida o cache em memória, ao contrário de escrever o arquivo por fora.
+export async function writeArticleRaw(article: Article): Promise<void> {
+  await writeArticle(article);
 }
 
 async function writeArticle(article: Article) {
@@ -87,6 +162,14 @@ async function purgeOldTrashOnce() {
       if (!f.name.endsWith(".json")) continue;
       if (now - f.mtime > TRASH_MAX_AGE_MS) {
         await Filesystem.deleteFile({ path: `${TRASH_DIR}/${f.name}`, directory: Directory.Data });
+        try {
+          await Filesystem.deleteFile({ path: `${HISTORY_DIR}/${f.name}`, directory: Directory.Data });
+        } catch { /* pode não ter histórico */ }
+        try {
+          await Filesystem.rmdir({
+            path: attachmentDirPath(f.name.replace(/\.json$/, "")), directory: Directory.Data, recursive: true,
+          });
+        } catch { /* pode não ter anexos */ }
       }
     }
   } catch {
@@ -143,11 +226,99 @@ export async function saveArticle(partial: Partial<Article> & { title: string })
     article.createdAt = now;
     article.links = article.links ?? [];
     article.excerpts = article.excerpts ?? [];
+  } else {
+    const previous = await readArticle(article.id);
+    if (previous && (
+      previous.title !== article.title ||
+      previous.summary !== article.summary ||
+      previous.content !== article.content
+    )) {
+      await snapshotBeforeSave(previous);
+    }
   }
   article.tags = article.tags ?? [];
   article.updatedAt = now;
   await writeArticle(article);
   return article;
+}
+
+export async function getArticleHistory(id: string): Promise<ArticleHistoryEntry[]> {
+  return readHistory(id);
+}
+
+export async function revertArticleVersion(id: string, updatedAt: string): Promise<Article> {
+  const article = await readArticle(id);
+  if (!article) throw new Error(`Artigo "${id}" não encontrado.`);
+  const entries = await readHistory(id);
+  const snapshot = entries.find(e => e.updatedAt === updatedAt);
+  if (!snapshot) throw new Error("Versão não encontrada no histórico.");
+
+  await snapshotBeforeSave(article);
+  article.title = snapshot.title;
+  article.summary = snapshot.summary;
+  article.content = snapshot.content;
+  article.updatedAt = new Date().toISOString();
+  await writeArticle(article);
+  return article;
+}
+
+export async function addAttachment(
+  articleId: string, name: string, mimeType: string, dataBase64: string
+): Promise<Article> {
+  const article = await readArticle(articleId);
+  if (!article) throw new Error(`Artigo "${articleId}" não encontrado.`);
+
+  // Tamanho aproximado do binário original a partir do base64 (3/4 do
+  // comprimento da string, descontando padding) — mesmo limite do desktop.
+  const approxBytes = Math.floor((dataBase64.length * 3) / 4);
+  if (approxBytes > MAX_ATTACHMENT_BYTES) {
+    throw new Error(`Anexo maior que ${MAX_ATTACHMENT_BYTES / (1024 * 1024)}MB.`);
+  }
+
+  const id = crypto.randomUUID();
+  await ensureAttachmentDir(articleId);
+  await Filesystem.writeFile({
+    path: attachmentFilePath(articleId, id, name), data: dataBase64, directory: Directory.Data,
+  });
+
+  const attachment: ArticleAttachment = {
+    id, name, mimeType, size: approxBytes, createdAt: new Date().toISOString(),
+  };
+  article.attachments = [...(article.attachments ?? []), attachment];
+  article.updatedAt = attachment.createdAt;
+  await writeArticle(article);
+  return article;
+}
+
+export async function removeAttachment(articleId: string, attachmentId: string): Promise<Article> {
+  const article = await readArticle(articleId);
+  if (!article) throw new Error(`Artigo "${articleId}" não encontrado.`);
+  const attachment = (article.attachments ?? []).find(a => a.id === attachmentId);
+  if (attachment) {
+    try {
+      await Filesystem.deleteFile({
+        path: attachmentFilePath(articleId, attachment.id, attachment.name), directory: Directory.Data,
+      });
+    } catch {
+      // arquivo já pode não existir — segue removendo os metadados
+    }
+  }
+  article.attachments = (article.attachments ?? []).filter(a => a.id !== attachmentId);
+  article.updatedAt = new Date().toISOString();
+  await writeArticle(article);
+  return article;
+}
+
+// Lê o anexo de volta como base64, para preview inline ou share sheet — não
+// há "salvar em pasta" no mobile, o destino final é decidido no share nativo.
+export async function readAttachmentData(articleId: string, attachmentId: string): Promise<{ dataBase64: string; mimeType: string; name: string }> {
+  const article = await readArticle(articleId);
+  const attachment = article && (article.attachments ?? []).find(a => a.id === attachmentId);
+  if (!attachment) throw new Error("Anexo não encontrado.");
+  const res = await Filesystem.readFile({
+    path: attachmentFilePath(articleId, attachment.id, attachment.name), directory: Directory.Data,
+  });
+  return { dataBase64: res.data as string, mimeType: attachment.mimeType, name: attachment.name };
 }
 
 // Move (não apaga) o artigo para articles/.trash/ — permite desfazer via

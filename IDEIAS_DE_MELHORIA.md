@@ -1,5 +1,150 @@
 # Ideias de melhoria — Lexicon (wikiBook)
 
+## Rodada 2026-08-17
+
+Nenhum commit novo desde a rodada anterior (`cc089c5` continua sendo o HEAD)
+— os 8 itens da rodada 2026-08-14 foram conferidos novamente no código atual
+e nenhum foi corrigido ainda (ficam de pé, não repetidos aqui). Uma exceção
+boa: o item 2 da rodada 2026-08-13 ("tema manual não propagado para a janela
+nativa") **já está resolvido** — `main.js` (linhas 65-70) registra
+`onThemeChange` e atualiza `nativeTheme.themeSource`/`setBackgroundColor` no
+processo principal. Esta rodada focou no shell mobile
+(`NewArticleModal.tsx`, `SettingsModal.tsx`, `export.ts`), ainda pouco
+auditado nas rodadas anteriores.
+
+### UX/UI
+
+**1. Falha de busca na Wikipedia dentro de "Novo artigo" (mobile) é
+indistinguível de "sem resultados".** `NewArticleModal.tsx` (linhas 30-39): o
+`useEffect` de busca com debounce chama `wikipedia:search` e só atualiza
+`results` quando `res.ok` é verdadeiro — se a chamada falhar (rede
+instável, limite de taxa da Wikipedia), o `catch` não existe e o `finally`
+apenas desliga `searching`, deixando `results` vazio. A tela então mostra
+"Nenhum resultado ainda." (linha 97), a mesma mensagem de uma busca
+genuinamente sem resultado — o usuário não tem como saber que a causa foi
+uma falha de rede, e a única saída é tentar de novo às cegas. Capturar o
+erro e distinguir "sem resultados" de "falha ao buscar" (com opção de tentar
+de novo) resolveria.
+
+**2. `SettingsModal` do mobile repete o mesmo bug de `handleSave` já
+identificado no desktop, mas em arquivo próprio.** O item 3 da rodada
+2026-08-14 cobre `App.tsx`; `packages/mobile/src/screens/SettingsModal.tsx`
+(linhas 38-42) tem exatamente o mesmo problema, em código duplicado (a tela
+mobile não reaproveita o `handleSave` do desktop): `config:set` é chamado
+sem checar `.ok`, e `saved(true)` é setado incondicionalmente. Como as duas
+implementações são independentes, corrigir uma sem a outra deixa a
+inconsistência entre plataformas — vale corrigir as duas juntas ou, melhor
+ainda, extrair a lógica de salvar para um helper único em
+`packages/shared` que ambas as telas chamem.
+
+### Performance
+
+**3. Exportação para Markdown no mobile nunca limpa arquivos antigos do
+diretório de cache.** `export.ts` (`EXPORT_DIR = "lexicon-export"`,
+`exportMarkdown`, linhas 144-166): cada chamada grava `.md` novos por cima
+do diretório existente, mas nunca roda `Filesystem.rmdir` antes — se um
+artigo for renomeado, apagado, ou movido de pasta entre duas exportações, o
+arquivo antigo (nome antigo, conteúdo desatualizado) permanece em
+`Directory.Cache` para sempre e é reexibido ao usuário se ele navegar até a
+pasta de cache do app pelo Files/iCloud Drive, mesmo não fazendo mais parte
+da base atual. Como o app já lida com dezenas/centenas de artigos ao longo
+do tempo, isso acumula lixo silenciosamente a cada exportação repetida.
+Limpar `EXPORT_DIR` (`Filesystem.rmdir({ recursive: true })`, ignorando erro
+se não existir) no início de `exportMarkdown` antes do laço resolveria.
+
+---
+
+## Rodada 2026-08-14
+
+Dois commits novos desde a última rodada: `7df6d71` (as 8 correções da
+rodada 2026-08-13 — todas implementadas, confirmadas no código atual) e
+`cc089c5` (renomeação do app de "Lexicon" para "Wikibook", nova marca/logo,
+ícones desktop/Android/iOS) — HEAD atual. Esta rodada auditou especificamente
+as consequências da renomeação/logo, revisou telas ainda não cobertas
+(`SettingsModal`, `ReviewModal`, `FolderPicker`) e voltou a checar os itens
+"conhecidos mas não corrigidos" das rodadas anteriores para não repetir o que
+já foi resolvido.
+
+### UX/UI
+
+**1. `aria-label` duplicado no `LogoMark` gera anúncio repetido em leitor de
+tela.** `packages/shared/components/LogoMark.tsx` (linhas 18-19) define
+`role="img" aria-label="Wikibook"` no SVG da nova marca, e ele é sempre
+renderizado ao lado do texto literal "Wikibook" (`App.tsx`, linha 520;
+`ArticleListScreen.tsx`, linha 202). Um leitor de tela anuncia "Wikibook
+Wikibook" nesses dois cabeçalhos — regressão introduzida pela própria
+renomeação desta rodada. Como o texto adjacente já identifica a marca, o SVG
+deveria usar `aria-hidden="true"` (puramente decorativo) em vez de label
+próprio.
+
+**2. `window.confirm()` nativo ainda usado para excluir artigo e pasta.** A
+correção da rodada anterior trocou `window.confirm()` por diálogo
+cross-platform só no `TableExcerptEditor` (remoção de linha/coluna). Ficaram
+de fora `handleDeleteArticle` (`ArticleView.tsx`, linhas 1326-1328) e
+`handleDeleteFolder` (`App.tsx`, linha 307), que ainda disparam o confirm
+nativo do SO — quebra a identidade visual do app (ignora o tema
+claro/escuro) bem no meio da ação destrutiva mais comum do produto. Aplicar
+o mesmo helper de confirmação já adotado no restante do app resolveria os
+dois pontos remanescentes.
+
+**3. `SettingsModal.handleSave` ignora falha ao salvar a API key.**
+`App.tsx` (linhas 176-180): `handleSave` chama
+`window.lexicon.invoke("config:set", ...)` e nunca lê `.ok` do retorno —
+sempre marca `saved(true)` e mostra "✓ Salvo", mesmo que a gravação
+falhe. O usuário acredita que a chave da Anthropic foi salva e só descobre o
+problema quando os recursos de IA (resumo, busca semântica, geração de
+flashcards) falharem silenciosamente depois, sem relação óbvia com a causa.
+Checar `res.ok` e mostrar um toast de erro nesse caso resolveria.
+
+**4. `ReviewModal` sem atalhos de teclado para revisar flashcards.**
+`ArticleView.tsx` (linhas 792-876): o único listener de teclado no modal de
+revisão é Escape para fechar (linha 804-807). Revelar a resposta e aplicar
+as quatro notas (Errei/Difícil/Bom/Fácil) só funcionam via clique do mouse.
+Numa sessão com dezenas de cards — o caso de uso central do sistema SM-2 —
+isso é bem mais lento que o padrão já consagrado pelo Anki (espaço para
+revelar, teclas 1-4 para notar). Adicionar esses handlers enquanto o modal
+está aberto tornaria a revisão diária muito mais fluida.
+
+**5. `FolderPicker` sem Escape para fechar e sem navegação por teclado na
+lista.** `FolderPicker.tsx`: o fechamento só ocorre por clique fora (linhas
+44-54); não há handler de `keydown` para Escape no popover inteiro (o único
+Escape existente é local ao input de "nova pasta", linha 93). A lista de
+pastas (linhas 72-85) também não responde a setas/Enter. Inconsistente com
+outros popovers do app, como o `FindInPageBar`, que já fecha com Escape.
+
+**6. Toggle de busca semântica sem estado ARIA de "pressionado".**
+`ArticleListScreen.tsx` (linhas 227-236): o botão `semantic-search-toggle`
+tem `title` mas não `aria-label` nem `aria-pressed`, apesar de ser um toggle
+com estado visual (classe `active`). Um leitor de tela não informa se a
+busca semântica está ligada ou desligada — só o ícone muda (✦ / "…").
+
+### Performance
+
+**7. Índice de busca full-text é reconstruído por inteiro a cada mudança em
+`articles`.** `App.tsx` (linhas 396-408): `searchIndex` é um `useMemo` com
+dependência no array `articles` completo, e para cada artigo roda uma regex
+(`a.content.replace(/&lt;[^&gt;]+&gt;/g, " ")`) sobre o HTML inteiro. Qualquer
+edição isolada — renomear uma tag, mover um artigo de pasta — recria a
+referência de `articles` e reprocessa o conteúdo de **todos** os artigos da
+base, não só do que mudou. Em bases grandes isso é custo O(n) repetido a
+cada ação trivial, não só na digitação da busca. Memoizar por artigo
+individual (`Map` com cache por `id`+`updatedAt`) e só reprocessar o item
+alterado resolveria.
+
+### Funcionalidades
+
+**8. Não existe exportação de um único artigo para Markdown.** A ação
+"Exportar para Markdown" só existe em lote, via `article:exportMarkdown`
+(`articleHandlers.js`, linhas 519-555), disparada pelo botão global da
+sidebar (`App.tsx`, linha 480). O cabeçalho do artigo
+(`ArticleView.tsx`, linhas 1600-1616 — busca/TOC/chat/revisar/editar/excluir)
+não tem opção "Exportar este artigo". Quem quer levar só um artigo
+específico para o Obsidian (ex.: compartilhar um resumo com alguém) precisa
+rodar a exportação completa da biblioteca e depois procurar o arquivo entre
+todos os outros.
+
+---
+
 ## Rodada 2026-08-13
 
 Dois commits novos desde a última rodada: `eb9a89e` (virtualização de lista,

@@ -13,6 +13,7 @@ import { ArticleScreen } from "./screens/ArticleScreen";
 import { GraphScreen } from "./screens/GraphScreen";
 import { NewArticleModal } from "./screens/NewArticleModal";
 import { SettingsModal } from "./screens/SettingsModal";
+import { OnboardingWizard } from "./screens/OnboardingWizard";
 import { StatusOverlay } from "./StatusOverlay";
 
 export function MobileApp() {
@@ -20,8 +21,19 @@ export function MobileApp() {
   const [showNewModal, setShowNewModal] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
 
-  const { articles, activeArticleId, loadingArticle, openArticle } = useStore();
+  const {
+    articles, activeArticleId, loadingArticle, openArticle,
+    loadArticles, onboardingSeen, dismissOnboarding,
+  } = useStore();
   const activeArticle = articles.find(a => a.id === activeArticleId) ?? null;
+
+  // bootstrapped: só true depois que loadArticles() resolve (inclui a leitura
+  // de onboardingSeen do config) — evita o wizard piscar para quem já passou
+  // por ele. ArticleListScreen também chama loadArticles() no próprio mount;
+  // chamar de novo aqui é redundante mas barato (só uma listagem local) e
+  // garante que este componente saiba quando o bootstrap terminou.
+  const [bootstrapped, setBootstrapped] = useState(false);
+  useEffect(() => { loadArticles().then(() => setBootstrapped(true)); }, [loadArticles]);
 
   // Usado pela lista: já espera o fetch antes de navegar, então activeArticle
   // está pronto assim que a tela troca.
@@ -69,6 +81,12 @@ export function MobileApp() {
       {content}
       {showNewModal && <NewArticleModal onClose={() => setShowNewModal(false)} />}
       {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
+      {bootstrapped && !onboardingSeen && (
+        <OnboardingWizard
+          onFinish={() => dismissOnboarding()}
+          onCreateFirstArticle={() => { dismissOnboarding(); setShowNewModal(true); }}
+        />
+      )}
       <StatusOverlay />
     </>
   );

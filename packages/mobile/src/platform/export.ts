@@ -43,9 +43,10 @@ function safeFilename(title: string): string {
   return title.replace(/[/\\:*?"<>|#^[\]]/g, "-").trim().slice(0, 120) || "sem-titulo";
 }
 
+// CSV (delimitador ";", padrão de importação do Anki em pt-BR)
 function csvEscape(field: unknown): string {
   const s = String(field ?? "");
-  return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  return /[";\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
 }
 
 // Monta o .md de um artigo no formato Obsidian (frontmatter + wikilinks) —
@@ -187,7 +188,7 @@ export async function exportFlashcardsCsv(): Promise<{ count: number }> {
   }
   if (rows.length === 0) return { count: 0 };
 
-  const csv = rows.map(r => r.map(csvEscape).join(",")).join("\n") + "\n";
+  const csv = rows.map(r => r.map(csvEscape).join(";")).join("\n") + "\n";
   const filePath = "lexicon-flashcards.csv";
   await writeExportFile(filePath, csv, Encoding.UTF8);
   const { uri } = await Filesystem.getUri({ path: `${EXPORT_DIR}/${filePath}`, directory: Directory.Cache });

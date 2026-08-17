@@ -1,0 +1,16 @@
+{
+  "name": "@lexicon/sync-server",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Servidor de sincronização self-hosted do Wikibook — Node.js + SQLite (node:sqlite), sem dependências nativas.",
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}

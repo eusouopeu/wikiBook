@@ -6,12 +6,15 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { Dialog } from "@capacitor/dialog";
+import { Filesystem, Directory } from "@capacitor/filesystem";
+import { Share } from "@capacitor/share";
 import * as articles from "./articles";
 import * as config from "./config";
 import * as wikipedia from "./wikipedia";
 import * as claude from "./claude";
 import * as flashcards from "./flashcards";
 import * as exporter from "./export";
+import * as sync from "./sync";
 
 interface IpcResponse<T = unknown> { ok: boolean; data?: T; error?: string; }
 
@@ -53,6 +56,30 @@ async function invoke(channel: string, payload?: any): Promise<IpcResponse> {
         };
       case "article:updateExcerptOutline":
         return { ok: true, data: await articles.updateExcerptOutline(payload.articleId, payload.outline) };
+      case "article:getHistory":
+        return { ok: true, data: await articles.getArticleHistory(payload.id) };
+      case "article:revertVersion":
+        return { ok: true, data: await articles.revertArticleVersion(payload.id, payload.updatedAt) };
+      case "article:addAttachment":
+        return {
+          ok: true,
+          data: await articles.addAttachment(payload.articleId, payload.name, payload.mimeType, payload.dataBase64),
+        };
+      case "article:removeAttachment":
+        return { ok: true, data: await articles.removeAttachment(payload.articleId, payload.attachmentId) };
+      case "article:getAttachmentData":
+        return { ok: true, data: await articles.readAttachmentData(payload.articleId, payload.attachmentId) };
+      case "article:exportAttachment": {
+        // Sem "salvar em pasta" no mobile — grava num arquivo temporário e
+        // delega o destino final ao share sheet nativo (mesma UX de
+        // exportMarkdown/exportFlashcardsCsv em ./export.ts).
+        const { dataBase64, name } = await articles.readAttachmentData(payload.articleId, payload.attachmentId);
+        const tmpPath = `attachment-export/${name}`;
+        await Filesystem.writeFile({ path: tmpPath, data: dataBase64, directory: Directory.Cache, recursive: true });
+        const { uri } = await Filesystem.getUri({ path: tmpPath, directory: Directory.Cache });
+        await Share.share({ title: "Exportar anexo", dialogTitle: "Exportar anexo", files: [uri] });
+        return { ok: true, data: { filePath: uri } };
+      }
 
       // Confirmação nativa cross-platform (ver packages/shared/lib/confirmDialog.ts)
       // — Dialog.confirm em vez de window.confirm(), que dentro da WebView do
@@ -76,6 +103,11 @@ async function invoke(channel: string, payload?: any): Promise<IpcResponse> {
         await config.setConfigValue(payload.key, payload.value);
         return { ok: true };
 
+      case "sync:test":
+        return { ok: true, data: await sync.testConnection(payload.serverUrl) };
+      case "sync:run":
+        return { ok: true, data: await sync.runSync(payload.serverUrl, payload.token) };
+
       case "wikipedia:search":
         return { ok: true, data: await wikipedia.search(payload.query, payload.lang ?? "pt") };
       case "wikipedia:fetch":
@@ -84,7 +116,9 @@ async function invoke(channel: string, payload?: any): Promise<IpcResponse> {
       case "claude:summarize":
         return { ok: true, data: { summary: await claude.summarize(payload.text, payload.title ?? "", payload.bypassCache ?? false) } };
       case "claude:generate":
-        return { ok: true, data: { summary: await claude.generate(payload.title, payload.context ?? "") } };
+        return { ok: true, data: { summary: await claude.generate(payload.title, payload.context ?? "", payload.templateId ?? "padrao") } };
+      case "claude:generateTemplates":
+        return { ok: true, data: claude.generateTemplates() };
       case "claude:ask":
         return {
           ok: true,

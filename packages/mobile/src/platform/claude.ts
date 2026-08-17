@@ -41,6 +41,78 @@ Regras:
 - Responda APENAS com os bullet points, sem título, sem introdução
 `.trim();
 
+// ── Templates de geração ────────────────────────────────────────────────────
+// Mesmos templates do desktop (ver claudeHandlers.js/GENERATE_TEMPLATES) —
+// escolhidos no modal de "Novo artigo" quando a fonte é "Gerar com Claude".
+export const GENERATE_TEMPLATES: Record<string, { label: string; systemPrompt: string }> = {
+  padrao: { label: "Padrão", systemPrompt: SYSTEM_GENERATE },
+  definicao: {
+    label: "Definição aprofundada",
+    systemPrompt: `
+Você é um assistente especializado em criar artigos-resumo enciclopédicos.
+Dado um título ou conceito, produza um artigo em bullet points em português brasileiro,
+com foco em DEFINIÇÃO: o que é, do que é composto, como se distingue de conceitos vizinhos.
+Regras:
+- Entre 6 e 9 bullet points
+- Cada bullet: 1 frase direta, sem sub-bullets, começando com "• "
+- Ordem sugerida: definição central → componentes/características essenciais →
+  distinção de conceitos frequentemente confundidos com este → variações ou subtipos
+- Use linguagem precisa — este é um documento de referência pessoal
+- Responda APENAS com os bullet points, sem título, sem introdução
+`.trim(),
+  },
+  historia: {
+    label: "Contexto histórico",
+    systemPrompt: `
+Você é um assistente especializado em criar artigos-resumo enciclopédicos.
+Dado um título ou conceito, produza um artigo em bullet points em português brasileiro,
+com foco em CONTEXTO HISTÓRICO: origem, evolução ao longo do tempo, marcos e figuras relevantes.
+Regras:
+- Entre 6 e 9 bullet points
+- Cada bullet: 1 frase direta, sem sub-bullets, começando com "• "
+- Ordem sugerida: origem/surgimento → marcos e datas relevantes → pessoas/eventos-chave →
+  estado atual ou legado
+- Use linguagem precisa — este é um documento de referência pessoal
+- Responda APENAS com os bullet points, sem título, sem introdução
+`.trim(),
+  },
+  exemplos: {
+    label: "Exemplos práticos",
+    systemPrompt: `
+Você é um assistente especializado em criar artigos-resumo enciclopédicos.
+Dado um título ou conceito, produza um artigo em bullet points em português brasileiro,
+com foco em APLICAÇÃO PRÁTICA: exemplos concretos, casos de uso, situações do dia a dia.
+Regras:
+- Entre 6 e 9 bullet points
+- Cada bullet: 1 frase direta, sem sub-bullets, começando com "• "
+- Comece com uma definição breve (1 bullet), depois dedique a maioria dos bullets a
+  exemplos concretos e situações onde o conceito se aplica
+- Use linguagem precisa — este é um documento de referência pessoal
+- Responda APENAS com os bullet points, sem título, sem introdução
+`.trim(),
+  },
+  referencias: {
+    label: "Estruturado (com referências)",
+    systemPrompt: `
+Você é um assistente especializado em criar artigos-resumo enciclopédicos.
+Dado um título ou conceito, produza um artigo em bullet points em português brasileiro,
+cobrindo estas seções, NESTA ORDEM, um bullet de transição por seção usando o rótulo
+em negrito no início da linha (ex.: "• Definição: ..."):
+Definição, Contexto histórico ou científico, Relevância, Relações com outros conceitos,
+Referências ou fontes amplamente reconhecidas sobre o tema.
+Regras:
+- 1 a 2 bullets por seção (não pule nenhuma das 5 seções)
+- Cada bullet começa com "• " seguido do rótulo da seção e ":"
+- Frases diretas, sem sub-bullets
+- Use linguagem precisa — este é um documento de referência pessoal
+- Responda APENAS com os bullet points, sem título, sem introdução
+`.trim(),
+  },
+};
+function resolveGenerateTemplate(templateId: string) {
+  return GENERATE_TEMPLATES[templateId] ?? GENERATE_TEMPLATES.padrao;
+}
+
 const SYSTEM_ASK = `
 Você é um assistente que responde perguntas com base em um artigo de uma base de
 conhecimento pessoal.
@@ -150,8 +222,9 @@ export async function summarize(text: string, title = "", bypassCache = false): 
   return summary;
 }
 
-export async function generate(title: string, context = ""): Promise<string> {
-  const cacheKey = `${normTerm(title)}::${normTerm(context.slice(0, 200))}`;
+export async function generate(title: string, context = "", templateId = "padrao"): Promise<string> {
+  const template = resolveGenerateTemplate(templateId);
+  const cacheKey = `${templateId}::${normTerm(title)}::${normTerm(context.slice(0, 200))}`;
   const cached = generateCache.get(cacheKey);
   if (cached) return cached;
   const apiKey = await getConfigValue("anthropicApiKey");
@@ -159,9 +232,13 @@ export async function generate(title: string, context = ""): Promise<string> {
   const userMsg = context
     ? `Conceito: ${title}\n\nContexto adicional (artigos relacionados na minha base):\n${context.slice(0, 2000)}`
     : `Conceito: ${title}`;
-  const summary = await callClaude(apiKey, SYSTEM_GENERATE, userMsg, 800);
+  const summary = await callClaude(apiKey, template.systemPrompt, userMsg, 800);
   generateCache.set(cacheKey, summary);
   return summary;
+}
+
+export function generateTemplates(): Array<{ id: string; label: string }> {
+  return Object.entries(GENERATE_TEMPLATES).map(([id, t]) => ({ id, label: t.label }));
 }
 
 export async function ask(

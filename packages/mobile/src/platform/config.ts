@@ -17,7 +17,9 @@
 import { Preferences } from "@capacitor/preferences";
 import { SecureStoragePlugin } from "capacitor-secure-storage-plugin";
 
-const SECRET_KEYS = new Set(["anthropicApiKey"]);
+// syncToken dá acesso de leitura/escrita à biblioteca inteira no servidor de
+// sync — tratado como segredo igual à API key (ver platform/sync.ts).
+const SECRET_KEYS = new Set(["anthropicApiKey", "syncToken"]);
 
 async function getSecureValue(key: string): Promise<string | undefined> {
   try {

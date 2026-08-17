@@ -1040,6 +1040,70 @@ mark.find-match-current {
 .toc-level-4 button { padding-left: 36px; font-size: 12px; color: var(--fg2); }
 
 /* ══════════════════════════════════════════════════════════════════════════
+   HISTÓRICO DE VERSÕES
+══════════════════════════════════════════════════════════════════════════ */
+.history-modal { min-width: 420px; max-width: 90vw; max-height: 78vh; overflow-y: auto; }
+
+.history-list { list-style: none; margin: 0; padding: 0; }
+
+.history-item {
+  border-bottom: 1px solid var(--border-light);
+  padding: 10px 0;
+}
+.history-item:last-child { border-bottom: none; }
+
+.history-item-row {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.history-item-date {
+  color: var(--fg3);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.history-item-title {
+  color: var(--fg2);
+  flex: 1;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-item-actions {
+  display: flex;
+  gap: 6px;
+}
+.history-item-actions button {
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--fg2);
+  cursor: pointer;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  padding: 4px 9px;
+}
+.history-item-actions button:hover { border-color: var(--accent); color: var(--fg); }
+.history-item-actions button:disabled { cursor: not-allowed; opacity: 0.5; }
+
+.history-diff {
+  background: var(--bg-hover);
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 1.6;
+  margin-top: 8px;
+  padding: 10px 12px;
+}
+.history-diff em { color: #2e7d32; font-style: normal; }
+
+/* ══════════════════════════════════════════════════════════════════════════
    MODAIS
 ══════════════════════════════════════════════════════════════════════════ */
 .modal-overlay {
@@ -1162,6 +1226,42 @@ mark.find-match-current {
 .modal-actions button:disabled { cursor: not-allowed; opacity: 0.4; }
 
 .settings-hint { color: var(--fg3); font-size: 11px; line-height: 1.5; margin: -6px 0 8px; }
+
+.settings-section-title {
+  border-top: 1px solid var(--border-light);
+  color: var(--fg2);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  font-weight: 600;
+  margin: 18px 0 4px;
+  padding-top: 14px;
+}
+.sync-token-row { display: flex; gap: 6px; }
+.sync-token-row input { flex: 1; }
+.sync-token-row button {
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--fg2);
+  cursor: pointer;
+  font-family: var(--font-ui);
+  font-size: 11.5px;
+  padding: 0 10px;
+  white-space: nowrap;
+}
+.sync-token-row button:hover { border-color: var(--accent); color: var(--fg); }
+
+/* Wizard de boas-vindas (primeira execução) */
+.onboarding-modal { max-width: 440px; }
+.onboarding-modal p { color: var(--fg2); font-size: 13.5px; line-height: 1.6; margin: 0 0 14px; }
+.onboarding-tour-list {
+  color: var(--fg2);
+  font-size: 13px;
+  line-height: 1.8;
+  margin: 0 0 4px;
+  padding-left: 20px;
+}
+.onboarding-tour-list li { margin-bottom: 4px; }
 
 /* ── Toggle de tema (Sistema/Claro/Escuro) ─────────────────────────────── */
 .theme-toggle {
@@ -1427,6 +1527,33 @@ mark.find-match-current {
   width: 100%;
 }
 .modal select:focus { border-color: var(--accent); }
+
+.batch-import-toggle {
+  background: none;
+  border: none;
+  color: var(--fg-link);
+  cursor: pointer;
+  display: block;
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+  margin: -4px 0 14px;
+  padding: 0;
+  text-align: left;
+}
+.batch-import-toggle:hover { text-decoration: underline; }
+
+.batch-import-textarea {
+  background: var(--bg-input, var(--bg-modal));
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--fg);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  padding: 8px 10px;
+  resize: vertical;
+  width: 100%;
+}
+.batch-import-textarea:focus { border-color: var(--accent); outline: none; }
 
 /* Prévia de resultados da Wikipedia no modal de novo artigo */
 .wiki-search-results {
@@ -1731,6 +1858,76 @@ mark.find-match-current {
   min-width: 0;
   padding: 5px 7px;
 }
+
+/* Anexos (imagem/PDF/qualquer arquivo) no cabeçalho do artigo */
+.attachments-section { margin-top: 10px; }
+
+.attachments-header {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+}
+.attachments-label {
+  color: var(--fg3);
+  font-family: var(--font-ui);
+  font-size: 11.5px;
+}
+.attachments-add-btn {
+  background: none;
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  color: var(--fg3);
+  cursor: pointer;
+  font-family: var(--font-ui);
+  font-size: 11.5px;
+  padding: 2px 9px;
+}
+.attachments-add-btn:hover { border-color: var(--accent); color: var(--fg); }
+.attachments-add-btn:disabled { cursor: not-allowed; opacity: 0.5; }
+
+.attachments-list { list-style: none; margin: 6px 0 0; padding: 0; }
+
+.attachment-item {
+  align-items: center;
+  border-bottom: 1px solid var(--border-light);
+  display: flex;
+  gap: 8px;
+  padding: 5px 0;
+}
+.attachment-item:last-child { border-bottom: none; }
+
+.attachment-icon { font-size: 14px; }
+.attachment-name {
+  color: var(--fg2);
+  flex: 1;
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.attachment-size {
+  color: var(--fg3);
+  font-family: var(--font-ui);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.attachment-actions { display: flex; gap: 5px; }
+.attachment-actions button {
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--fg2);
+  cursor: pointer;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  padding: 3px 7px;
+}
+.attachment-actions button:hover { border-color: var(--accent); color: var(--fg); }
+.attachment-actions button:disabled { cursor: not-allowed; opacity: 0.5; }
+
+.attachment-preview-modal { max-width: 90vw; }
+.attachment-preview-img { border-radius: var(--radius-sm); display: block; max-height: 70vh; max-width: 100%; }
 
 /* Editor de tags no cabeçalho do artigo */
 .tag-editor {

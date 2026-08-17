@@ -13,8 +13,10 @@ const path = require("path");
 
 const CONFIG_PATH = path.join(app.getPath("userData"), "config.json");
 
-// Chaves que devem ser criptografadas em disco
-const SECRET_KEYS = new Set(["anthropicApiKey"]);
+// Chaves que devem ser criptografadas em disco — syncToken dá acesso de
+// leitura/escrita à biblioteca inteira no servidor de sync, tratado como
+// segredo igual à API key.
+const SECRET_KEYS = new Set(["anthropicApiKey", "syncToken"]);
 const ENC_PREFIX = "enc:v1:";
 
 let _cache = null;
@@ -58,6 +60,14 @@ function getConfig(key) {
   return SECRET_KEYS.has(key) ? decryptValue(raw) : raw;
 }
 
+// Exportado para uso interno (ex.: syncHandlers, que grava as pastas
+// mescladas de volta na config sem passar pelo IPC config:set)
+function setConfig(key, value) {
+  const config = loadConfig();
+  config[key] = SECRET_KEYS.has(key) ? encryptValue(value) : value;
+  saveConfig(config);
+}
+
 function createConfigHandlers(ipcMain, { onThemeChange } = {}) {
 
   // ── config:get { key? } → value | entire config ────────────────────────────
@@ -82,4 +92,4 @@ function createConfigHandlers(ipcMain, { onThemeChange } = {}) {
   });
 }
 
-module.exports = { createConfigHandlers, getConfig };
+module.exports = { createConfigHandlers, getConfig, setConfig };

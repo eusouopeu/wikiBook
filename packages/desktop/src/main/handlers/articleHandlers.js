@@ -11,9 +11,18 @@ const { URL } = require("url");
 
 const DATA_DIR = path.join(app.getPath("userData"), "articles");
 const TRASH_DIR = path.join(DATA_DIR, ".trash");
+const HISTORY_DIR = path.join(DATA_DIR, ".history");
+const ATTACHMENTS_DIR = path.join(app.getPath("userData"), "attachments");
 const FLASHCARDS_DIR = path.join(app.getPath("userData"), "flashcards");
 const FLASHCARDS_TRASH_DIR = path.join(FLASHCARDS_DIR, ".trash");
+// Tamanho máximo por anexo — protege contra travar o processo main
+// serializando/gravando um arquivo enorme vindo do renderer como base64.
+const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
 const TRASH_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;   // 30 dias
+// Snapshots de versão guardados por artigo — cap alto o bastante para cobrir
+// uma sessão de edição longa, sem deixar o arquivo de histórico crescer sem
+// limite (cada snapshot guarda content/summary inteiros).
+const HISTORY_MAX_ENTRIES = 20;
 
 function ensureDataDir() {
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -23,6 +32,39 @@ function ensureTrashDir() {
 }
 function articlePath(id) { return path.join(DATA_DIR, `${id}.json`); }
 function trashPath(id)   { return path.join(TRASH_DIR, `${id}.json`); }
+function historyPath(id) { return path.join(HISTORY_DIR, `${id}.json`); }
+
+// ── Histórico de versões ───────────────────────────────────────────────────
+// Guardado FORA do JSON do artigo (arquivo próprio em .history/) — o objeto
+// de artigo já é enviado por inteiro em article:list a cada carregamento da
+// biblioteca; embutir snapshots ali infla esse payload para toda a lista, não
+// só para quem abre o histórico. Lido/escrito só sob demanda.
+function readHistory(id) {
+  try {
+    const p = historyPath(id);
+    if (!fs.existsSync(p)) return [];
+    return JSON.parse(fs.readFileSync(p, "utf8"));
+  } catch { return []; }
+}
+function writeHistory(id, entries) {
+  if (!fs.existsSync(HISTORY_DIR)) fs.mkdirSync(HISTORY_DIR, { recursive: true });
+  const p = historyPath(id);
+  fs.writeFileSync(p + ".tmp", JSON.stringify(entries, null, 2), "utf8");
+  fs.renameSync(p + ".tmp", p);
+}
+// Snapshot da versão ANTERIOR à escrita — chamado de dentro de article:save
+// só quando title/summary/content de fato mudaram, para não acumular uma
+// entrada idêntica a cada clique em "Salvar" sem edição real.
+function snapshotBeforeSave(oldArticle) {
+  const entries = readHistory(oldArticle.id);
+  entries.unshift({
+    title: oldArticle.title,
+    content: oldArticle.content,
+    summary: oldArticle.summary,
+    updatedAt: oldArticle.updatedAt,
+  });
+  writeHistory(oldArticle.id, entries.slice(0, HISTORY_MAX_ENTRIES));
+}
 
 // Limpeza oportunista de itens da lixeira com mais de 30 dias — roda no
 // máximo uma vez por processo (chamada de dentro de listAllArticles)
@@ -36,7 +78,13 @@ function purgeOldTrashOnce() {
     for (const f of fs.readdirSync(TRASH_DIR)) {
       if (!f.endsWith(".json")) continue;
       const p = path.join(TRASH_DIR, f);
-      if (now - fs.statSync(p).mtimeMs > TRASH_MAX_AGE_MS) fs.unlinkSync(p);
+      if (now - fs.statSync(p).mtimeMs > TRASH_MAX_AGE_MS) {
+        fs.unlinkSync(p);
+        const hp = path.join(HISTORY_DIR, f);
+        if (fs.existsSync(hp)) fs.unlinkSync(hp);
+        const attDir = attachmentDir(f.replace(".json", ""));
+        if (fs.existsSync(attDir)) fs.rmSync(attDir, { recursive: true, force: true });
+      }
     }
   } catch { /* limpeza é best-effort — nunca deve quebrar o bootstrap */ }
 }
@@ -224,15 +272,32 @@ const MIME_EXT = {
 };
 function extFromMime(mime) { return MIME_EXT[mime] ?? "png"; }
 
-// CSV: aspas duplas ao redor de campos com vírgula, aspas ou quebra de linha
+// CSV (delimitador ";", padrão de importação do Anki em pt-BR): aspas duplas
+// ao redor de campos com ";", aspas ou quebra de linha
 function csvEscape(field) {
   const s = String(field ?? "");
-  return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  return /[";\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
 }
 
 // Nome de arquivo seguro a partir do título (mantém espaços — padrão Obsidian)
 function safeFilename(title) {
   return title.replace(/[/\\:*?"<>|#^[\]]/g, "-").trim().slice(0, 120) || "sem-titulo";
+}
+
+// ── Anexos (imagem/PDF) de um artigo ────────────────────────────────────────
+// Guardados fora do JSON do artigo, um arquivo por anexo em
+// attachments/<articleId>/<attachmentId>-<nome-seguro> — só metadados
+// (id/name/mimeType/size/createdAt) ficam no objeto Article, pela mesma razão
+// do histórico: não inflar article:list para toda a biblioteca com conteúdo
+// binário de quem tem poucos anexos.
+function attachmentDir(articleId) { return path.join(ATTACHMENTS_DIR, articleId); }
+function ensureAttachmentDir(articleId) {
+  const dir = attachmentDir(articleId);
+  fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
+function storedAttachmentPath(articleId, attachmentId, name) {
+  return path.join(attachmentDir(articleId), `${attachmentId}-${safeFilename(name)}`);
 }
 
 // Monta o .md de um artigo no formato Obsidian (frontmatter + wikilinks)
@@ -323,9 +388,47 @@ function createArticleHandlers(ipcMain) {
         article.createdAt = now;
         article.links    = article.links    ?? [];
         article.excerpts = article.excerpts ?? [];
+      } else {
+        const previous = readArticle(article.id);
+        if (previous && (
+          previous.title !== article.title ||
+          previous.summary !== article.summary ||
+          previous.content !== article.content
+        )) {
+          snapshotBeforeSave(previous);
+        }
       }
       article.tags      = article.tags ?? [];
       article.updatedAt = now;
+      writeArticle(article);
+      return { ok: true, data: article };
+    } catch (e) { return { ok: false, error: e.message }; }
+  });
+
+  // ── article:getHistory ──────────────────────────────────────────────────────
+  ipcMain.handle("article:getHistory", (_evt, { id }) => {
+    try {
+      return { ok: true, data: readHistory(id) };
+    } catch (e) { return { ok: false, error: e.message }; }
+  });
+
+  // ── article:revertVersion ───────────────────────────────────────────────────
+  // Restaura título/resumo/conteúdo de um snapshot do histórico. O estado atual
+  // (antes de reverter) também vira um snapshot — reverter uma reversão
+  // funciona do mesmo jeito, sem tratamento especial.
+  ipcMain.handle("article:revertVersion", (_evt, { id, updatedAt }) => {
+    try {
+      const article = readArticle(id);
+      if (!article) return { ok: false, error: "Artigo não encontrado." };
+      const entries = readHistory(id);
+      const snapshot = entries.find(e => e.updatedAt === updatedAt);
+      if (!snapshot) return { ok: false, error: "Versão não encontrada no histórico." };
+
+      snapshotBeforeSave(article);
+      article.title   = snapshot.title;
+      article.summary = snapshot.summary;
+      article.content = snapshot.content;
+      article.updatedAt = new Date().toISOString();
       writeArticle(article);
       return { ok: true, data: article };
     } catch (e) { return { ok: false, error: e.message }; }
@@ -530,25 +633,36 @@ function createArticleHandlers(ipcMain) {
 
       let assetsDirEnsured = false;
       let count = 0;
-      for (const article of articles) {
-        const imageAssetPaths = new Map();
-        for (const ex of article.excerpts ?? []) {
-          if ((ex.kind ?? "text") !== "image") continue;
-          const match = ex.html.match(/src="(data:[^"]+)"/);
-          if (!match) continue;
-          const decoded = dataUriToBuffer(match[1]);
-          if (!decoded) continue;
-          if (!assetsDirEnsured) {
-            fs.mkdirSync(path.join(dir, "assets"), { recursive: true });
-            assetsDirEnsured = true;
+      // Escreve em chunks, cedendo o loop de eventos entre eles — sem isso,
+      // uma biblioteca grande (centenas de artigos, alguns com imagens
+      // embutidas em base64) trava o processo principal por segundos e a UI
+      // some até o fim da exportação inteira.
+      const CHUNK_SIZE = 15;
+      for (let i = 0; i < articles.length; i += CHUNK_SIZE) {
+        const chunk = articles.slice(i, i + CHUNK_SIZE);
+        for (const article of chunk) {
+          const imageAssetPaths = new Map();
+          for (const ex of article.excerpts ?? []) {
+            if ((ex.kind ?? "text") !== "image") continue;
+            const match = ex.html.match(/src="(data:[^"]+)"/);
+            if (!match) continue;
+            const decoded = dataUriToBuffer(match[1]);
+            if (!decoded) continue;
+            if (!assetsDirEnsured) {
+              fs.mkdirSync(path.join(dir, "assets"), { recursive: true });
+              assetsDirEnsured = true;
+            }
+            const filename = `${safeFilename(article.title)}-${ex.id.slice(0, 8)}.${extFromMime(decoded.mime)}`;
+            fs.writeFileSync(path.join(dir, "assets", filename), decoded.buffer);
+            imageAssetPaths.set(ex.id, `assets/${filename}`);
           }
-          const filename = `${safeFilename(article.title)}-${ex.id.slice(0, 8)}.${extFromMime(decoded.mime)}`;
-          fs.writeFileSync(path.join(dir, "assets", filename), decoded.buffer);
-          imageAssetPaths.set(ex.id, `assets/${filename}`);
+          const filePath = path.join(dir, `${safeFilename(article.title)}.md`);
+          fs.writeFileSync(filePath, articleToMarkdown(article, imageAssetPaths), "utf8");
+          count++;
         }
-        const filePath = path.join(dir, `${safeFilename(article.title)}.md`);
-        fs.writeFileSync(filePath, articleToMarkdown(article, imageAssetPaths), "utf8");
-        count++;
+        if (i + CHUNK_SIZE < articles.length) {
+          await new Promise(resolve => setImmediate(resolve));
+        }
       }
       return { ok: true, data: { count, dir } };
     } catch (e) { return { ok: false, error: e.message }; }
@@ -586,7 +700,7 @@ function createArticleHandlers(ipcMain) {
       });
       if (result.canceled || !result.filePath) return { ok: true, data: null };
 
-      const csv = rows.map(r => r.map(csvEscape).join(",")).join("\n") + "\n";
+      const csv = rows.map(r => r.map(csvEscape).join(";")).join("\n") + "\n";
       fs.writeFileSync(result.filePath, csv, "utf8");
       return { ok: true, data: { count: rows.length, filePath: result.filePath } };
     } catch (e) { return { ok: false, error: e.message }; }
@@ -640,6 +754,84 @@ function createArticleHandlers(ipcMain) {
       return { ok: true, data: article };
     } catch (e) { return { ok: false, error: e.message }; }
   });
+
+  // ── article:addAttachment { articleId, name, mimeType, dataBase64 } ────────
+  ipcMain.handle("article:addAttachment", (_evt, { articleId, name, mimeType, dataBase64 }) => {
+    try {
+      const article = readArticle(articleId);
+      if (!article) return { ok: false, error: "Artigo não encontrado." };
+
+      const buffer = Buffer.from(dataBase64, "base64");
+      if (buffer.length > MAX_ATTACHMENT_BYTES) {
+        return { ok: false, error: `Anexo maior que ${MAX_ATTACHMENT_BYTES / (1024 * 1024)}MB.` };
+      }
+
+      const id = crypto.randomUUID();
+      ensureAttachmentDir(articleId);
+      fs.writeFileSync(storedAttachmentPath(articleId, id, name), buffer);
+
+      const attachment = {
+        id, name, mimeType, size: buffer.length, createdAt: new Date().toISOString(),
+      };
+      article.attachments = [...(article.attachments ?? []), attachment];
+      article.updatedAt = attachment.createdAt;
+      writeArticle(article);
+      return { ok: true, data: article };
+    } catch (e) { return { ok: false, error: e.message }; }
+  });
+
+  // ── article:removeAttachment { articleId, attachmentId } ───────────────────
+  ipcMain.handle("article:removeAttachment", (_evt, { articleId, attachmentId }) => {
+    try {
+      const article = readArticle(articleId);
+      if (!article) return { ok: false, error: "Artigo não encontrado." };
+      const attachment = (article.attachments ?? []).find(a => a.id === attachmentId);
+      if (attachment) {
+        const p = storedAttachmentPath(articleId, attachment.id, attachment.name);
+        if (fs.existsSync(p)) fs.unlinkSync(p);
+      }
+      article.attachments = (article.attachments ?? []).filter(a => a.id !== attachmentId);
+      article.updatedAt = new Date().toISOString();
+      writeArticle(article);
+      return { ok: true, data: article };
+    } catch (e) { return { ok: false, error: e.message }; }
+  });
+
+  // ── article:getAttachmentData { articleId, attachmentId } ──────────────────
+  // Base64 sob demanda — usado pela prévia inline de imagens no ArticleView.
+  // Não é chamado em lote (article:list nunca inclui isso), só quando o
+  // usuário abre um anexo específico.
+  ipcMain.handle("article:getAttachmentData", (_evt, { articleId, attachmentId }) => {
+    try {
+      const article = readArticle(articleId);
+      const attachment = article && (article.attachments ?? []).find(a => a.id === attachmentId);
+      if (!attachment) return { ok: false, error: "Anexo não encontrado." };
+      const p = storedAttachmentPath(articleId, attachment.id, attachment.name);
+      if (!fs.existsSync(p)) return { ok: false, error: "Arquivo do anexo não encontrado em disco." };
+      const dataBase64 = fs.readFileSync(p).toString("base64");
+      return { ok: true, data: { dataBase64, mimeType: attachment.mimeType, name: attachment.name } };
+    } catch (e) { return { ok: false, error: e.message }; }
+  });
+
+  // ── article:exportAttachment { articleId, attachmentId } ───────────────────
+  // Copia o anexo para um caminho escolhido pelo usuário (dialog nativo) —
+  // mesma UX de article:exportMarkdown/exportFlashcardsCsv.
+  ipcMain.handle("article:exportAttachment", async (_evt, { articleId, attachmentId }) => {
+    try {
+      const article = readArticle(articleId);
+      const attachment = article && (article.attachments ?? []).find(a => a.id === attachmentId);
+      if (!attachment) return { ok: false, error: "Anexo não encontrado." };
+      const src = storedAttachmentPath(articleId, attachment.id, attachment.name);
+      if (!fs.existsSync(src)) return { ok: false, error: "Arquivo do anexo não encontrado em disco." };
+
+      const result = await dialog.showSaveDialog({
+        title: "Salvar anexo", defaultPath: attachment.name,
+      });
+      if (result.canceled || !result.filePath) return { ok: true, data: null };
+      fs.copyFileSync(src, result.filePath);
+      return { ok: true, data: { filePath: result.filePath } };
+    } catch (e) { return { ok: false, error: e.message }; }
+  });
 }
 
-module.exports = { createArticleHandlers, readArticle, listAllArticles, htmlToMarkdown };
+module.exports = { createArticleHandlers, readArticle, writeArticle, listAllArticles, htmlToMarkdown };

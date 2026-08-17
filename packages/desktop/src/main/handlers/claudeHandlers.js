@@ -116,6 +116,81 @@ Regras:
 - Responda APENAS com os bullet points, sem título, sem introdução
 `.trim();
 
+// ── Templates de geração ────────────────────────────────────────────────────
+// Cada template é o mesmo formato base (bullet points, português, sem
+// título/introdução) com um foco estrutural diferente — o usuário escolhe no
+// modal de "Novo artigo" quando a fonte é "Gerar com Claude". "padrao" é o
+// comportamento original (SYSTEM_GENERATE), preservado por compatibilidade
+// com chamadas antigas (templateId ausente/desconhecido cai nele).
+const GENERATE_TEMPLATES = {
+  padrao: { label: "Padrão", systemPrompt: SYSTEM_GENERATE },
+  definicao: {
+    label: "Definição aprofundada",
+    systemPrompt: `
+Você é um assistente especializado em criar artigos-resumo enciclopédicos.
+Dado um título ou conceito, produza um artigo em bullet points em português brasileiro,
+com foco em DEFINIÇÃO: o que é, do que é composto, como se distingue de conceitos vizinhos.
+Regras:
+- Entre 6 e 9 bullet points
+- Cada bullet: 1 frase direta, sem sub-bullets, começando com "• "
+- Ordem sugerida: definição central → componentes/características essenciais →
+  distinção de conceitos frequentemente confundidos com este → variações ou subtipos
+- Use linguagem precisa — este é um documento de referência pessoal
+- Responda APENAS com os bullet points, sem título, sem introdução
+`.trim(),
+  },
+  historia: {
+    label: "Contexto histórico",
+    systemPrompt: `
+Você é um assistente especializado em criar artigos-resumo enciclopédicos.
+Dado um título ou conceito, produza um artigo em bullet points em português brasileiro,
+com foco em CONTEXTO HISTÓRICO: origem, evolução ao longo do tempo, marcos e figuras relevantes.
+Regras:
+- Entre 6 e 9 bullet points
+- Cada bullet: 1 frase direta, sem sub-bullets, começando com "• "
+- Ordem sugerida: origem/surgimento → marcos e datas relevantes → pessoas/eventos-chave →
+  estado atual ou legado
+- Use linguagem precisa — este é um documento de referência pessoal
+- Responda APENAS com os bullet points, sem título, sem introdução
+`.trim(),
+  },
+  exemplos: {
+    label: "Exemplos práticos",
+    systemPrompt: `
+Você é um assistente especializado em criar artigos-resumo enciclopédicos.
+Dado um título ou conceito, produza um artigo em bullet points em português brasileiro,
+com foco em APLICAÇÃO PRÁTICA: exemplos concretos, casos de uso, situações do dia a dia.
+Regras:
+- Entre 6 e 9 bullet points
+- Cada bullet: 1 frase direta, sem sub-bullets, começando com "• "
+- Comece com uma definição breve (1 bullet), depois dedique a maioria dos bullets a
+  exemplos concretos e situações onde o conceito se aplica
+- Use linguagem precisa — este é um documento de referência pessoal
+- Responda APENAS com os bullet points, sem título, sem introdução
+`.trim(),
+  },
+  referencias: {
+    label: "Estruturado (com referências)",
+    systemPrompt: `
+Você é um assistente especializado em criar artigos-resumo enciclopédicos.
+Dado um título ou conceito, produza um artigo em bullet points em português brasileiro,
+cobrindo estas seções, NESTA ORDEM, um bullet de transição por seção usando o rótulo
+em negrito no início da linha (ex.: "• Definição: ..."):
+Definição, Contexto histórico ou científico, Relevância, Relações com outros conceitos,
+Referências ou fontes amplamente reconhecidas sobre o tema.
+Regras:
+- 1 a 2 bullets por seção (não pule nenhuma das 5 seções)
+- Cada bullet começa com "• " seguido do rótulo da seção e ":"
+- Frases diretas, sem sub-bullets
+- Use linguagem precisa — este é um documento de referência pessoal
+- Responda APENAS com os bullet points, sem título, sem introdução
+`.trim(),
+  },
+};
+function resolveGenerateTemplate(templateId) {
+  return GENERATE_TEMPLATES[templateId] ?? GENERATE_TEMPLATES.padrao;
+}
+
 const SYSTEM_SEARCH_RANK = `
 Você é um mecanismo de busca semântica para uma base de conhecimento pessoal.
 Dada uma consulta e uma lista de artigos candidatos (id, título e resumo),
@@ -179,9 +254,10 @@ function createClaudeHandlers(ipcMain) {
   // Gera um artigo novo em bullet points quando o usuário não quer buscar
   // na Wikipedia e prefere pedir ao Claude diretamente.
   // context: texto opcional de outros artigos relacionados para dar contexto
-  ipcMain.handle("claude:generate", async (_evt, { title, context = "" }) => {
+  ipcMain.handle("claude:generate", async (_evt, { title, context = "", templateId = "padrao" }) => {
     try {
-      const cacheKey = `${normTerm(title)}::${normTerm(context.slice(0, 200))}`;
+      const template = resolveGenerateTemplate(templateId);
+      const cacheKey = `${template === GENERATE_TEMPLATES.padrao ? "padrao" : templateId}::${normTerm(title)}::${normTerm(context.slice(0, 200))}`;
       if (generateCache.has(cacheKey)) return { ok: true, data: { summary: generateCache.get(cacheKey) } };
 
       const { getConfig } = require("./configHandlers");
@@ -194,12 +270,22 @@ function createClaudeHandlers(ipcMain) {
         ? `Conceito: ${title}\n\nContexto adicional (artigos relacionados na minha base):\n${context.slice(0, 2000)}`
         : `Conceito: ${title}`;
 
-      const summary = await callClaude(apiKey, SYSTEM_GENERATE, userMsg, 800);
+      const summary = await callClaude(apiKey, template.systemPrompt, userMsg, 800);
       generateCache.set(cacheKey, summary);
       return { ok: true, data: { summary } };
     } catch (e) {
       return { ok: false, error: e.message };
     }
+  });
+
+  // ── claude:generateTemplates → lista de templates disponíveis ────────────────
+  // Consultado pelo modal de "Novo artigo" para popular o seletor — mantém a
+  // lista (ids + rótulos) definida num único lugar (main process).
+  ipcMain.handle("claude:generateTemplates", () => {
+    return {
+      ok: true,
+      data: Object.entries(GENERATE_TEMPLATES).map(([id, t]) => ({ id, label: t.label })),
+    };
   });
 
   // ── claude:ask { question, articleTitle, articleText, relatedContext? } ─────
