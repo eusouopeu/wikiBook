@@ -11,6 +11,7 @@ import { ArticleView, ReviewModal } from "./components/ArticleView";
 import { PathView } from "./components/PathView";
 import { FolderPicker } from "./components/FolderPicker";
 import { LogoMark } from "./components/LogoMark";
+import { Icon } from "./components/Icon";
 import { MiniGraphPreview } from "./components/MiniGraphPreview";
 import { VirtualList, type VirtualListHandle } from "./components/VirtualList";
 
@@ -411,7 +412,7 @@ const SettingsModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         <div className="modal-actions">
           <button onClick={onClose}>Fechar</button>
           <button className="primary" onClick={handleSave}>
-            {saved ? "✓ Salvo" : "Salvar"}
+            {saved ? <><Icon name="check" /><span>Salvo</span></> : "Salvar"}
           </button>
         </div>
       </div>
@@ -464,7 +465,7 @@ const OnboardingWizard: React.FC<{
             <h2>Chave da API Anthropic</h2>
             <p>
               Necessária para os recursos de IA: resumo automático, geração de artigos, busca
-              semântica e flashcards. Pode ser configurada depois em ⚙ Configurações.
+              semântica e flashcards. Pode ser configurada depois em Configurações.
             </p>
             <label>
               Anthropic API Key
@@ -489,7 +490,7 @@ const OnboardingWizard: React.FC<{
               <li>Use <strong>+ Novo artigo</strong> para buscar na Wikipedia ou gerar com o Claude.</li>
               <li>Selecione um trecho de texto e clique com o botão direito para salvá-lo ou criar um flashcard.</li>
               <li>O modo <strong>Grafo</strong> mostra como seus artigos se conectam entre si.</li>
-              <li>Revise flashcards vencidos a qualquer momento pelo ícone 🎓 no artigo.</li>
+              <li>Revise flashcards vencidos a qualquer momento pelo ícone de capelo no artigo.</li>
             </ul>
             <div className="modal-actions">
               <button onClick={onFinish}>Concluir</button>
@@ -795,17 +796,17 @@ export default function App() {
         <div className="sidebar-top">
           <span className="app-logo"><LogoMark size={20} /> Wikibook</span>
           <div className="sidebar-top-actions">
-            <button className="icon-btn" title="Exportar para Markdown (Obsidian)" aria-label="Exportar para Markdown (Obsidian)" onClick={handleExport}>⤓</button>
-            <button className="icon-btn" title="Exportar flashcards (CSV/Anki)" aria-label="Exportar flashcards (CSV/Anki)" onClick={handleExportFlashcards}>🎴</button>
+            <button className="icon-btn" title="Exportar para Markdown (Obsidian)" aria-label="Exportar para Markdown (Obsidian)" onClick={handleExport}><Icon name="save" /></button>
+            <button className="icon-btn" title="Exportar flashcards (CSV/Anki)" aria-label="Exportar flashcards (CSV/Anki)" onClick={handleExportFlashcards}><Icon name="flashcardsExport" /></button>
             <button
               className="icon-btn"
               title={listDensity === "compact" ? "Lista compacta — clique para expandir" : "Lista expandida — clique para compactar"}
               aria-label={listDensity === "compact" ? "Alternar para lista expandida" : "Alternar para lista compacta"}
               onClick={() => setListDensity(listDensity === "compact" ? "comfortable" : "compact")}
             >
-              {listDensity === "compact" ? "☰" : "▤"}
+              <Icon name={listDensity === "compact" ? "densityCompact" : "densityComfortable"} />
             </button>
-            <button className="icon-btn" title="Configurações" aria-label="Configurações" onClick={() => setShowSettings(true)}>⚙</button>
+            <button className="icon-btn" title="Configurações" aria-label="Configurações" onClick={() => setShowSettings(true)}><Icon name="settings" /></button>
           </div>
         </div>
 
@@ -838,7 +839,7 @@ export default function App() {
               : "Ativar busca semântica (via Claude) — encontra por significado, não só texto exato"}
             onClick={() => setSemanticSearch(s => !s)}
           >
-            {semanticLoading ? "…" : "✦"}
+            {semanticLoading ? "…" : <Icon name="semantic" />}
           </button>
         </div>
 
@@ -863,13 +864,13 @@ export default function App() {
                       type="button" className="folder-chip-label"
                       onClick={() => setSelectedFolder(selectedFolder === f.id ? null : f.id)}
                     >
-                      📁 {f.name}
+                      <Icon name="folder" /><span>{f.name}</span>
                     </button>
                     <span className="folder-chip-actions">
                       <button type="button" title="Renomear pasta" aria-label="Renomear pasta"
-                              onClick={() => handleRenameFolderStart(f.id, f.name)}>✎</button>
+                              onClick={() => handleRenameFolderStart(f.id, f.name)}><Icon name="edit" /></button>
                       <button type="button" title="Excluir pasta" aria-label="Excluir pasta"
-                              onClick={() => handleDeleteFolder(f.id, f.name)}>🗑</button>
+                              onClick={() => handleDeleteFolder(f.id, f.name)}><Icon name="trash" /></button>
                     </span>
                   </>
                 )}
@@ -895,7 +896,7 @@ export default function App() {
 
         {dueCount > 0 && (
           <button className="global-review-btn" onClick={handleOpenGlobalReview}>
-            🎓 Revisar flashcards ({dueCount})
+            <Icon name="flashcards" /><span>Revisar flashcards ({dueCount})</span>
           </button>
         )}
 
@@ -930,7 +931,7 @@ export default function App() {
                     <span className="article-item-snippet">
                       {(a.summary || "").replace(/^•\s*/, "").slice(0, 90) || "Sem resumo."}
                       {folders.find(f => f.id === a.folderId) && (
-                        <span className="article-item-folder-label"> · 📁 {folders.find(f => f.id === a.folderId)!.name}</span>
+                        <span className="article-item-folder-label"> · <Icon name="folder" />{folders.find(f => f.id === a.folderId)!.name}</span>
                       )}
                     </span>
                   )}
@@ -947,7 +948,7 @@ export default function App() {
                     setFolderPickerFor({ articleId: a.id, x: rect.left, y: rect.bottom + 4 });
                   }}
                 >
-                  📁
+                  <Icon name="folder" />
                 </button>
               </div>
             )}

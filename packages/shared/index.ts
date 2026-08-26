@@ -12,6 +12,8 @@ export { GraphView } from "./components/GraphView";
 export { PathView } from "./components/PathView";
 export { FolderPicker } from "./components/FolderPicker";
 export { LogoMark } from "./components/LogoMark";
+export { Icon } from "./components/Icon";
+export type { IconName } from "./components/Icon";
 export { VirtualList } from "./components/VirtualList";
 export type { VirtualListHandle } from "./components/VirtualList";
 export * from "./shared/types";

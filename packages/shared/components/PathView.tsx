@@ -8,6 +8,7 @@
 
 import React, { useMemo, useState } from "react";
 import { useStore } from "../store/useStore";
+import { Icon } from "./Icon";
 import type { InterviewAnswer, LearningPath, PathGenerationModel, PathStep } from "../shared/types";
 import { INTERVIEW_SCRIPT } from "../lib/interviewScript";
 import { PATH_MODEL_OPTIONS, estimatePathGenerationCostUsd, formatUsd } from "../lib/pathModels";
@@ -127,7 +128,7 @@ const CreatePathWizard: React.FC<{ onDone: () => void; onCancel: () => void }> =
   return (
     <div className="path-wizard">
       <div className="path-wizard-header">
-        <button className="text-btn" onClick={onCancel}>← Cancelar</button>
+        <button className="text-btn" onClick={onCancel}><Icon name="back" /><span>Cancelar</span></button>
       </div>
 
       {stage === "goal" && (
@@ -243,11 +244,11 @@ const StepPanel: React.FC<{ step: PathStep; pathId: string; onClose: () => void 
                 <li key={r.id} className="step-panel-resource">
                   {r.kind === "wikipedia" ? (
                     <button className="resource-link" onClick={() => openResourceLink(r.url!)}>
-                      📖 {r.title}
+                      <Icon name="read" /><span>{r.title}</span>
                     </button>
                   ) : (
                     <div className="resource-video">
-                      <span className="resource-video-label">🎬 {r.title}</span>
+                      <span className="resource-video-label"><Icon name="video" /><span>{r.title}</span></span>
                       <div className="resource-video-engines">
                         {r.engines?.map(eng => (
                           <button key={eng.label} className="resource-engine-btn" onClick={() => openResourceLink(eng.url)}>
@@ -265,10 +266,10 @@ const StepPanel: React.FC<{ step: PathStep; pathId: string; onClose: () => void 
 
         {step.status !== "done" ? (
           <button className="primary step-panel-complete" onClick={() => { completeStep(pathId, step.id); onClose(); }}>
-            ✓ Marcar como concluído
+            <Icon name="check" /><span>Marcar como concluído</span>
           </button>
         ) : (
-          <div className="step-panel-done-badge">✓ Concluído</div>
+          <div className="step-panel-done-badge"><Icon name="check" /><span>Concluído</span></div>
         )}
       </div>
     </div>
@@ -283,7 +284,7 @@ const PathDetail: React.FC<{ learningPath: LearningPath; onBack: () => void }> =
   return (
     <div className="path-detail-screen">
       <div className="path-detail-header">
-        <button className="text-btn" onClick={onBack}>← Todas as trilhas</button>
+        <button className="text-btn" onClick={onBack}><Icon name="back" /><span>Todas as trilhas</span></button>
         <h2>{learningPath.goal}</h2>
         <span className="path-detail-progress-label">{done}/{total} passos</span>
       </div>
@@ -304,7 +305,7 @@ const PathDetail: React.FC<{ learningPath: LearningPath; onBack: () => void }> =
                     title={step.title}
                   >
                     <span className="path-step-icon">
-                      {step.status === "done" ? "✓" : step.status === "locked" ? "🔒" : "●"}
+                      {step.status === "done" ? <Icon name="check" /> : step.status === "locked" ? <Icon name="locked" /> : "●"}
                     </span>
                     <span className="path-step-label">{step.title}</span>
                   </button>

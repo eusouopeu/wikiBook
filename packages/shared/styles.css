@@ -163,6 +163,17 @@ html, body, #root {
   letter-spacing: -0.01em;
 }
 
+/* Heroicons: herdam cor e tamanho do container (ver components/Icon.tsx).
+   O deslocamento vertical compensa a caixa do SVG, que não tem a baseline de
+   um glifo — sem isso o ícone "sobe" em relação ao texto ao lado. */
+.hi {
+  display: inline-block;
+  flex-shrink: 0;
+  vertical-align: -0.15em;
+}
+/* Ícone acompanhado de texto no mesmo botão ("Revisar flashcards (3)") */
+.hi + * { margin-left: 0.4em; }
+
 .icon-btn {
   background: none;
   border: 1px solid transparent;

@@ -9,6 +9,7 @@ import type { Article, ArticleExcerpt, ArticleHistoryEntry, ExcerptCategory, Exc
 import { useStore } from "../store/useStore";
 import { computeTrackedEdit, stripTrackedMarkup } from "../lib/excerptDiff";
 import { confirmDialog } from "../lib/confirmDialog";
+import { Icon, type IconName } from "./Icon";
 import {
   escapeHtml, inlineMarkdown, markdownToHtml, excerptHtmlToMarkdown,
   parseMarkdownTable, serializeMarkdownTable, markdownTableToHtml,
@@ -275,7 +276,7 @@ const TableExcerptEditor: React.FC<{
                 ))}
                 <td className="table-editor-rowctrl">
                   <button type="button" title="Remover linha" aria-label="Remover linha" onClick={() => removeRow(r)}
-                          disabled={matrix.length <= 1}>✕</button>
+                          disabled={matrix.length <= 1}><Icon name="close" /></button>
                 </td>
               </tr>
             ))}
@@ -445,7 +446,7 @@ interface ExcerptsPanelProps {
   onCancelEdit: () => void;
 }
 
-const EXCERPT_KIND_ICON: Record<string, string> = { text: "📝", table: "📊", image: "🖼" };
+const EXCERPT_KIND_ICON: Record<string, IconName> = { text: "text", table: "table", image: "image" };
 
 const ExcerptsPanel: React.FC<ExcerptsPanelProps> = ({
   article, outline, onOpenSource, onRemoveExcerpt, onReorder,
@@ -525,7 +526,7 @@ const ExcerptsPanel: React.FC<ExcerptsPanelProps> = ({
                 <span className="drag-handle" title="Arrastar">⠿</span>
                 <span className="excerpt-heading-text">{item.text}</span>
                 <button className="excerpt-remove-btn" title="Remover heading" aria-label="Remover heading"
-                        onClick={() => handleRemoveHeading(item.id)}>✕</button>
+                        onClick={() => handleRemoveHeading(item.id)}><Icon name="close" /></button>
               </li>
             );
           }
@@ -553,7 +554,7 @@ const ExcerptsPanel: React.FC<ExcerptsPanelProps> = ({
                   <button className="excerpt-edit-btn"
                           title={kind === "table" ? "Editar tabela" : "Editar trecho"}
                           aria-label={kind === "table" ? "Editar tabela" : "Editar trecho"}
-                          onClick={() => onStartEdit(ex.id)}>✎</button>
+                          onClick={() => onStartEdit(ex.id)}><Icon name="edit" /></button>
                 )}
               </div>
 
@@ -589,12 +590,12 @@ const ExcerptsPanel: React.FC<ExcerptsPanelProps> = ({
               )}
 
               <div className="excerpt-meta">
-                <span className="excerpt-kind-badge" title={kind}>{EXCERPT_KIND_ICON[kind]}</span>
+                <span className="excerpt-kind-badge" title={kind}><Icon name={EXCERPT_KIND_ICON[kind] ?? "text"} /></span>
                 <button className="excerpt-source-btn" onClick={() => onOpenSource(ex.sourceArticleId)}>
-                  ↗ {ex.sourceArticleTitle}
+                  <Icon name="externalSource" /><span>{ex.sourceArticleTitle}</span>
                 </button>
                 <span className="excerpt-date">{new Date(ex.savedAt).toLocaleDateString("pt-BR")}</span>
-                <button className="excerpt-remove-btn" onClick={() => onRemoveExcerpt(ex.id)} title="Remover">✕</button>
+                <button className="excerpt-remove-btn" onClick={() => onRemoveExcerpt(ex.id)} title="Remover"><Icon name="close" /></button>
               </div>
             </li>
           );
@@ -619,7 +620,7 @@ const BacklinksPanel: React.FC<{
         {backlinks.map((b, i) => (
           <li key={`${b.sourceId}-${i}`} className="backlink-item">
             <button className="backlink-source" onClick={() => onOpen(b.sourceId)}>
-              ← {b.sourceTitle}
+              <Icon name="back" /><span>{b.sourceTitle}</span>
             </button>
             <span className="backlink-anchor">via "{b.anchorText}"</span>
           </li>
@@ -657,7 +658,7 @@ const TagEditor: React.FC<{
         <span key={t} className="tag-chip">
           #{t}
           <button className="tag-remove" title="Remover tag" aria-label="Remover tag"
-                  onClick={() => onChange(tags.filter(x => x !== t))}>✕</button>
+                  onClick={() => onChange(tags.filter(x => x !== t))}><Icon name="close" /></button>
         </span>
       ))}
       {adding ? (
@@ -753,9 +754,9 @@ const FlashcardsPanel: React.FC<{
       <div className="excerpts-panel-header">
         <h2 className="section-heading">Flashcards ({cards.length})</h2>
         <div className="flashcards-panel-actions">
-          <button onClick={onRegenerate} disabled={loading}>{loading ? "Atualizando…" : "🔄 Atualizar"}</button>
+          <button onClick={onRegenerate} disabled={loading}>{loading ? "Atualizando…" : <><Icon name="refresh" /><span>Atualizar</span></>}</button>
           <button className="primary" onClick={onStartReview} disabled={dueCount === 0}>
-            🎓 Revisar ({dueCount})
+            <Icon name="flashcards" /><span>Revisar ({dueCount})</span>
           </button>
         </div>
       </div>
@@ -819,7 +820,7 @@ export const ReviewModal: React.FC<{
     return (
       <div className="modal-overlay" onClick={onClose}>
         <div className="modal review-modal" onClick={e => e.stopPropagation()}>
-          <h2>Revisão concluída 🎉</h2>
+          <h2>Revisão concluída <Icon name="done" /></h2>
           <p>Nenhum flashcard vencido no momento.</p>
           <div className="modal-actions"><button className="primary" onClick={onClose}>Fechar</button></div>
         </div>
@@ -948,9 +949,9 @@ const FindInPageBar: React.FC<{
         }}
       />
       <span className="find-in-page-count">{count > 0 ? `${index + 1}/${count}` : "0/0"}</span>
-      <button type="button" title="Anterior" aria-label="Anterior" onClick={onPrev} disabled={count === 0}>↑</button>
-      <button type="button" title="Próximo" aria-label="Próximo" onClick={onNext} disabled={count === 0}>↓</button>
-      <button type="button" className="find-in-page-close" title="Fechar" aria-label="Fechar" onClick={onClose}>✕</button>
+      <button type="button" title="Anterior" aria-label="Anterior" onClick={onPrev} disabled={count === 0}><Icon name="prev" /></button>
+      <button type="button" title="Próximo" aria-label="Próximo" onClick={onNext} disabled={count === 0}><Icon name="next" /></button>
+      <button type="button" className="find-in-page-close" title="Fechar" aria-label="Fechar" onClick={onClose}><Icon name="close" /></button>
     </div>
   );
 };
@@ -1098,10 +1099,10 @@ function formatBytes(n: number): string {
   return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function attachmentIcon(mimeType: string): string {
-  if (mimeType.startsWith("image/")) return "🖼";
-  if (mimeType === "application/pdf") return "📄";
-  return "📎";
+function attachmentIcon(mimeType: string): IconName {
+  if (mimeType.startsWith("image/")) return "image";
+  if (mimeType === "application/pdf") return "file";
+  return "attachment";
 }
 
 // Lê um File do input como base64 puro (sem o prefixo "data:...;base64,")
@@ -1198,7 +1199,7 @@ const AttachmentsSection: React.FC<{
         <ul className="attachments-list">
           {attachments.map(a => (
             <li key={a.id} className="attachment-item">
-              <span className="attachment-icon">{attachmentIcon(a.mimeType)}</span>
+              <span className="attachment-icon"><Icon name={attachmentIcon(a.mimeType)} /></span>
               <span className="attachment-name" title={a.name}>{a.name}</span>
               <span className="attachment-size">{formatBytes(a.size)}</span>
               <div className="attachment-actions">
@@ -1242,7 +1243,7 @@ export const ArticleView: React.FC<Props> = ({ article }) => {
   const [summaryPreview, setSummaryPreview] = useState<string | null>(null);
   // Se o resumo automático falhou na criação (ver useStore.ts/fetchFromWikipedia),
   // o artigo é salvo com esse texto fixo — força a aba "Resumo" ao abrir, para
-  // que o botão "↺ Regenerar resumo" já existente fique visível de cara, sem
+  // que o botão "Regenerar resumo" já existente fique visível de cara, sem
   // o usuário precisar descobrir a aba manualmente ou recriar o artigo.
   const summaryFailed = article.summary.trim() === "• Resumo não disponível.";
   useEffect(() => {
@@ -1842,22 +1843,22 @@ export const ArticleView: React.FC<Props> = ({ article }) => {
           <h1 className="article-title">{article.title}</h1>
           <div className="article-header-actions">
             <button className={`icon-btn ${findOpen ? "icon-btn-active" : ""}`} title="Buscar na página" aria-label="Buscar na página"
-                    onClick={() => setFindOpen(o => !o)}>🔎</button>
+                    onClick={() => setFindOpen(o => !o)}><Icon name="search" /></button>
             {tocItems.length > 0 && (
-              <button className="icon-btn" title="Conteúdo" aria-label="Conteúdo" onClick={() => setTocOpen(true)}>☰</button>
+              <button className="icon-btn" title="Conteúdo" aria-label="Conteúdo" onClick={() => setTocOpen(true)}><Icon name="densityCompact" /></button>
             )}
             <button className={`icon-btn ${chatOpen ? "icon-btn-active" : ""}`} title="Perguntar ao Claude" aria-label="Perguntar ao Claude"
-                    onClick={() => setChatOpen(o => !o)}>💬</button>
+                    onClick={() => setChatOpen(o => !o)}><Icon name="chat" /></button>
             <button className="icon-btn" title="Revisar flashcards deste artigo" aria-label="Revisar flashcards deste artigo"
                     onClick={() => setReviewOpen(true)}
-                    disabled={flashcards.filter(c => c.due <= new Date().toISOString()).length === 0}>🎓</button>
+                    disabled={flashcards.filter(c => c.due <= new Date().toISOString()).length === 0}><Icon name="flashcards" /></button>
             <button className="icon-btn" title="Histórico de versões" aria-label="Histórico de versões"
-                    onClick={() => setHistoryOpen(true)}>🕐</button>
+                    onClick={() => setHistoryOpen(true)}><Icon name="history" /></button>
             {article.source === "manual" && !isEditing && (
-              <button className="icon-btn" title="Editar artigo" aria-label="Editar artigo" onClick={handleStartEdit}>✎</button>
+              <button className="icon-btn" title="Editar artigo" aria-label="Editar artigo" onClick={handleStartEdit}><Icon name="edit" /></button>
             )}
             <button className="icon-btn article-delete-btn" title="Excluir artigo" aria-label="Excluir artigo"
-                    onClick={handleDeleteArticle}>🗑</button>
+                    onClick={handleDeleteArticle}><Icon name="trash" /></button>
           </div>
         </div>
 
@@ -1925,7 +1926,7 @@ export const ArticleView: React.FC<Props> = ({ article }) => {
                 aria-label="Limpar conversa"
                 onClick={() => { setChatMessages([]); setSavedChatIndices(new Set()); }}
               >
-                🧹 Limpar conversa
+                <Icon name="clear" /><span>Limpar conversa</span>
               </button>
             )}
             <div className="ask-claude-messages">
@@ -1946,7 +1947,9 @@ export const ArticleView: React.FC<Props> = ({ article }) => {
                       onClick={() => handleSaveChatAnswer(i, m.text)}
                       title="Salvar esta resposta como trecho do artigo"
                     >
-                      {savedChatIndices.has(i) ? "✓ Salvo" : "💾 Salvar no artigo"}
+                      {savedChatIndices.has(i)
+                        ? <><Icon name="check" /><span>Salvo</span></>
+                        : <><Icon name="save" /><span>Salvar no artigo</span></>}
                     </button>
                   )}
                 </div>
@@ -1980,7 +1983,7 @@ export const ArticleView: React.FC<Props> = ({ article }) => {
                   </a>
                   <span className="toc-target"> — {link.targetTitle}</span>
                   <button className="toc-remove-btn" title="Remover link" aria-label="Remover link"
-                          onClick={() => handleRemoveLink(link.id)}>✕</button>
+                          onClick={() => handleRemoveLink(link.id)}><Icon name="close" /></button>
                 </li>
               ))}
             </ol>
@@ -2005,9 +2008,9 @@ export const ArticleView: React.FC<Props> = ({ article }) => {
                   <span className="suggestion-term">{term}</span>
                   <span className="toc-target"> → {target.title}</span>
                   <button className="suggestion-accept-btn" title="Criar link" aria-label="Criar link"
-                          onClick={() => handleAcceptSuggestion(term, target)}>✓</button>
+                          onClick={() => handleAcceptSuggestion(term, target)}><Icon name="check" /></button>
                   <button className="toc-remove-btn" title="Descartar sugestão" aria-label="Descartar sugestão"
-                          onClick={() => setDismissedTerms(s => new Set(s).add(term))}>✕</button>
+                          onClick={() => setDismissedTerms(s => new Set(s).add(term))}><Icon name="close" /></button>
                 </li>
               ))}
             </ol>
@@ -2053,7 +2056,7 @@ export const ArticleView: React.FC<Props> = ({ article }) => {
             <div dangerouslySetInnerHTML={{ __html: summaryHtml }} />
             <div className="summary-actions">
               <button className="wiki-btn" onClick={handleRegenerateSummary} disabled={isLoadingSummary}>
-                {isLoadingSummary ? "Gerando…" : "↺ Regenerar resumo"}
+                {isLoadingSummary ? "Gerando…" : <><Icon name="refresh" /><span>Regenerar resumo</span></>}
               </button>
             </div>
           </div>
@@ -2237,10 +2240,10 @@ const SelectionHintBubble: React.FC<{ x: number; y: number; onDismiss: () => voi
     <div ref={ref} className="selection-hint-bubble"
          style={{ position: "fixed", top: pos.top, left: pos.left, zIndex: 998 }}
          onClick={e => e.stopPropagation()}>
-      💡 {isTouchPlatform
+      <Icon name="hint" /> {isTouchPlatform
         ? "Toque e segure para criar um link ou salvar este trecho."
         : "Clique com o botão direito para criar um link ou salvar este trecho."}
-      <button type="button" className="selection-hint-dismiss" title="Entendi" aria-label="Fechar dica" onClick={onDismiss}>✕</button>
+      <button type="button" className="selection-hint-dismiss" title="Entendi" aria-label="Fechar dica" onClick={onDismiss}><Icon name="close" /></button>
     </div>
   );
 };
@@ -2333,11 +2336,11 @@ const ContextMenu: React.FC<ContextMenuProps> = ({
          onClick={e => e.stopPropagation()}>
       {hasText && (
         <>
-          <button className="context-menu-item" title="Pesquisar na Wikipédia" aria-label="Pesquisar na Wikipédia" onClick={onSearchWiki}>🔍</button>
-          <button className="context-menu-item" title="Gerar artigo com Claude" aria-label="Gerar artigo com Claude" onClick={onSearchClaude}>✦</button>
+          <button className="context-menu-item" title="Pesquisar na Wikipédia" aria-label="Pesquisar na Wikipédia" onClick={onSearchWiki}><Icon name="search" /></button>
+          <button className="context-menu-item" title="Gerar artigo com Claude" aria-label="Gerar artigo com Claude" onClick={onSearchClaude}><Icon name="semantic" /></button>
           <span className="context-menu-divider" />
           <button className="context-menu-item context-menu-save" title="Salvar trecho" aria-label="Salvar trecho"
-                  onClick={() => onSaveExcerpt("default")}>📌</button>
+                  onClick={() => onSaveExcerpt("default")}><Icon name="pin" /></button>
           <button className="context-menu-item context-menu-save" title="Salvar como conceito" aria-label="Salvar como conceito"
                   onClick={() => onSaveExcerpt("concept")}>
             <span className="ctx-cat-swatch ctx-cat-concept" />
@@ -2353,13 +2356,13 @@ const ContextMenu: React.FC<ContextMenuProps> = ({
         </>
       )}
       {hasTable && (
-        <button className="context-menu-item context-menu-save" title="Salvar tabela em…" aria-label="Salvar tabela em…" onClick={onSaveTable}>📊</button>
+        <button className="context-menu-item context-menu-save" title="Salvar tabela em…" aria-label="Salvar tabela em…" onClick={onSaveTable}><Icon name="table" /></button>
       )}
       {hasImage && (
-        <button className="context-menu-item context-menu-save" title="Salvar imagem em…" aria-label="Salvar imagem em…" onClick={onSaveImage}>🖼</button>
+        <button className="context-menu-item context-menu-save" title="Salvar imagem em…" aria-label="Salvar imagem em…" onClick={onSaveImage}><Icon name="image" /></button>
       )}
       <span className="context-menu-divider" />
-      <button className="context-menu-item context-menu-cancel" title="Cancelar" aria-label="Cancelar" onClick={onClose}>✕</button>
+      <button className="context-menu-item context-menu-cancel" title="Cancelar" aria-label="Cancelar" onClick={onClose}><Icon name="close" /></button>
     </div>
   );
 };

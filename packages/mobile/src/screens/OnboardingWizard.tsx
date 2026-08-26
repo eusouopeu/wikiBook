@@ -73,7 +73,7 @@ export function OnboardingWizard({ onFinish, onCreateFirstArticle }: {
               <li>Use <strong>+ Novo artigo</strong> para buscar na Wikipedia ou gerar com o Claude.</li>
               <li>Selecione um trecho de texto e toque em "Salvar" para guardá-lo ou criar um flashcard.</li>
               <li>O modo <strong>Grafo</strong> mostra como seus artigos se conectam entre si.</li>
-              <li>Revise flashcards vencidos a qualquer momento pelo ícone 🎓 no artigo.</li>
+              <li>Revise flashcards vencidos a qualquer momento pelo ícone de capelo no artigo.</li>
             </ul>
             <div className="modal-actions">
               <button onClick={onFinish}>Concluir</button>

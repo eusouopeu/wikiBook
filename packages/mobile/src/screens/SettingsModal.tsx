@@ -7,7 +7,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useEffect, useState } from "react";
-import { useStore } from "@lexicon/shared";
+import { useStore, Icon } from "@lexicon/shared";
 
 const WIKI_LANGS: Array<{ code: string; label: string }> = [
   { code: "pt", label: "Português" },
@@ -177,7 +177,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
         <div className="modal-actions">
           <button onClick={onClose}>Fechar</button>
           <button className="primary" onClick={handleSave}>
-            {saved ? "✓ Salvo" : "Salvar"}
+            {saved ? <><Icon name="check" /><span>Salvo</span></> : "Salvar"}
           </button>
         </div>
       </div>

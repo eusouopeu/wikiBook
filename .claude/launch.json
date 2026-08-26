@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "wikibook-web",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev:web", "--workspace", "packages/mobile"],
+      "port": 5173
+    },
+    {
+      "name": "sync-server",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["start", "--workspace", "packages/sync-server"],
+      "port": 8787
+    }
+  ]
+}

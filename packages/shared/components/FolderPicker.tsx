@@ -9,6 +9,7 @@
 
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Folder } from "../shared/types";
+import { Icon } from "./Icon";
 
 interface FolderPickerProps {
   x: number;
@@ -78,7 +79,7 @@ export const FolderPicker: React.FC<FolderPickerProps> = ({
         {folders.map(f => (
           <li key={f.id}>
             <button type="button" className={currentFolderId === f.id ? "active" : ""} onClick={() => onSelect(f.id)}>
-              📁 {f.name}
+              <Icon name="folder" /><span>{f.name}</span>
             </button>
           </li>
         ))}

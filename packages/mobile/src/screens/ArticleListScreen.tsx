@@ -12,7 +12,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Dialog } from "@capacitor/dialog";
-import { useStore, ReviewModal, FolderPicker, VirtualList, LogoMark } from "@lexicon/shared";
+import { useStore, ReviewModal, FolderPicker, VirtualList, LogoMark, Icon } from "@lexicon/shared";
 import type { Article, Flashcard, FlashcardGrade } from "@lexicon/shared";
 
 const SOURCE_COLOR: Record<Article["source"], string> = {
@@ -202,19 +202,19 @@ export function ArticleListScreen({ onOpenArticle, onNewArticle, onSettings, onO
       <header className="mobile-header">
         <h1 className="mobile-header-logo"><LogoMark size={22} /> Wikibook</h1>
         <div className="mobile-header-actions">
-          <button className="mobile-icon-btn" title="Exportar Markdown" aria-label="Exportar Markdown" onClick={handleExportMarkdown}>⤓</button>
-          <button className="mobile-icon-btn" title="Exportar flashcards (CSV)" aria-label="Exportar flashcards (CSV)" onClick={handleExportFlashcardsCsv}>🎴</button>
+          <button className="mobile-icon-btn" title="Exportar Markdown" aria-label="Exportar Markdown" onClick={handleExportMarkdown}><Icon name="save" /></button>
+          <button className="mobile-icon-btn" title="Exportar flashcards (CSV)" aria-label="Exportar flashcards (CSV)" onClick={handleExportFlashcardsCsv}><Icon name="flashcardsExport" /></button>
           <button
             className="mobile-icon-btn"
             title={listDensity === "compact" ? "Lista compacta — toque para expandir" : "Lista expandida — toque para compactar"}
             aria-label={listDensity === "compact" ? "Alternar para lista expandida" : "Alternar para lista compacta"}
             onClick={() => setListDensity(listDensity === "compact" ? "comfortable" : "compact")}
           >
-            {listDensity === "compact" ? "☰" : "▤"}
+            <Icon name={listDensity === "compact" ? "densityCompact" : "densityComfortable"} />
           </button>
-          <button className="mobile-icon-btn" title="Grafo" aria-label="Abrir grafo" onClick={onOpenGraph}>🕸</button>
-          <button className="mobile-icon-btn" title="Trilha" aria-label="Abrir trilhas de aprendizado" onClick={onOpenPath}>🧭</button>
-          <button className="mobile-icon-btn" title="Configurações" aria-label="Configurações" onClick={onSettings}>⚙</button>
+          <button className="mobile-icon-btn" title="Grafo" aria-label="Abrir grafo" onClick={onOpenGraph}><Icon name="graph" /></button>
+          <button className="mobile-icon-btn" title="Trilha" aria-label="Abrir trilhas de aprendizado" onClick={onOpenPath}><Icon name="path" /></button>
+          <button className="mobile-icon-btn" title="Configurações" aria-label="Configurações" onClick={onSettings}><Icon name="settings" /></button>
         </div>
       </header>
 
@@ -234,7 +234,7 @@ export function ArticleListScreen({ onOpenArticle, onNewArticle, onSettings, onO
             : "Ativar busca semântica (via Claude) — encontra por significado, não só texto exato"}
           onClick={() => setSemanticSearch(s => !s)}
         >
-          {semanticLoading ? "…" : "✦"}
+          {semanticLoading ? "…" : <Icon name="semantic" />}
         </button>
       </div>
 
@@ -258,13 +258,13 @@ export function ArticleListScreen({ onOpenArticle, onNewArticle, onSettings, onO
                     type="button" className="folder-chip-label"
                     onClick={() => setSelectedFolder(selectedFolder === f.id ? null : f.id)}
                   >
-                    📁 {f.name}
+                    <Icon name="folder" /><span>{f.name}</span>
                   </button>
                   <span className="folder-chip-actions">
                     <button type="button" title="Renomear pasta" aria-label="Renomear pasta"
-                            onClick={() => handleRenameFolderStart(f.id, f.name)}>✎</button>
+                            onClick={() => handleRenameFolderStart(f.id, f.name)}><Icon name="edit" /></button>
                     <button type="button" title="Excluir pasta" aria-label="Excluir pasta"
-                            onClick={() => handleDeleteFolder(f.id, f.name)}>🗑</button>
+                            onClick={() => handleDeleteFolder(f.id, f.name)}><Icon name="trash" /></button>
                   </span>
                 </>
               )}
@@ -289,7 +289,7 @@ export function ArticleListScreen({ onOpenArticle, onNewArticle, onSettings, onO
 
       {dueCount > 0 && (
         <button className="global-review-btn" onClick={handleOpenGlobalReview}>
-          🎓 Revisar flashcards ({dueCount})
+          <Icon name="flashcards" /><span>Revisar flashcards ({dueCount})</span>
         </button>
       )}
 
@@ -331,7 +331,7 @@ export function ArticleListScreen({ onOpenArticle, onNewArticle, onSettings, onO
                   setFolderPickerFor({ articleId: a.id, x: rect.left, y: rect.bottom + 4 });
                 }}
               >
-                📁
+                <Icon name="folder" />
               </button>
             </div>
           )}
