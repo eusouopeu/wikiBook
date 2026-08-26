@@ -1,5 +1,179 @@
 # Ideias de melhoria — Lexicon (wikiBook)
 
+## Rodada 2026-08-26
+
+Dois commits novos desde a última rodada: `edaa7cb` (trilhas de aprendizado
+guiadas — `PathView`, `pathHandlers.js`, `platform/paths.ts`) e `dd32b19`
+(Heroicons no lugar dos emojis) — HEAD atual. Os itens em aberto das rodadas
+anteriores continuam de pé e não são repetidos aqui. Esta rodada olhou o app
+inteiro com foco em **arquitetura e escopo**: o que duplicar/quebrar, o que
+cortar, o que mudar de fundamento e o que falta. 12 recomendações, agrupadas
+por natureza da mudança.
+
+### Simplificação e exclusão
+
+**1. Unificar o núcleo duplicado entre desktop (JS) e mobile (TS).**
+`packages/desktop/src/main/handlers/` e `packages/mobile/src/platform/` são
+duas implementações independentes da MESMA lógica, e não só do I/O:
+`claudeHandlers.js` (374 linhas) e `platform/claude.ts` (506) repetem os
+prompts (`SYSTEM_SUMMARIZE` é idêntico byte a byte nos dois), a tabela
+`GENERATE_TEMPLATES`, a política de retry e a tabela de modelos de trilha
+(`claudeHandlers.js`… `pathHandlers.js` linhas 43-45 vs. `claude.ts` linhas
+409-411 — mesmos três modelos, mesmos budgets). O mesmo vale para
+`articleHandlers.js` (837) vs. `platform/articles.ts` (582) e
+`flashcardHandlers.js` (451) vs. `platform/flashcards.ts` (424). São ~1.200
+linhas de regra de negócio mantidas em dobro: qualquer mudança de prompt,
+modelo, schema de SM-2 ou formato de arquivo precisa ser feita duas vezes, e
+a divergência é silenciosa (nada quebra em compilação). A correção é extrair
+para `@lexicon/shared/core` tudo que é puro — prompts, templates, parser de
+flashcards, agendamento SM-2, merge de links, sanitização — deixando em cada
+shell só o que realmente muda: acesso a disco (`fs` vs. `Filesystem`),
+transporte HTTP (`https` do Node vs. `CapacitorHttp`) e armazenamento de
+segredos (`safeStorage` vs. `SecureStoragePlugin`).
+
+**2. Três componentes de UI existem em duas cópias em vez de morar em
+`shared`.** `OnboardingWizard` (desktop: `App.tsx` linhas 424-540; mobile:
+`screens/OnboardingWizard.tsx`, 87 linhas) duplica inclusive o texto do tour
+— mudar uma frase de boas-vindas exige editar dois arquivos. `StatusOverlay`
+(desktop: `App.tsx` linhas 500-540; mobile: `StatusOverlay.tsx`, 42 linhas) e
+`SettingsModal` (desktop: `App.tsx` linhas 260-420; mobile:
+`screens/SettingsModal.tsx`, 186 linhas) têm o mesmo problema — e o
+`SettingsModal` já provou o custo disso: o bug de `handleSave` que ignora
+`res.ok` foi identificado no desktop na rodada 2026-08-14 e teve de ser
+reportado de novo, separadamente, no mobile na rodada 2026-08-17. Como
+`GraphScreen` e `PathScreen` já demonstram (envolvem `GraphView`/`PathView`
+de `@lexicon/shared` sem alterar lógica), o padrão certo já existe no
+projeto: componente compartilhado + casca fina por plataforma.
+
+**3. Quebrar `ArticleView.tsx` (2.368 linhas) e `styles.css` (2.842
+linhas).** `ArticleView.tsx` hospeda hoje quinze componentes e funções de
+alto nível que não têm relação direta entre si: `TableExcerptEditor`,
+`SaveExcerptModal`, `ExcerptsPanel`, `BacklinksPanel`, `TagEditor`,
+`FlashcardsPanel`, `ReviewModal`, `FindInPageBar`, `SectionsTocPanel`,
+`HistoryModal`, `AttachmentsSection` — mais o próprio `ArticleView`, que
+sozinho tem ~1.100 linhas e mais de 30 `useCallback`. Sintoma concreto da
+confusão: `App.tsx` importa `ReviewModal` de dentro de `ArticleView.tsx`
+para a revisão **global** de flashcards, que não tem nada a ver com a
+visualização de um artigo. Extrair `components/article/*` (um arquivo por
+painel/modal) e fatiar o CSS por componente reduziria o custo de qualquer
+alteração nessa tela — que é a tela central do produto.
+
+**4. Cortar ou substituir a busca semântica via Claude
+(`claude:searchRank`).** `App.tsx` (linhas 435-460) envia `{id, title,
+summary}` de **toda a base** para a API a cada busca com debounce de 400 ms,
+e o retorno é uma lista de ids ordenada. O custo cresce linearmente com a
+biblioteca (numa base de 500 artigos, cada tecla estabilizada manda um
+payload de dezenas de KB), a latência entra no caminho de digitação, e a
+falha é invisível: `catch` zera `semanticResultIds` e o app cai
+silenciosamente para o `includes()` de substring — o usuário vê resultados
+diferentes sem saber por quê (linhas 461-470). Ou se remove o toggle "✦" e
+se investe num ranking local decente (fuzzy + BM25 sobre o índice que já
+existe), ou se troca por embeddings calculados **uma vez por artigo** e
+guardados no JSON — nesse caso a busca vira produto escalar local, sem
+chamada de rede por tecla.
+
+### Alteração de fundamento
+
+**5. `article:list` devolve o `Article` completo de todos os artigos.**
+`articleHandlers.js` (`listAllArticles`, linhas 121-131) lê todo JSON do
+diretório e o `article:list` entrega o objeto inteiro — `content` (HTML
+completo da Wikipedia, tipicamente 50-200 KB por artigo), `excerpts`,
+`links`, `tags` — para o renderer, a cada `loadArticles()`. O histórico e os
+anexos já foram tirados do payload justamente por isso (comentário nas
+linhas 39-41), mas o `content`, que é de longe o campo mais pesado, ficou.
+Toda a cascata de custo do cliente vem daí: o `searchIndex` que reprocessa a
+base inteira (item 7 da rodada 2026-08-14), a virtualização da lista, o
+`filteredArticles`. No mobile é pior — o mesmo payload atravessa a ponte do
+WebView. O certo é `article:list` devolver um índice leve (id, título, fonte,
+tags, folderId, contagem de links, `updatedAt`, resumo truncado) e mover a
+busca full-text para o backend (`article:search`), que já tem os arquivos em
+mãos e um cache (`articlesCache`).
+
+**6. A sincronização nunca propaga exclusões — e isso a torna insegura de
+usar em dois aparelhos.** `sync-server/src/server.js` (comentário do
+cabeçalho e `mergeArticlesForToken`) faz last-write-wins por `updatedAt` e
+declara exclusões fora de escopo. Na prática: apagar um artigo no celular e
+sincronizar faz o desktop reenviá-lo na sincronização seguinte — o artigo
+ressuscita, e não há nenhum sinal disso para o usuário. Como o app **já
+tem** lixeira com 30 dias nos dois shells, a peça que falta é pequena:
+gravar tombstones (`{id, deletedAt}`) junto do artigo na lixeira, enviá-los
+no `push`, e o servidor remover a linha quando `deletedAt > updated_at`. Na
+mesma mudança vale eliminar o "Sincronizar agora" manual como único gatilho
+(`App.tsx`, linhas 405-410): sincronizar na abertura do app e alguns
+segundos depois de cada escrita cobre o caso real de uso.
+
+**7. O agendamento SM-2 dos flashcards é frágil por depender do texto de
+origem.** `shared/types.ts` documenta que `sourceLine` é "usado para
+preservar agendamento entre regenerações", e `ArticleView.tsx` chama
+`handleRegenerateFlashcards()` depois de **todo** salvamento de artigo
+(linha 1611) e de trecho (linha 1696). A consequência: corrigir uma vírgula
+numa linha marcada com `==destaque==` gera uma `sourceLine` diferente, o
+card antigo não é reencontrado e o histórico de repetição (intervalo, ease,
+reps, lapses) é perdido silenciosamente — justamente na base de usuários que
+mais edita o material que está estudando. Duas correções complementares:
+identidade estável do card (hash do par artigo+posição no outline, ou id
+gravado no próprio Markdown) com casamento por similaridade como fallback; e
+regeneração incremental e assíncrona, só do trecho alterado, para o salvar
+não esperar o parser da base inteira.
+
+**8. Um `⌘K` unificado no lugar de quatro ícones sem rótulo.** A sidebar
+concentra exportar-Markdown, exportar-flashcards, densidade da lista e
+configurações em quatro `icon-btn` só com `title` (`App.tsx`, linhas
+790-805) — nenhum deles descobrível sem hover, e três são ações raras
+ocupando o lugar mais nobre da tela. Os únicos atalhos existentes são ⌘N e
+⌘F (linhas 649-668). Uma paleta de comandos única (buscar artigo, criar,
+exportar, revisar vencidos, abrir grafo/trilha, alternar tema) resolveria
+descoberta e velocidade ao mesmo tempo, e permitiria tirar da sidebar tudo o
+que não é navegação.
+
+### Novas funcionalidades
+
+**9. Tela de Lixeira.** O backend já implementa lixeira completa nos dois
+shells — `article:delete` move para `TRASH_DIR`, `article:restore` traz de
+volta, `purgeOldTrashOnce` (`articleHandlers.js`, linhas 69-90) limpa itens
+com mais de 30 dias. Mas a **única** porta de entrada para restaurar é o
+botão "Desfazer" do toast, com janela de 5 segundos (`ArticleView.tsx`,
+linhas 1580-1596). Passados esses 5 segundos, o artigo continua existindo em
+disco por um mês inteiro, completamente inacessível pela interface. Uma
+listagem simples ("Lixeira" nas Configurações ou na sidebar) com restaurar e
+excluir em definitivo aproveita infraestrutura que já está pronta e paga.
+
+**10. Painel de revisão com filtros e estatísticas.** Hoje só existem dois
+recortes: "todos os cards vencidos" (`flashcards:listDue`, botão global da
+sidebar) e "os deste artigo" (ícone no cabeçalho). Não dá para revisar por
+pasta, por tag ou por trilha — que é exatamente como o usuário organiza o
+material —, nem existe qualquer visão de progresso: nada mostra quantos
+cards foram revisados hoje, qual a taxa de acerto, quantos vencem amanhã, ou
+a curva de carga dos próximos dias. Os dados para isso já estão gravados em
+cada card (`reps`, `lapses`, `ease`, `interval`, `due`); falta só a tela.
+
+**11. Sugestão de links além do caso exato da Wikipedia.** `linkSuggestions`
+(`ArticleView.tsx`, linhas 1800-1825) só funciona quando `source ===
+"wikipedia"`, e casa `<span class="wiki-term">` com título de artigo por
+igualdade exata em minúsculas. Ou seja: artigos gerados pelo Claude e
+artigos manuais — que são a maioria da base de quem usa o app há algum tempo
+— nunca recebem sugestão nenhuma, e "fotossíntese" no texto não casa com o
+artigo "Fotossíntese (processo)". Ampliar para varrer o texto puro de
+qualquer fonte contra o índice de títulos (com normalização de acento,
+plural e sufixo comum), oferecer "vincular todos" em vez de aceitar um a um,
+e — do outro lado — sinalizar no grafo os artigos órfãos, sem nenhuma
+aresta, que hoje só aparecem como pontos soltos sem explicação.
+
+**12. Importar de URL, PDF ou texto colado.** As duas únicas portas de
+entrada de conteúdo são "buscar na Wikipedia" e "gerar com Claude"
+(`NewArticleModal`). Todo o resto do que uma pessoa lê — um artigo de blog,
+um paper em PDF, um trecho copiado de outro app — só entra no Wikibook se
+for redigitado à mão como artigo manual. A infraestrutura necessária já
+existe quase inteira: o pipeline de sanitização de HTML
+(`wikipediaHandlers.js`), o resumo automático (`claude:summarize`) e o
+suporte a anexos PDF (`article:addAttachment`, que hoje guarda o arquivo mas
+não lê nada dele). Fechar esse ciclo — colar uma URL e receber artigo
+sanitizado + resumo + sugestões de link; soltar um PDF e receber o texto
+extraído — transforma o app de "leitor de Wikipedia com grafo" em base de
+conhecimento de verdade.
+
+---
+
 ## Rodada 2026-08-17
 
 Nenhum commit novo desde a rodada anterior (`cc089c5` continua sendo o HEAD)
