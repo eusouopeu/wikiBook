@@ -5,7 +5,7 @@
   "description": "Base de conhecimento pessoal com grafo de conceitos — mobile (Capacitor)",
   "scripts": {
     "watch:web": "mkdir -p dist && cp index.html dist/index.html && esbuild src/main.tsx --bundle --outfile=dist/main.js --watch",
-    "dev:web": "mkdir -p dist && cp index.html dist/index.html && esbuild src/main.tsx --bundle --outfile=dist/main.js --servedir=dist --serve=5173 --watch",
+    "dev:web": "mkdir -p dist && cp index.html dist/index.html && esbuild src/main.tsx --bundle --outfile=dist/main.js --servedir=dist --serve=${PORT:-5173} --watch",
     "build:web": "mkdir -p dist && cp index.html dist/index.html && esbuild src/main.tsx --bundle --outfile=dist/main.js --minify",
     "sync": "npm run build:web && npx cap sync",
     "open:ios": "npm run sync && npx cap open ios",

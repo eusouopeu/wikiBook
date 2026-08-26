@@ -5,7 +5,8 @@
       "name": "wikibook-web",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev:web", "--workspace", "packages/mobile"],
-      "port": 5173
+      "port": 5173,
+      "autoPort": true
     },
     {
       "name": "sync-server",

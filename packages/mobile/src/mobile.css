@@ -5,7 +5,7 @@
 .mobile-screen {
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  height: 100%;
   padding: env(safe-area-inset-top) 16px 16px;
   box-sizing: border-box;
   gap: 12px;
@@ -53,11 +53,6 @@
   font-size: 1rem;
 }
 
-.mobile-search-row .semantic-search-toggle {
-  min-height: 44px;
-  min-width: 44px;
-  font-size: 1.1rem;
-}
 
 .mobile-tags {
   display: flex;
@@ -164,7 +159,7 @@
 /* ── Tela de artigo (ArticleView de @lexicon/shared, reaproveitado) ────────── */
 
 .mobile-article-screen {
-  height: 100vh;
+  height: 100%;
   overflow-y: auto;
   box-sizing: border-box;
 }
@@ -190,18 +185,26 @@
   min-height: 44px;
 }
 
-.mobile-article-screen-title {
-  color: var(--fg2, #54595d);
+/* Recebe (via portal) os 4 ícones "primários" do cabeçalho do ArticleView —
+   buscar/sumário/chat/flashcards — ver ArticleScreen.tsx/headerActionsSlot. */
+.mobile-article-screen-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
   flex: 1;
-  font-size: 0.9rem;
-  overflow: hidden;
-  text-align: right;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  gap: 2px;
+}
+.mobile-article-screen-actions .icon-btn {
+  min-width: 40px;
+  min-height: 40px;
+  font-size: 1.15rem;
 }
 
+/* Sem padding lateral próprio — .article-body (shared) já aplica a margem
+   lateral do conteúdo; duplicar aqui deixava o texto artificialmente
+   estreito no celular. */
 .mobile-article-screen-body {
-  padding: 0 16px 32px;
+  padding: 0 0 32px;
 }
 
 /* Suprime o callout nativo de seleção do iOS (Copiar/Buscar) sobre o
@@ -215,7 +218,7 @@
 /* ── Tela de grafo (GraphView de @lexicon/shared, reaproveitado) ───────────── */
 
 .mobile-graph-screen {
-  height: 100vh;
+  height: 100%;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
@@ -249,7 +252,7 @@
 /* ── Tela de trilha (PathView de @lexicon/shared, reaproveitado) ───────────── */
 
 .mobile-path-screen {
-  height: 100vh;
+  height: 100%;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
@@ -268,4 +271,49 @@
 .mobile-path-screen .path-wizard-choice,
 .mobile-path-screen .path-step-node {
   min-height: 44px;
+}
+
+/* ── Estrutura raiz: conteúdo + barra de navegação inferior fixa ─────────── */
+html, body, #root { height: 100%; }
+
+#root {
+  display: flex;
+  flex-direction: column;
+}
+
+.mobile-app-content {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.mobile-bottom-nav {
+  display: flex;
+  flex-shrink: 0;
+  border-top: 1px solid var(--border-light, #c8ccd1);
+  background: var(--bg, #fff);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.mobile-bottom-nav-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  border: none;
+  background: transparent;
+  color: var(--fg3, #72777d);
+  font-size: 0.7rem;
+  padding: 8px 4px 6px;
+  min-height: 52px;
+}
+
+.mobile-bottom-nav-item svg {
+  width: 22px;
+  height: 22px;
+}
+
+.mobile-bottom-nav-item.active {
+  color: var(--accent, #3366cc);
 }

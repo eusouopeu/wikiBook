@@ -11,9 +11,11 @@ import { ArticleView, ReviewModal } from "./components/ArticleView";
 import { PathView } from "./components/PathView";
 import { FolderPicker } from "./components/FolderPicker";
 import { LogoMark } from "./components/LogoMark";
+import { SettingsModal } from "./components/SettingsModal";
 import { Icon } from "./components/Icon";
 import { MiniGraphPreview } from "./components/MiniGraphPreview";
 import { VirtualList, type VirtualListHandle } from "./components/VirtualList";
+import { scoreQueryMatch } from "./lib/searchRelevance";
 
 // ── Controles de zoom do grafo ────────────────────────────────────────────────
 // Chama os métodos D3 expostos no SVGElement pelo GraphView
@@ -166,34 +168,35 @@ const NewArticleModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal" onClick={e => e.stopPropagation()}>
-        <h2>Novo artigo</h2>
         <form onSubmit={e => { e.preventDefault(); createArticle(); }}>
-          <label>
-            Título / Pesquisa
+          <div className="new-article-input-row">
             <input
               autoFocus
+              className="new-article-input"
               value={query}
               onChange={e => setQuery(e.target.value)}
               placeholder="Ex.: fotossíntese, inteligência artificial…"
             />
-          </label>
-          <div className="source-choice">
-            <label>
-              <input
-                type="radio" name="source" value="wikipedia"
-                checked={source === "wikipedia"}
-                onChange={() => setSource("wikipedia")}
-              />
-              Buscar na Wikipedia ({wikipediaLang})
-            </label>
-            <label>
-              <input
-                type="radio" name="source" value="claude"
-                checked={source === "claude"}
-                onChange={() => setSource("claude")}
-              />
-              Gerar com Claude
-            </label>
+            <button
+              type="button"
+              className={`icon-btn new-article-source-btn ${source === "wikipedia" ? "icon-btn-active" : ""}`}
+              title={`Buscar na Wikipedia (${wikipediaLang})`}
+              aria-label={`Buscar na Wikipedia (${wikipediaLang})`}
+              aria-pressed={source === "wikipedia"}
+              onClick={() => setSource("wikipedia")}
+            >
+              <Icon name="search" />
+            </button>
+            <button
+              type="button"
+              className={`icon-btn new-article-source-btn ${source === "claude" ? "icon-btn-active" : ""}`}
+              title="Gerar com Claude"
+              aria-label="Gerar com Claude"
+              aria-pressed={source === "claude"}
+              onClick={() => setSource("claude")}
+            >
+              <Icon name="semantic" />
+            </button>
           </div>
 
           {source === "claude" && templates.length > 0 && (
@@ -224,18 +227,20 @@ const NewArticleModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             </div>
           )}
 
-          {source === "wikipedia" && (
-            <button type="button" className="batch-import-toggle" onClick={() => setBatchMode(true)}>
-              Importar vários títulos de uma vez →
-            </button>
-          )}
-
           {error && <p className="modal-error">{error}</p>}
-          <div className="modal-actions">
-            <button type="button" onClick={onClose} disabled={loading}>Cancelar</button>
-            <button type="submit" className="primary" disabled={loading || !query.trim()}>
-              {loading ? "Carregando…" : "Criar artigo"}
-            </button>
+          <div className="modal-actions modal-actions-with-extra">
+            {source === "wikipedia" ? (
+              <button type="button" className="icon-btn" title="Importar vários títulos de uma vez"
+                      aria-label="Importar vários títulos de uma vez" onClick={() => setBatchMode(true)}>
+                <Icon name="batchImport" />
+              </button>
+            ) : <span />}
+            <div className="modal-actions-right">
+              <button type="button" onClick={onClose} disabled={loading}>Cancelar</button>
+              <button type="submit" className="primary" disabled={loading || !query.trim()}>
+                {loading ? "Carregando…" : "Criar artigo"}
+              </button>
+            </div>
           </div>
         </form>
       </div>
@@ -244,181 +249,6 @@ const NewArticleModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
 };
 
 // ── Configurações ─────────────────────────────────────────────────────────────
-const WIKI_LANGS: Array<{ code: string; label: string }> = [
-  { code: "pt", label: "Português" },
-  { code: "en", label: "English" },
-  { code: "es", label: "Español" },
-  { code: "fr", label: "Français" },
-  { code: "de", label: "Deutsch" },
-  { code: "it", label: "Italiano" },
-];
-
-const THEME_OPTIONS: Array<{ value: "system" | "light" | "dark"; label: string }> = [
-  { value: "system", label: "Sistema" },
-  { value: "light", label: "Claro" },
-  { value: "dark", label: "Escuro" },
-];
-
-const SettingsModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
-  const [apiKey, setApiKey] = useState("");
-  const [saved, setSaved] = useState(false);
-  const { wikipediaLang, setWikipediaLang, theme, setTheme, showToast } = useStore();
-  useEscToClose(onClose);
-
-  useEffect(() => {
-    window.lexicon.invoke("config:get", { key: "anthropicApiKey" }).then(r => {
-      if (r.ok && r.data) setApiKey(r.data as string);
-    });
-  }, []);
-
-  async function handleSave() {
-    await window.lexicon.invoke("config:set", { key: "anthropicApiKey", value: apiKey });
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
-  }
-
-  // ── Sincronização (servidor self-hosted, ver packages/sync-server) ────────
-  const [syncServerUrl, setSyncServerUrl] = useState("");
-  const [syncToken, setSyncToken] = useState("");
-  const [syncLastRunAt, setSyncLastRunAt] = useState("");
-  const [syncing, setSyncing] = useState(false);
-  const [testingConn, setTestingConn] = useState(false);
-
-  useEffect(() => {
-    window.lexicon.invoke("config:get", { key: "syncServerUrl" }).then(r => { if (r.ok && r.data) setSyncServerUrl(r.data as string); });
-    window.lexicon.invoke("config:get", { key: "syncToken" }).then(r => { if (r.ok && r.data) setSyncToken(r.data as string); });
-    window.lexicon.invoke("config:get", { key: "syncLastRunAt" }).then(r => { if (r.ok && r.data) setSyncLastRunAt(r.data as string); });
-  }, []);
-
-  async function persistSyncServerUrl(value: string) {
-    setSyncServerUrl(value);
-    await window.lexicon.invoke("config:set", { key: "syncServerUrl", value });
-  }
-  async function persistSyncToken(value: string) {
-    setSyncToken(value);
-    await window.lexicon.invoke("config:set", { key: "syncToken", value });
-  }
-  async function handleGenerateToken() {
-    await persistSyncToken(crypto.randomUUID());
-    showToast("Novo token gerado — cole-o nos outros dispositivos para sincronizarem entre si.");
-  }
-  async function handleTestConnection() {
-    setTestingConn(true);
-    try {
-      const res = await window.lexicon.invoke("sync:test", { serverUrl: syncServerUrl });
-      if (res.ok) showToast("Servidor de sincronização acessível.");
-      else showToast(res.error ?? "Não foi possível conectar ao servidor.", "error");
-    } finally {
-      setTestingConn(false);
-    }
-  }
-  async function handleSyncNow() {
-    setSyncing(true);
-    try {
-      const res = await window.lexicon.invoke("sync:run", { serverUrl: syncServerUrl, token: syncToken });
-      if (res.ok) {
-        const { pushed, pulled } = res.data as { pushed: number; pulled: number };
-        showToast(`Sincronizado — ${pushed} enviados, ${pulled} atualizados a partir de outros dispositivos.`);
-        setSyncLastRunAt(new Date().toISOString());
-      } else {
-        showToast(res.error ?? "Falha ao sincronizar.", "error");
-      }
-    } finally {
-      setSyncing(false);
-    }
-  }
-
-  return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={e => e.stopPropagation()}>
-        <h2>Configurações</h2>
-        <label>
-          Anthropic API Key
-          <input
-            type="password"
-            value={apiKey}
-            onChange={e => setApiKey(e.target.value)}
-            placeholder="sk-ant-api03-…"
-          />
-        </label>
-        <p className="settings-hint">
-          Salva criptografada (Keychain) em userData/config.json — nunca enviada para terceiros.
-        </p>
-        <label>
-          Idioma da Wikipedia
-          <select value={wikipediaLang} onChange={e => setWikipediaLang(e.target.value)}>
-            {WIKI_LANGS.map(l => (
-              <option key={l.code} value={l.code}>{l.label} ({l.code})</option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Tema
-          <div className="theme-toggle" role="radiogroup" aria-label="Tema da interface">
-            {THEME_OPTIONS.map(opt => (
-              <button
-                key={opt.value}
-                type="button"
-                role="radio"
-                aria-checked={theme === opt.value}
-                className={`theme-toggle-btn ${theme === opt.value ? "active" : ""}`}
-                onClick={() => setTheme(opt.value)}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
-        </label>
-        <h3 className="settings-section-title">Sincronização entre dispositivos</h3>
-        <p className="settings-hint">
-          Requer um servidor próprio rodando (ver packages/sync-server). Sob demanda — use
-          "Sincronizar agora" quando quiser enviar/receber mudanças, não é automático.
-        </p>
-        <label>
-          Servidor de sincronização
-          <input
-            type="text"
-            value={syncServerUrl}
-            onChange={e => persistSyncServerUrl(e.target.value)}
-            placeholder="http://192.168.0.10:8787"
-          />
-        </label>
-        <label>
-          Token da biblioteca
-          <div className="sync-token-row">
-            <input
-              type="password"
-              value={syncToken}
-              onChange={e => persistSyncToken(e.target.value)}
-              placeholder="Cole aqui o token gerado no primeiro dispositivo"
-            />
-            <button type="button" onClick={handleGenerateToken}>Gerar novo token</button>
-          </div>
-        </label>
-        {syncLastRunAt && (
-          <p className="settings-hint">
-            Última sincronização: {new Date(syncLastRunAt).toLocaleString("pt-BR")}
-          </p>
-        )}
-        <div className="modal-actions">
-          <button onClick={handleTestConnection} disabled={testingConn || !syncServerUrl}>
-            {testingConn ? "Testando…" : "Testar conexão"}
-          </button>
-          <button className="primary" onClick={handleSyncNow} disabled={syncing || !syncServerUrl || !syncToken}>
-            {syncing ? "Sincronizando…" : "Sincronizar agora"}
-          </button>
-        </div>
-
-        <div className="modal-actions">
-          <button onClick={onClose}>Fechar</button>
-          <button className="primary" onClick={handleSave}>
-            {saved ? <><Icon name="check" /><span>Salvo</span></> : "Salvar"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};
 
 // ── Wizard de boas-vindas (primeira execução) ─────────────────────────────────
 // 3 passos: apresentação → colar API key (opcional, "Pular" disponível) →
@@ -691,64 +521,28 @@ export default function App() {
     return Array.from(tags).sort();
   }, [articles]);
 
-  // ── Busca semântica opcional (via Claude) ──────────────────────────────────
-  // Opt-in explícito (toggle "✦"); debounce de 400ms; cai silenciosamente para
-  // a busca por substring normal enquanto a chamada está em voo, se falhar, ou
-  // se a API key não estiver configurada.
-  const [semanticSearch, setSemanticSearch] = useState(false);
-  const [semanticLoading, setSemanticLoading] = useState(false);
-  const [semanticResultIds, setSemanticResultIds] = useState<string[] | null>(null);
-
-  useEffect(() => {
-    if (!semanticSearch || searchQuery.trim().length < 3) {
-      setSemanticResultIds(null);
-      return;
-    }
-    setSemanticLoading(true);
-    const id = setTimeout(async () => {
-      try {
-        const res = await window.lexicon.invoke("claude:searchRank", {
-          query: searchQuery.trim(),
-          candidates: articles.map(a => ({ id: a.id, title: a.title, summary: a.summary })),
-        });
-        setSemanticResultIds(res.ok ? (res.data as { ids: string[] }).ids : null);
-      } catch {
-        setSemanticResultIds(null);
-      } finally {
-        setSemanticLoading(false);
-      }
-    }, 400);
-    return () => clearTimeout(id);
-  }, [semanticSearch, searchQuery, articles]);
-
+  // Filtro por tag/pasta + busca local rankeada por relevância (ver
+  // lib/searchRelevance.ts) — qualquer token da consulta presente no índice
+  // já qualifica o artigo; a ordenação final é o que garante que o melhor
+  // match (título exato/prefixo) apareça primeiro.
   const filteredArticles = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-
-    if (semanticSearch && semanticResultIds && q.length >= 3) {
-      const rank = new Map(semanticResultIds.map((id, i) => [id, i]));
-      return articles
-        .filter(a =>
-          rank.has(a.id) &&
-          selectedTags.every(t => (a.tags ?? []).includes(t)) &&
-          (!selectedFolder || a.folderId === selectedFolder)
-        )
-        .sort((a, b) => rank.get(a.id)! - rank.get(b.id)!);
-    }
-
-    let result = articles.filter(a =>
-      (!q || (searchIndex.get(a.id) ?? "").includes(q)) &&
-      selectedTags.every(t => (a.tags ?? []).includes(t)) &&
-      (!selectedFolder || a.folderId === selectedFolder)
-    );
-    // Com busca ativa, artigos com match no título vêm primeiro
+    const qTokens = q.split(/\s+/).filter(Boolean);
+    let result = articles.filter(a => {
+      if (!selectedTags.every(t => (a.tags ?? []).includes(t))) return false;
+      if (selectedFolder && a.folderId !== selectedFolder) return false;
+      if (!q) return true;
+      const blob = searchIndex.get(a.id) ?? "";
+      return qTokens.some(tok => blob.includes(tok));
+    });
     if (q) {
-      result = [
-        ...result.filter(a => a.title.toLowerCase().includes(q)),
-        ...result.filter(a => !a.title.toLowerCase().includes(q)),
-      ];
+      result = result
+        .map(a => ({ a, score: scoreQueryMatch(q, a.title.toLowerCase(), searchIndex.get(a.id) ?? "") }))
+        .sort((x, y) => y.score - x.score)
+        .map(x => x.a);
     }
     return result;
-  }, [articles, searchQuery, selectedTags, selectedFolder, searchIndex, semanticSearch, semanticResultIds]);
+  }, [articles, searchQuery, selectedTags, selectedFolder, searchIndex]);
 
   // Exportação Markdown/Obsidian
   async function handleExport() {
@@ -831,16 +625,6 @@ export default function App() {
               }
             }}
           />
-          <button
-            type="button"
-            className={`semantic-search-toggle ${semanticSearch ? "active" : ""}`}
-            title={semanticSearch
-              ? "Busca semântica ativa (via Claude) — clique para voltar à busca por texto"
-              : "Ativar busca semântica (via Claude) — encontra por significado, não só texto exato"}
-            onClick={() => setSemanticSearch(s => !s)}
-          >
-            {semanticLoading ? "…" : <Icon name="semantic" />}
-          </button>
         </div>
 
         {/* Pastas */}

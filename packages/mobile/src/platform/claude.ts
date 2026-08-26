@@ -20,124 +20,11 @@ import { searchWikipedia } from "./wikipedia";
 import type {
   InterviewAnswer, PathGenerationModel, PathResource, PathStep, PathUnit,
 } from "@lexicon/shared";
-
-const SYSTEM_SUMMARIZE = `
-Você é um assistente especializado em criar resumos acadêmicos concisos.
-Dado um texto sobre qualquer assunto, produza um resumo em bullet points em português.
-Regras:
-- Máximo de 8 bullet points
-- Cada bullet: 1 frase direta, sem sub-bullets
-- Comece cada bullet com "• "
-- Foque nos conceitos centrais, definições e relações causais
-- Não inclua exemplos ou analogias — apenas afirmações factuais
-- Responda APENAS com os bullet points, sem título, sem introdução, sem conclusão
-`.trim();
-
-const SYSTEM_GENERATE = `
-Você é um assistente especializado em criar artigos-resumo enciclopédicos.
-Dado um título ou conceito, produza um artigo em formato de bullet points em português brasileiro.
-Regras:
-- Entre 6 e 10 bullet points
-- Cada bullet: 1 frase direta e informativa, sem sub-bullets
-- Comece cada bullet com "• "
-- Cubra: definição, contexto histórico ou científico, relevância, relações com outros conceitos
-- Use linguagem precisa — este é um documento de referência pessoal
-- Responda APENAS com os bullet points, sem título, sem introdução
-`.trim();
-
-// ── Templates de geração ────────────────────────────────────────────────────
-// Mesmos templates do desktop (ver claudeHandlers.js/GENERATE_TEMPLATES) —
-// escolhidos no modal de "Novo artigo" quando a fonte é "Gerar com Claude".
-export const GENERATE_TEMPLATES: Record<string, { label: string; systemPrompt: string }> = {
-  padrao: { label: "Padrão", systemPrompt: SYSTEM_GENERATE },
-  definicao: {
-    label: "Definição aprofundada",
-    systemPrompt: `
-Você é um assistente especializado em criar artigos-resumo enciclopédicos.
-Dado um título ou conceito, produza um artigo em bullet points em português brasileiro,
-com foco em DEFINIÇÃO: o que é, do que é composto, como se distingue de conceitos vizinhos.
-Regras:
-- Entre 6 e 9 bullet points
-- Cada bullet: 1 frase direta, sem sub-bullets, começando com "• "
-- Ordem sugerida: definição central → componentes/características essenciais →
-  distinção de conceitos frequentemente confundidos com este → variações ou subtipos
-- Use linguagem precisa — este é um documento de referência pessoal
-- Responda APENAS com os bullet points, sem título, sem introdução
-`.trim(),
-  },
-  historia: {
-    label: "Contexto histórico",
-    systemPrompt: `
-Você é um assistente especializado em criar artigos-resumo enciclopédicos.
-Dado um título ou conceito, produza um artigo em bullet points em português brasileiro,
-com foco em CONTEXTO HISTÓRICO: origem, evolução ao longo do tempo, marcos e figuras relevantes.
-Regras:
-- Entre 6 e 9 bullet points
-- Cada bullet: 1 frase direta, sem sub-bullets, começando com "• "
-- Ordem sugerida: origem/surgimento → marcos e datas relevantes → pessoas/eventos-chave →
-  estado atual ou legado
-- Use linguagem precisa — este é um documento de referência pessoal
-- Responda APENAS com os bullet points, sem título, sem introdução
-`.trim(),
-  },
-  exemplos: {
-    label: "Exemplos práticos",
-    systemPrompt: `
-Você é um assistente especializado em criar artigos-resumo enciclopédicos.
-Dado um título ou conceito, produza um artigo em bullet points em português brasileiro,
-com foco em APLICAÇÃO PRÁTICA: exemplos concretos, casos de uso, situações do dia a dia.
-Regras:
-- Entre 6 e 9 bullet points
-- Cada bullet: 1 frase direta, sem sub-bullets, começando com "• "
-- Comece com uma definição breve (1 bullet), depois dedique a maioria dos bullets a
-  exemplos concretos e situações onde o conceito se aplica
-- Use linguagem precisa — este é um documento de referência pessoal
-- Responda APENAS com os bullet points, sem título, sem introdução
-`.trim(),
-  },
-  referencias: {
-    label: "Estruturado (com referências)",
-    systemPrompt: `
-Você é um assistente especializado em criar artigos-resumo enciclopédicos.
-Dado um título ou conceito, produza um artigo em bullet points em português brasileiro,
-cobrindo estas seções, NESTA ORDEM, um bullet de transição por seção usando o rótulo
-em negrito no início da linha (ex.: "• Definição: ..."):
-Definição, Contexto histórico ou científico, Relevância, Relações com outros conceitos,
-Referências ou fontes amplamente reconhecidas sobre o tema.
-Regras:
-- 1 a 2 bullets por seção (não pule nenhuma das 5 seções)
-- Cada bullet começa com "• " seguido do rótulo da seção e ":"
-- Frases diretas, sem sub-bullets
-- Use linguagem precisa — este é um documento de referência pessoal
-- Responda APENAS com os bullet points, sem título, sem introdução
-`.trim(),
-  },
-};
-function resolveGenerateTemplate(templateId: string) {
-  return GENERATE_TEMPLATES[templateId] ?? GENERATE_TEMPLATES.padrao;
-}
-
-const SYSTEM_ASK = `
-Você é um assistente que responde perguntas com base em um artigo de uma base de
-conhecimento pessoal.
-Regras:
-- Responda apenas com base no artigo e no contexto de artigos relacionados fornecidos
-- Se o contexto não for suficiente para responder com segurança, diga isso explicitamente
-- Seja direto: entre 1 e 4 frases, sem introduções nem floreios
-- Responda em português brasileiro
-`.trim();
-
-const SYSTEM_SEARCH_RANK = `
-Você é um mecanismo de busca semântica para uma base de conhecimento pessoal.
-Dada uma consulta e uma lista de artigos candidatos (id, título e resumo),
-devolva os ids dos artigos mais relevantes para a consulta — inclusive quando a
-palavra exata da consulta não aparece no artigo, mas o significado é relacionado.
-Regras:
-- Responda APENAS com um array JSON de ids, em ordem decrescente de relevância
-- Sem texto antes ou depois, sem bloco de código markdown
-- No máximo 15 ids
-- Se nenhum artigo for relevante, responda com um array vazio: []
-`.trim();
+// Prompts/templates: fonte única em packages/shared/lib/claudePrompts.js —
+// ver o comentário daquele arquivo para o porquê de ser .js/CommonJS.
+import {
+  SYSTEM_SUMMARIZE, SYSTEM_ASK, GENERATE_TEMPLATES, resolveGenerateTemplate, PATH_MODELS,
+} from "@lexicon/shared/lib/claudePrompts.js";
 
 // Retry com backoff exponencial só para falhas transitórias (rate limit, erro
 // 5xx do servidor, erro de rede) — erros de request malformado ou credencial
@@ -232,8 +119,7 @@ async function callClaude(
 // Cache em memória por termo normalizado — mesmo raciocínio do desktop
 // (claudeHandlers.js): reabrir/recriar o mesmo título não deve pagar por uma
 // chamada nova à API paga da Anthropic. Sem TTL, descartado ao fechar o app.
-// Não cobre ask() (contextual, cada pergunta é distinta) nem searchRank()
-// (a lista de candidatos muda a cada digitação).
+// Não cobre ask() (contextual, cada pergunta é distinta).
 const summarizeCache = new Map<string, string>();
 const generateCache = new Map<string, string>();
 function normTerm(s: string) { return s.trim().toLowerCase(); }
@@ -287,31 +173,6 @@ export async function ask(
     `\nPergunta: ${question}`,
   ].filter(Boolean).join("\n");
   return callClaude(apiKey, SYSTEM_ASK, userMsg, 500);
-}
-
-// Busca semântica opcional: rankeia os artigos mais relevantes para a consulta
-// por significado, não só substring. Candidatos limitados a ~200 e resumo
-// truncado a 150 caracteres cada, para controlar custo de tokens.
-export async function searchRank(
-  query: string, candidates: Array<{ id: string; title: string; summary: string }>
-): Promise<string[]> {
-  const apiKey = await getConfigValue("anthropicApiKey");
-  if (!apiKey) throw new Error("API key da Anthropic não configurada.");
-
-  const capped = candidates.slice(0, 200);
-  const list = capped
-    .map(c => `${c.id}: ${c.title} — ${(c.summary || "").slice(0, 150).replace(/\n/g, " ")}`)
-    .join("\n");
-  const userMsg = `Consulta: ${query}\n\nArtigos candidatos:\n${list}`;
-
-  const raw = await callClaude(apiKey, SYSTEM_SEARCH_RANK, userMsg, 400);
-  const cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "").trim();
-  let ids: unknown;
-  try { ids = JSON.parse(cleaned); } catch { ids = []; }
-  if (!Array.isArray(ids)) ids = [];
-
-  const knownIds = new Set(capped.map(c => c.id));
-  return (ids as unknown[]).filter((id): id is string => typeof id === "string" && knownIds.has(id));
 }
 
 // ── Trilhas de aprendizado ───────────────────────────────────────────────────
@@ -403,13 +264,11 @@ const GENERATE_PATH_TOOL = {
   },
 };
 
-const MODEL_CATALOG: Record<PathGenerationModel, {
+// Fonte única em packages/shared/lib/claudePrompts.js (PATH_MODELS) —
+// compartilhada com packages/desktop/src/main/handlers/pathHandlers.js.
+const MODEL_CATALOG = PATH_MODELS as Record<PathGenerationModel, {
   apiModel: string; thinking: boolean; thinkingBudgetTokens?: number; maxTokens: number;
-}> = {
-  "sonnet-standard": { apiModel: "claude-sonnet-5", thinking: false, maxTokens: 8000 },
-  "sonnet-thinking": { apiModel: "claude-sonnet-5", thinking: true, thinkingBudgetTokens: 6000, maxTokens: 10000 },
-  "opus-standard": { apiModel: "claude-opus-5", thinking: false, maxTokens: 8000 },
-};
+}>;
 
 export async function consolidateProfile(goal: string, answers: InterviewAnswer[]): Promise<string> {
   const apiKey = await getConfigValue("anthropicApiKey");

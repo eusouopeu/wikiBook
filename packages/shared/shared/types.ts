@@ -46,6 +46,16 @@ export interface ArticleHistoryEntry {
   updatedAt: string;
 }
 
+// Metadados leves de um artigo na lixeira — ver article:listTrash/
+// article:purge. Sem content/excerpts (a tela de lixeira só lista e
+// restaura/apaga, nunca exibe o conteúdo).
+export interface TrashedArticle {
+  id: string;
+  title: string;
+  source: Article["source"];
+  deletedAt: string;
+}
+
 // Arquivo anexado a um artigo (imagem/PDF/qualquer tipo) — só metadados aqui;
 // o conteúdo binário fica fora do JSON do artigo (ver article:addAttachment/
 // article:exportAttachment), nunca incluído em article:list.
@@ -225,6 +235,8 @@ export type IpcChannel =
   | "article:save"
   | "article:delete"
   | "article:restore"
+  | "article:listTrash"
+  | "article:purge"
   | "article:addLink"
   | "article:removeLink"
   | "article:appendExcerpt"
@@ -246,7 +258,6 @@ export type IpcChannel =
   | "claude:generate"
   | "claude:generateTemplates"
   | "claude:ask"
-  | "claude:searchRank"
   | "flashcards:regenerate"
   | "flashcards:list"
   | "flashcards:listDue"

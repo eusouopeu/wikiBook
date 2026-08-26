@@ -6,7 +6,7 @@
    Paleta clara com modo escuro respeitado via prefers-color-scheme
 ═══════════════════════════════════════════════════════════════════════════ */
 
-@import url('https://fonts.googleapis.com/css2?family=Linux+Libertine+O&family=Source+Serif+4:ital,opsz,wght@0,8..60,300;0,8..60,400;0,8..60,600;1,8..60,300;1,8..60,400&family=Noto+Sans:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&display=swap');
 
 /* ── Variáveis — modo claro (padrão Wikipedia) ─────────────────────────── */
 :root {
@@ -42,9 +42,9 @@
   --content-max:   960px;
   --toc-w:         220px;
 
-  --font-ui:       'Noto Sans', system-ui, sans-serif;
-  --font-title:    'Linux Libertine O', 'Linux Libertine', Georgia, serif;
-  --font-body:     'Source Serif 4', Georgia, 'Times New Roman', serif;
+  --font-ui:       'Montserrat', system-ui, sans-serif;
+  --font-title:    'Montserrat', system-ui, sans-serif;
+  --font-body:     'Montserrat', system-ui, sans-serif;
   --font-mono:     'Courier New', Courier, monospace;
 
   --radius-sm:     2px;
@@ -118,7 +118,7 @@ html, body, #root {
   color: var(--fg);
   font-family: var(--font-ui);
   font-size: 14px;
-  line-height: 1.6;
+  line-height: 1.5;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -201,24 +201,6 @@ html, body, #root {
   transition: border-color 0.15s;
 }
 .sidebar-search input:focus { border-color: var(--accent); }
-
-.semantic-search-toggle {
-  background: none;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  color: var(--fg3);
-  cursor: pointer;
-  flex-shrink: 0;
-  font-size: 14px;
-  min-width: 30px;
-  padding: 5px 8px;
-}
-.semantic-search-toggle:hover { border-color: var(--accent); color: var(--accent); }
-.semantic-search-toggle.active {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
-}
 
 .new-article-btn {
   background: none;
@@ -531,8 +513,9 @@ html, body, #root {
   color: var(--fg);
   font-family: var(--font-body);
   font-size: 15.5px;
-  line-height: 1.8;
+  line-height: 1.5;
   max-width: var(--content-max);
+  text-align: justify;
 }
 
 .wiki-content p  { margin-bottom: 0.85em; }
@@ -564,6 +547,79 @@ html, body, #root {
   font-weight: 600;
   margin: 1em 0 0.3em;
 }
+
+/* ── Accordions/toggles dos artigos da Wikipedia (ver lib/wikiAccordions.ts) ──
+   Cada <details class="wiki-accordion"> carrega as cores da sua seção como
+   custom properties (--wa-100/600/700/800/900) — os toggles e subtítulos
+   dentro dele herdam essas variáveis sem precisar de uma classe por cor. */
+.wiki-content .wiki-accordion {
+  background: var(--wa-100, var(--bg-toc));
+  border-radius: var(--radius);
+  margin: 1.1em 0;
+  padding: 0.1em 16px 14px;
+}
+.wiki-content .wiki-accordion-title {
+  color: var(--wa-900, var(--fg));
+  cursor: pointer;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  list-style: none;
+  padding: 12px 0;
+  user-select: none;
+}
+.wiki-content .wiki-accordion-title::-webkit-details-marker { display: none; }
+.wiki-content .wiki-accordion-title::before {
+  content: '▸';
+  display: inline-block;
+  font-size: 0.7em;
+  transition: transform 0.15s;
+}
+.wiki-content .wiki-accordion[open] > .wiki-accordion-title::before { transform: rotate(90deg); }
+.wiki-content .wiki-accordion-title h1,
+.wiki-content .wiki-accordion-title h2 {
+  border: none;
+  color: inherit;
+  font-size: 20px;
+  margin: 0;
+  padding: 0;
+}
+.wiki-content .wiki-accordion-body { padding-top: 0.2em; }
+
+.wiki-content .wiki-toggle { margin: 0.7em 0; }
+.wiki-content .wiki-toggle-title {
+  color: var(--wa-800, var(--fg));
+  cursor: pointer;
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  list-style: none;
+  padding: 4px 0;
+  user-select: none;
+}
+.wiki-content .wiki-toggle-title::-webkit-details-marker { display: none; }
+.wiki-content .wiki-toggle-title::before {
+  content: '▸';
+  display: inline-block;
+  font-size: 0.65em;
+  transition: transform 0.15s;
+}
+.wiki-content .wiki-toggle[open] > .wiki-toggle-title::before { transform: rotate(90deg); }
+.wiki-content .wiki-toggle-title h3 {
+  color: inherit;
+  font-size: 17px;
+  margin: 0;
+  padding: 0;
+}
+.wiki-content .wiki-toggle-body {
+  border-left: 2px solid var(--wa-100, var(--border-light));
+  margin-top: 0.3em;
+  padding-left: 14px;
+}
+
+.wiki-content .wiki-subheading-h4 { color: var(--wa-700, var(--fg)); }
+.wiki-content .wiki-subheading-h5,
+.wiki-content .wiki-subheading-h6 { color: var(--wa-600, var(--fg)); }
 
 /* Listas */
 .wiki-content ul,
@@ -1193,6 +1249,25 @@ mark.find-match-current {
 }
 .source-choice input[type="radio"] { accent-color: var(--accent); }
 
+/* ── Modal "Novo artigo": campo + escolha de fonte na mesma linha ────────── */
+.new-article-input-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.new-article-input-row .new-article-input {
+  flex: 1;
+  min-width: 0;
+  margin-top: 0;
+  font-size: 15px;
+  padding: 11px 14px;
+}
+.new-article-source-btn {
+  flex-shrink: 0;
+  font-size: 19px;
+  padding: 8px 12px;
+}
+
 .modal-error {
   background: #fee7e6;
   border: 1px solid #d33;
@@ -1236,6 +1311,16 @@ mark.find-match-current {
 .modal-actions button.primary:hover { filter: brightness(1.1); }
 .modal-actions button:disabled { cursor: not-allowed; opacity: 0.4; }
 
+/* Quando o modal tem uma ação extra (ex.: "Importar vários de uma vez") que
+   deve ficar à esquerda, separada de Cancelar/Confirmar à direita */
+.modal-actions-with-extra { justify-content: space-between; }
+.modal-actions-right { display: flex; gap: 8px; }
+.modal-actions .icon-btn {
+  background: none;
+  border: 1px solid transparent;
+  padding: 6px 9px;
+}
+
 .settings-hint { color: var(--fg3); font-size: 11px; line-height: 1.5; margin: -6px 0 8px; }
 
 .settings-section-title {
@@ -1249,18 +1334,11 @@ mark.find-match-current {
 }
 .sync-token-row { display: flex; gap: 6px; }
 .sync-token-row input { flex: 1; }
-.sync-token-row button {
-  background: var(--bg-hover);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--fg2);
-  cursor: pointer;
-  font-family: var(--font-ui);
-  font-size: 11.5px;
-  padding: 0 10px;
-  white-space: nowrap;
+.sync-token-row .icon-btn {
+  border-color: var(--border);
+  flex-shrink: 0;
+  font-size: 16px;
 }
-.sync-token-row button:hover { border-color: var(--accent); color: var(--fg); }
 
 /* Wizard de boas-vindas (primeira execução) */
 .onboarding-modal { max-width: 440px; }
@@ -1281,20 +1359,16 @@ mark.find-match-current {
   margin-top: 4px;
 }
 .theme-toggle-btn {
-  background: var(--bg-input);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--fg2);
-  cursor: pointer;
   flex: 1;
-  font-size: 12px;
-  padding: 6px 8px;
+  display: flex;
+  justify-content: center;
+  font-size: 17px;
+  padding: 8px;
+  border-color: var(--border);
 }
-.theme-toggle-btn.active {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
-}
+
+/* ── Espaçamento maior entre os campos da seção de sincronização ─────────── */
+.settings-field-spaced { margin-bottom: 20px; }
 
 /* ══════════════════════════════════════════════════════════════════════════
    MODAL DE TRECHO (excerpt-modal)
@@ -1497,6 +1571,26 @@ mark.find-match-current {
 .toc-remove-btn:hover { color: #c0392b; opacity: 1 !important; }
 
 .link-suggestions { border-style: dashed; }
+.link-suggestions-title-row {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+.link-suggestions-accept-all-btn {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--fg2);
+  cursor: pointer;
+  flex-shrink: 0;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  letter-spacing: 0;
+  padding: 3px 8px;
+  text-transform: none;
+}
+.link-suggestions-accept-all-btn:hover { border-color: #1d9e75; color: #1d9e75; }
 .suggestion-term { color: var(--fg); font-size: 13px; }
 .suggestion-accept-btn {
   background: none;
@@ -2394,17 +2488,28 @@ mark.hl-default { background: #ffe680; color: #202122; padding: 0 2px; border-ra
 /* Flashcards — painel por artigo */
 .flashcards-panel { margin-top: 34px; }
 .flashcards-panel-actions { display: flex; gap: 8px; }
-.flashcards-panel-actions button {
-  background: var(--bg-hover);
+.flashcards-review-btn {
+  position: relative;
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  font-family: var(--font-ui);
-  font-size: 12px;
-  padding: 5px 12px;
+  font-size: 17px;
+  padding: 7px 11px;
 }
-.flashcards-panel-actions button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-.flashcards-panel-actions button:disabled { cursor: not-allowed; opacity: 0.5; }
+.flashcards-review-btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.flashcards-review-btn:disabled { cursor: not-allowed; opacity: 0.5; }
+.flashcards-review-badge {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  background: #d33;
+  color: #fff;
+  border-radius: 999px;
+  font-size: 10px;
+  font-family: var(--font-ui);
+  line-height: 1;
+  min-width: 15px;
+  padding: 2px 3px;
+  text-align: center;
+}
 .flashcards-empty-hint { color: var(--fg3); font-size: 12.5px; line-height: 1.6; margin-top: 8px; }
 .flashcards-list { list-style: none; margin: 10px 0 0; padding: 0; }
 .flashcard-item {
@@ -2840,3 +2945,45 @@ button.text-btn:hover { text-decoration: underline; }
 .step-panel-done-badge {
   color: var(--accent); font-size: 13px; font-weight: 600; margin-top: 20px; text-align: center;
 }
+
+/* ── Lixeira (TrashModal) ─────────────────────────────────────────────────── */
+.trash-modal { min-width: 420px; max-width: 480px; }
+.trash-empty-hint { color: var(--fg3); font-size: 13px; padding: 16px 0; text-align: center; }
+.trash-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  max-height: 360px;
+  overflow-y: auto;
+}
+.trash-item {
+  align-items: center;
+  border-bottom: 1px solid var(--border-light);
+  display: flex;
+  gap: 10px;
+  padding: 10px 0;
+}
+.trash-item:last-child { border-bottom: none; }
+.trash-item-main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.trash-item-title {
+  color: var(--fg);
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.trash-item-meta {
+  align-items: center;
+  color: var(--fg3);
+  display: flex;
+  font-size: 11.5px;
+  gap: 6px;
+}
+.trash-item-actions { display: flex; flex-shrink: 0; gap: 4px; }
+.trash-item-purge-btn:hover { border-color: #d33; color: #d33; }

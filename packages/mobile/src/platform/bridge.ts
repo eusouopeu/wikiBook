@@ -37,6 +37,12 @@ async function invoke(channel: string, payload?: any): Promise<IpcResponse> {
         await flashcards.restoreFlashcards(payload.id);
         return { ok: true, data: restored };
       }
+      case "article:listTrash":
+        return { ok: true, data: await articles.listTrash() };
+      case "article:purge":
+        await articles.purgeArticle(payload.id);
+        await flashcards.purgeFlashcards(payload.id);
+        return { ok: true };
       case "article:addLink":
         return {
           ok: true,
@@ -127,9 +133,6 @@ async function invoke(channel: string, payload?: any): Promise<IpcResponse> {
             answer: await claude.ask(payload.question, payload.articleTitle, payload.articleText, payload.relatedContext ?? ""),
           },
         };
-      case "claude:searchRank":
-        return { ok: true, data: { ids: await claude.searchRank(payload.query, payload.candidates ?? []) } };
-
       case "flashcards:regenerate":
         return { ok: true, data: await flashcards.regenerate(payload.articleId) };
       case "flashcards:list":

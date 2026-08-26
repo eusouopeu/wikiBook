@@ -9,7 +9,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useEffect, useState } from "react";
-import { useStore } from "@lexicon/shared";
+import { useStore, Icon } from "@lexicon/shared";
 
 interface WikiSearchResult { title: string; snippet: string; }
 
@@ -139,34 +139,35 @@ export function NewArticleModal({ onClose }: { onClose: () => void }) {
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal" onClick={e => e.stopPropagation()}>
-        <h2>Novo artigo</h2>
         <form onSubmit={e => { e.preventDefault(); createArticle(); }}>
-          <label>
-            Título / Pesquisa
+          <div className="new-article-input-row">
             <input
               autoFocus
+              className="new-article-input"
               value={query}
               onChange={e => setQuery(e.target.value)}
               placeholder="Ex.: fotossíntese, inteligência artificial…"
             />
-          </label>
-          <div className="source-choice">
-            <label>
-              <input
-                type="radio" name="source" value="wikipedia"
-                checked={source === "wikipedia"}
-                onChange={() => setSource("wikipedia")}
-              />
-              Buscar na Wikipedia ({wikipediaLang})
-            </label>
-            <label>
-              <input
-                type="radio" name="source" value="claude"
-                checked={source === "claude"}
-                onChange={() => setSource("claude")}
-              />
-              Gerar com Claude
-            </label>
+            <button
+              type="button"
+              className={`icon-btn new-article-source-btn ${source === "wikipedia" ? "icon-btn-active" : ""}`}
+              title={`Buscar na Wikipedia (${wikipediaLang})`}
+              aria-label={`Buscar na Wikipedia (${wikipediaLang})`}
+              aria-pressed={source === "wikipedia"}
+              onClick={() => setSource("wikipedia")}
+            >
+              <Icon name="search" />
+            </button>
+            <button
+              type="button"
+              className={`icon-btn new-article-source-btn ${source === "claude" ? "icon-btn-active" : ""}`}
+              title="Gerar com Claude"
+              aria-label="Gerar com Claude"
+              aria-pressed={source === "claude"}
+              onClick={() => setSource("claude")}
+            >
+              <Icon name="semantic" />
+            </button>
           </div>
 
           {source === "claude" && templates.length > 0 && (
@@ -196,18 +197,20 @@ export function NewArticleModal({ onClose }: { onClose: () => void }) {
             </div>
           )}
 
-          {source === "wikipedia" && (
-            <button type="button" className="batch-import-toggle" onClick={() => setBatchMode(true)}>
-              Importar vários títulos de uma vez →
-            </button>
-          )}
-
           {error && <p className="modal-error">{error}</p>}
-          <div className="modal-actions">
-            <button type="button" onClick={onClose} disabled={loading}>Cancelar</button>
-            <button type="submit" className="primary" disabled={loading || !query.trim()}>
-              {loading ? "Carregando…" : "Criar artigo"}
-            </button>
+          <div className="modal-actions modal-actions-with-extra">
+            {source === "wikipedia" ? (
+              <button type="button" className="icon-btn" title="Importar vários títulos de uma vez"
+                      aria-label="Importar vários títulos de uma vez" onClick={() => setBatchMode(true)}>
+                <Icon name="batchImport" />
+              </button>
+            ) : <span />}
+            <div className="modal-actions-right">
+              <button type="button" onClick={onClose} disabled={loading}>Cancelar</button>
+              <button type="submit" className="primary" disabled={loading || !query.trim()}>
+                {loading ? "Carregando…" : "Criar artigo"}
+              </button>
+            </div>
           </div>
         </form>
       </div>

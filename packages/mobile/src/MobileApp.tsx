@@ -1,21 +1,22 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // packages/mobile/src/MobileApp.tsx
 // Componente raiz do shell mobile — equivalente mínimo ao papel de App.tsx no
-// desktop (segura o estado de "qual tela/modal está aberto"), sem o layout de
-// 3 colunas nem a tab bar inferior (fica para quando houver telas suficientes
-// para justificar navegação por abas).
+// desktop (segura o estado de "qual tela/modal está aberto"). A navegação
+// entre as views principais (Artigos/Grafo/Trilha/Ajustes) fica centralizada
+// na barra inferior fixa (BottomNav) — as telas individuais não sabem mais
+// como abrir umas às outras.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useEffect, useState } from "react";
-import { useStore } from "@lexicon/shared";
+import { useStore, SettingsModal } from "@lexicon/shared";
 import { ArticleListScreen } from "./screens/ArticleListScreen";
 import { ArticleScreen } from "./screens/ArticleScreen";
 import { GraphScreen } from "./screens/GraphScreen";
 import { PathScreen } from "./screens/PathScreen";
 import { NewArticleModal } from "./screens/NewArticleModal";
-import { SettingsModal } from "./screens/SettingsModal";
 import { OnboardingWizard } from "./screens/OnboardingWizard";
 import { StatusOverlay } from "./StatusOverlay";
+import { BottomNav, type BottomNavTab } from "./BottomNav";
 
 export function MobileApp() {
   const [screen, setScreen] = useState<"list" | "article" | "graph" | "path">("list");
@@ -73,16 +74,28 @@ export function MobileApp() {
       <ArticleListScreen
         onOpenArticle={handleOpenArticle}
         onNewArticle={() => setShowNewModal(true)}
-        onSettings={() => setShowSettings(true)}
-        onOpenGraph={() => setScreen("graph")}
-        onOpenPath={() => setScreen("path")}
       />
     );
   }
 
+  // A aba ativa é sempre uma das quatro views da barra inferior — o artigo
+  // aberto é tratado como parte da aba "Artigos" (não existe aba própria para
+  // ele), e Ajustes tem prioridade quando o modal está aberto por cima de
+  // qualquer tela.
+  const activeTab: BottomNavTab = showSettings
+    ? "settings"
+    : screen === "article" ? "list" : screen;
+
+  function handleSelectTab(tab: BottomNavTab) {
+    if (tab === "settings") { setShowSettings(true); return; }
+    setShowSettings(false);
+    setScreen(tab);
+  }
+
   return (
     <>
-      {content}
+      <div className="mobile-app-content">{content}</div>
+      <BottomNav active={activeTab} onSelect={handleSelectTab} />
       {showNewModal && <NewArticleModal onClose={() => setShowNewModal(false)} />}
       {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
       {bootstrapped && !onboardingSeen && (

@@ -355,6 +355,46 @@ export async function restoreArticle(id: string): Promise<Article> {
   return getArticle(id);
 }
 
+// Metadados leves dos artigos na lixeira — mesma ideia do desktop
+// (article:listTrash em articleHandlers.js): a única porta de entrada pra
+// restaurar era o "Desfazer" do toast (~5s); depois disso o artigo ficava
+// até 30 dias em disco sem nenhuma tela para vê-lo.
+export async function listTrash(): Promise<Array<{ id: string; title: string; source: Article["source"]; deletedAt: string }>> {
+  await ensureTrashDir();
+  let files;
+  try {
+    ({ files } = await Filesystem.readdir({ path: TRASH_DIR, directory: Directory.Data }));
+  } catch {
+    return [];
+  }
+  const items = await Promise.all(
+    files.filter(f => f.name.endsWith(".json")).map(async f => {
+      try {
+        const res = await Filesystem.readFile({
+          path: `${TRASH_DIR}/${f.name}`, directory: Directory.Data, encoding: Encoding.UTF8,
+        });
+        const raw = JSON.parse(res.data as string);
+        return { id: raw.id as string, title: raw.title as string, source: raw.source as Article["source"], deletedAt: new Date(f.mtime).toISOString() };
+      } catch {
+        return null;
+      }
+    })
+  );
+  return items
+    .filter((i): i is NonNullable<typeof i> => i !== null)
+    .sort((a, b) => b.deletedAt.localeCompare(a.deletedAt));
+}
+
+// Remove em definitivo um artigo da lixeira (arquivo + histórico + anexos).
+// Flashcards ficam a cargo do caller (bridge.ts), igual a delete/restore.
+export async function purgeArticle(id: string): Promise<void> {
+  try { await Filesystem.deleteFile({ path: trashPath(id), directory: Directory.Data }); } catch { /* já não existia */ }
+  try { await Filesystem.deleteFile({ path: historyPath(id), directory: Directory.Data }); } catch { /* sem histórico */ }
+  try {
+    await Filesystem.rmdir({ path: attachmentDirPath(id), directory: Directory.Data, recursive: true });
+  } catch { /* sem anexos */ }
+}
+
 export async function addLink(
   parentId: string, anchorText: string, targetId: string, targetTitle: string
 ): Promise<Article> {

@@ -491,6 +491,44 @@ function createArticleHandlers(ipcMain) {
     } catch (e) { return { ok: false, error: e.message }; }
   });
 
+  // ── article:listTrash → artigos na lixeira (metadados leves) ────────────────
+  // A única porta de entrada para restaurar era o "Desfazer" do toast, com
+  // janela de ~5s — passado isso, o artigo ficava até 30 dias em disco sem
+  // nenhuma tela para vê-lo. deletedAt vem do mtime do arquivo (o rename para
+  // .trash/ atualiza mtime, sem precisar gravar o campo no próprio JSON).
+  ipcMain.handle("article:listTrash", () => {
+    try {
+      ensureTrashDir();
+      const items = fs.readdirSync(TRASH_DIR)
+        .filter(f => f.endsWith(".json"))
+        .map(f => {
+          try {
+            const raw = JSON.parse(fs.readFileSync(path.join(TRASH_DIR, f), "utf8"));
+            const deletedAt = fs.statSync(path.join(TRASH_DIR, f)).mtime.toISOString();
+            return { id: raw.id, title: raw.title, source: raw.source, deletedAt };
+          } catch { return null; }
+        })
+        .filter(Boolean)
+        .sort((a, b) => b.deletedAt.localeCompare(a.deletedAt));
+      return { ok: true, data: items };
+    } catch (e) { return { ok: false, error: e.message }; }
+  });
+
+  // ── article:purge { id } → remove em definitivo (lixeira, histórico, flashcards, anexos) ─
+  ipcMain.handle("article:purge", (_evt, { id }) => {
+    try {
+      const trashP = trashPath(id);
+      if (fs.existsSync(trashP)) fs.unlinkSync(trashP);
+      const hp = historyPath(id);
+      if (fs.existsSync(hp)) fs.unlinkSync(hp);
+      const flashcardsTrashPath = path.join(FLASHCARDS_TRASH_DIR, `${id}.json`);
+      if (fs.existsSync(flashcardsTrashPath)) fs.unlinkSync(flashcardsTrashPath);
+      const attDir = attachmentDir(id);
+      if (fs.existsSync(attDir)) fs.rmSync(attDir, { recursive: true, force: true });
+      return { ok: true };
+    } catch (e) { return { ok: false, error: e.message }; }
+  });
+
   ipcMain.handle("article:addLink", (_evt, { parentId, anchorText, targetId, targetTitle }) => {
     try {
       const parent = readArticle(parentId);

@@ -7,7 +7,8 @@
   "types": "index.ts",
   "exports": {
     ".": "./index.ts",
-    "./styles.css": "./styles.css"
+    "./styles.css": "./styles.css",
+    "./lib/*": "./lib/*"
   },
   "dependencies": {
     "@heroicons/react": "^2.2.0",

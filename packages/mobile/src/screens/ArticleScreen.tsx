@@ -15,7 +15,7 @@
 // .wiki-content, em mobile.css) — efeito real só é confirmável no device.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import React from "react";
+import React, { useState } from "react";
 import { ArticleView } from "@lexicon/shared";
 import type { Article } from "@lexicon/shared";
 
@@ -25,14 +25,20 @@ interface Props {
 }
 
 export function ArticleScreen({ article, onBack }: Props) {
+  // Callback ref em vez de useRef: precisa disparar um re-render quando o
+  // nó existir, para que o primeiro render de ArticleView já receba o slot
+  // (senão os 4 ícones "primários" apareceriam inline por um instante antes
+  // de migrar para a barra de navegação).
+  const [actionsSlot, setActionsSlot] = useState<HTMLDivElement | null>(null);
+
   return (
     <div className="mobile-article-screen">
       <div className="mobile-article-screen-nav">
         <button className="mobile-back-btn" onClick={onBack}>‹ Artigos</button>
-        <span className="mobile-article-screen-title">{article.title}</span>
+        <div className="mobile-article-screen-actions" ref={setActionsSlot} />
       </div>
       <div className="mobile-article-screen-body">
-        <ArticleView article={article} />
+        <ArticleView article={article} headerActionsSlot={actionsSlot} />
       </div>
     </div>
   );

@@ -12,7 +12,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Dialog } from "@capacitor/dialog";
-import { useStore, ReviewModal, FolderPicker, VirtualList, LogoMark, Icon } from "@lexicon/shared";
+import { useStore, ReviewModal, FolderPicker, VirtualList, LogoMark, Icon, scoreQueryMatch } from "@lexicon/shared";
 import type { Article, Flashcard, FlashcardGrade } from "@lexicon/shared";
 
 const SOURCE_COLOR: Record<Article["source"], string> = {
@@ -24,12 +24,9 @@ const SOURCE_COLOR: Record<Article["source"], string> = {
 interface Props {
   onOpenArticle: (id: string) => void;
   onNewArticle: () => void;
-  onSettings: () => void;
-  onOpenGraph: () => void;
-  onOpenPath: () => void;
 }
 
-export function ArticleListScreen({ onOpenArticle, onNewArticle, onSettings, onOpenGraph, onOpenPath }: Props) {
+export function ArticleListScreen({ onOpenArticle, onNewArticle }: Props) {
   const {
     articles, activeArticleId, loadArticles,
     searchQuery, setSearchQuery, selectedTags, toggleSelectedTag, showToast,
@@ -134,68 +131,27 @@ export function ArticleListScreen({ onOpenArticle, onNewArticle, onSettings, onO
     return Array.from(tags).sort();
   }, [articles]);
 
-  // ── Busca semântica opcional (via Claude) — mesmo padrão do App.tsx desktop ──
-  const [semanticSearch, setSemanticSearch] = useState(false);
-  const [semanticLoading, setSemanticLoading] = useState(false);
-  const [semanticResultIds, setSemanticResultIds] = useState<string[] | null>(null);
-  // A chamada via CapacitorHttp não expõe cancelamento real (sem AbortSignal),
-  // então usamos um token de requisição: cada busca dispara com um número
-  // sequencial, e só a resposta cujo número ainda é o mais recente é aplicada
-  // — descarta respostas obsoletas de buscas anteriores mais lentas.
-  const searchRequestId = useRef(0);
-
-  useEffect(() => {
-    if (!semanticSearch || searchQuery.trim().length < 3) {
-      setSemanticResultIds(null);
-      return;
-    }
-    setSemanticLoading(true);
-    const id = setTimeout(async () => {
-      const requestId = ++searchRequestId.current;
-      try {
-        const res = await window.lexicon.invoke("claude:searchRank", {
-          query: searchQuery.trim(),
-          candidates: articles.map(a => ({ id: a.id, title: a.title, summary: a.summary })),
-        });
-        if (requestId !== searchRequestId.current) return;
-        setSemanticResultIds(res.ok ? (res.data as { ids: string[] }).ids : null);
-      } catch {
-        if (requestId !== searchRequestId.current) return;
-        setSemanticResultIds(null);
-      } finally {
-        if (requestId === searchRequestId.current) setSemanticLoading(false);
-      }
-    }, 400);
-    return () => clearTimeout(id);
-  }, [semanticSearch, searchQuery, articles]);
-
+  // Filtro por tag/pasta + busca local rankeada por relevância — ver
+  // lib/searchRelevance.ts (mesma lógica do App.tsx desktop; antes daqui
+  // saía uma chamada de rede por tecla para claude:searchRank).
   const filteredArticles = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-
-    if (semanticSearch && semanticResultIds && q.length >= 3) {
-      const rank = new Map(semanticResultIds.map((id, i) => [id, i]));
-      return articles
-        .filter(a =>
-          rank.has(a.id) &&
-          selectedTags.every(t => (a.tags ?? []).includes(t)) &&
-          (!selectedFolder || a.folderId === selectedFolder)
-        )
-        .sort((a, b) => rank.get(a.id)! - rank.get(b.id)!);
-    }
-
-    let result = articles.filter(a =>
-      (!q || (searchIndex.get(a.id) ?? "").includes(q)) &&
-      selectedTags.every(t => (a.tags ?? []).includes(t)) &&
-      (!selectedFolder || a.folderId === selectedFolder)
-    );
+    const qTokens = q.split(/\s+/).filter(Boolean);
+    let result = articles.filter(a => {
+      if (!selectedTags.every(t => (a.tags ?? []).includes(t))) return false;
+      if (selectedFolder && a.folderId !== selectedFolder) return false;
+      if (!q) return true;
+      const blob = searchIndex.get(a.id) ?? "";
+      return qTokens.some(tok => blob.includes(tok));
+    });
     if (q) {
-      result = [
-        ...result.filter(a => a.title.toLowerCase().includes(q)),
-        ...result.filter(a => !a.title.toLowerCase().includes(q)),
-      ];
+      result = result
+        .map(a => ({ a, score: scoreQueryMatch(q, a.title.toLowerCase(), searchIndex.get(a.id) ?? "") }))
+        .sort((x, y) => y.score - x.score)
+        .map(x => x.a);
     }
     return result;
-  }, [articles, searchQuery, selectedTags, selectedFolder, searchIndex, semanticSearch, semanticResultIds]);
+  }, [articles, searchQuery, selectedTags, selectedFolder, searchIndex]);
 
   return (
     <div className="mobile-screen">
@@ -212,9 +168,6 @@ export function ArticleListScreen({ onOpenArticle, onNewArticle, onSettings, onO
           >
             <Icon name={listDensity === "compact" ? "densityCompact" : "densityComfortable"} />
           </button>
-          <button className="mobile-icon-btn" title="Grafo" aria-label="Abrir grafo" onClick={onOpenGraph}><Icon name="graph" /></button>
-          <button className="mobile-icon-btn" title="Trilha" aria-label="Abrir trilhas de aprendizado" onClick={onOpenPath}><Icon name="path" /></button>
-          <button className="mobile-icon-btn" title="Configurações" aria-label="Configurações" onClick={onSettings}><Icon name="settings" /></button>
         </div>
       </header>
 
@@ -226,16 +179,6 @@ export function ArticleListScreen({ onOpenArticle, onNewArticle, onSettings, onO
           value={searchQuery}
           onChange={e => setSearchQuery(e.target.value)}
         />
-        <button
-          type="button"
-          className={`semantic-search-toggle ${semanticSearch ? "active" : ""}`}
-          title={semanticSearch
-            ? "Busca semântica ativa (via Claude) — toque para voltar à busca por texto"
-            : "Ativar busca semântica (via Claude) — encontra por significado, não só texto exato"}
-          onClick={() => setSemanticSearch(s => !s)}
-        >
-          {semanticLoading ? "…" : <Icon name="semantic" />}
-        </button>
       </div>
 
       {folders.length > 0 && (

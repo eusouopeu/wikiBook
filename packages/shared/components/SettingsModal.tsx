@@ -1,13 +1,19 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// packages/mobile/src/screens/SettingsModal.tsx
-// Porta quase direta de packages/desktop's SettingsModal (App.tsx) — mesma
-// lógica (useStore.wikipediaLang/setWikipediaLang + config:get/set da API
-// key + sincronização entre dispositivos), reaproveitando as classes
-// .modal/.modal-overlay/.sync-* já definidas em @lexicon/shared/styles.css.
+// packages/shared/components/SettingsModal.tsx
+// Modal de configurações — API key da Anthropic, idioma da Wikipedia, tema e
+// sincronização entre dispositivos. Único para desktop e mobile: antes vivia
+// duplicado (App.tsx do desktop e mobile/screens/SettingsModal.tsx), o que já
+// causou o mesmo bug (handleSave ignorando falha) precisar ser corrigido duas
+// vezes em rodadas separadas. A única diferença de host é onde a chave fica
+// guardada (Keychain do macOS via safeStorage vs. Keystore do Android/iOS via
+// SecureStoragePlugin) — invisível aqui, ambos respondem a config:get/set.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useEffect, useState } from "react";
-import { useStore, Icon } from "@lexicon/shared";
+import { useStore } from "../store/useStore";
+import { Icon, type IconName } from "./Icon";
+import { useEscToClose } from "../lib/useEscToClose";
+import { TrashModal } from "./TrashModal";
 
 const WIKI_LANGS: Array<{ code: string; label: string }> = [
   { code: "pt", label: "Português" },
@@ -18,16 +24,18 @@ const WIKI_LANGS: Array<{ code: string; label: string }> = [
   { code: "it", label: "Italiano" },
 ];
 
-const THEME_OPTIONS: Array<{ value: "system" | "light" | "dark"; label: string }> = [
-  { value: "system", label: "Sistema" },
-  { value: "light", label: "Claro" },
-  { value: "dark", label: "Escuro" },
+const THEME_OPTIONS: Array<{ value: "system" | "light" | "dark"; label: string; icon: IconName }> = [
+  { value: "system", label: "Sistema", icon: "themeSystem" },
+  { value: "light", label: "Claro", icon: "themeLight" },
+  { value: "dark", label: "Escuro", icon: "themeDark" },
 ];
 
-export function SettingsModal({ onClose }: { onClose: () => void }) {
+export const SettingsModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   const [apiKey, setApiKey] = useState("");
   const [saved, setSaved] = useState(false);
+  const [trashOpen, setTrashOpen] = useState(false);
   const { wikipediaLang, setWikipediaLang, theme, setTheme, showToast } = useStore();
+  useEscToClose(onClose);
 
   useEffect(() => {
     window.lexicon.invoke("config:get", { key: "anthropicApiKey" }).then(r => {
@@ -36,7 +44,8 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
   }, []);
 
   async function handleSave() {
-    await window.lexicon.invoke("config:set", { key: "anthropicApiKey", value: apiKey });
+    const res = await window.lexicon.invoke("config:set", { key: "anthropicApiKey", value: apiKey });
+    if (!res.ok) { showToast(res.error ?? "Falha ao salvar a chave.", "error"); return; }
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   }
@@ -93,6 +102,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
   }
 
   return (
+    <>
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal" onClick={e => e.stopPropagation()}>
         <h2>Configurações</h2>
@@ -106,7 +116,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
           />
         </label>
         <p className="settings-hint">
-          Salva no Keychain/Keystore do dispositivo — nunca enviada para terceiros.
+          Salva de forma criptografada no Keychain/Keystore do dispositivo — nunca enviada para terceiros.
         </p>
         <label>
           Idioma da Wikipedia
@@ -125,21 +135,22 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
                 type="button"
                 role="radio"
                 aria-checked={theme === opt.value}
-                className={`theme-toggle-btn ${theme === opt.value ? "active" : ""}`}
+                title={opt.label}
+                aria-label={opt.label}
+                className={`icon-btn theme-toggle-btn ${theme === opt.value ? "icon-btn-active" : ""}`}
                 onClick={() => setTheme(opt.value)}
               >
-                {opt.label}
+                <Icon name={opt.icon} />
               </button>
             ))}
           </div>
         </label>
-
         <h3 className="settings-section-title">Sincronização entre dispositivos</h3>
         <p className="settings-hint">
-          Requer um servidor próprio rodando (ver packages/sync-server). Sob demanda — toque em
+          Requer um servidor próprio rodando (ver packages/sync-server). Sob demanda — use
           "Sincronizar agora" quando quiser enviar/receber mudanças, não é automático.
         </p>
-        <label>
+        <label className="settings-field-spaced">
           Servidor de sincronização
           <input
             type="text"
@@ -148,7 +159,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
             placeholder="http://192.168.0.10:8787"
           />
         </label>
-        <label>
+        <label className="settings-field-spaced">
           Token da biblioteca
           <div className="sync-token-row">
             <input
@@ -157,7 +168,8 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
               onChange={e => persistSyncToken(e.target.value)}
               placeholder="Cole aqui o token gerado no primeiro dispositivo"
             />
-            <button type="button" onClick={handleGenerateToken}>Gerar novo token</button>
+            <button type="button" className="icon-btn" title="Gerar novo token" aria-label="Gerar novo token"
+                    onClick={handleGenerateToken}><Icon name="token" /></button>
           </div>
         </label>
         {syncLastRunAt && (
@@ -174,6 +186,16 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
           </button>
         </div>
 
+        <h3 className="settings-section-title">Lixeira</h3>
+        <p className="settings-hint">
+          Artigos excluídos ficam guardados por 30 dias antes de serem apagados automaticamente.
+        </p>
+        <div className="modal-actions">
+          <button type="button" onClick={() => setTrashOpen(true)}>
+            <Icon name="trash" /><span>Ver lixeira</span>
+          </button>
+        </div>
+
         <div className="modal-actions">
           <button onClick={onClose}>Fechar</button>
           <button className="primary" onClick={handleSave}>
@@ -182,5 +204,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
         </div>
       </div>
     </div>
+    {trashOpen && <TrashModal onClose={() => setTrashOpen(false)} />}
+    </>
   );
-}
+};

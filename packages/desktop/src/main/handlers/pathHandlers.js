@@ -36,14 +36,9 @@ function writeAtomic(filePath, data) {
 }
 
 // ── Modelos de geração ──────────────────────────────────────────────────────
-// Espelha packages/shared/lib/pathModels.ts (não pode importar o .ts direto
-// do processo main) — qualquer mudança de preço/modelo deve ser replicada
-// nos dois lugares.
-const MODEL_CATALOG = {
-  "sonnet-standard": { apiModel: "claude-sonnet-5", thinking: false, maxTokens: 8000 },
-  "sonnet-thinking": { apiModel: "claude-sonnet-5", thinking: true, thinkingBudgetTokens: 6000, maxTokens: 10000 },
-  "opus-standard": { apiModel: "claude-opus-5", thinking: false, maxTokens: 8000 },
-};
+// Fonte única em packages/shared/lib/claudePrompts.js (PATH_MODELS) —
+// compartilhada com packages/mobile/src/platform/claude.ts.
+const { PATH_MODELS: MODEL_CATALOG } = require("../../../../shared/lib/claudePrompts");
 function resolveModel(id) { return MODEL_CATALOG[id] ?? MODEL_CATALOG["sonnet-standard"]; }
 
 // ── path:consolidateProfile ─────────────────────────────────────────────────

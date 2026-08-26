@@ -99,6 +99,17 @@ export async function restoreFlashcards(articleId: string): Promise<void> {
   }
 }
 
+// Remove em definitivo os flashcards de um artigo purgado da lixeira.
+export async function purgeFlashcards(articleId: string): Promise<void> {
+  try {
+    await Filesystem.deleteFile({ path: flashcardsTrashPath(articleId), directory: Directory.Data });
+  } catch {
+    // já não existia
+  } finally {
+    flashcardsCache.delete(articleId);
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Parser: texto Markdown → flashcards "rascunho" (sem estado de agendamento)
 // ─────────────────────────────────────────────────────────────────────────────

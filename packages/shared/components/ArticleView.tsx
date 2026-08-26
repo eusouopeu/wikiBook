@@ -3,19 +3,30 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useRef, useEffect, useLayoutEffect, useState, useCallback, useMemo, useId } from "react";
+import { createPortal } from "react-dom";
 import { useShallow } from "zustand/react/shallow";
 import DOMPurify from "dompurify";
 import type { Article, ArticleExcerpt, ArticleHistoryEntry, ExcerptCategory, ExcerptOutlineItem, Flashcard, FlashcardGrade } from "../shared/types";
 import { useStore } from "../store/useStore";
 import { computeTrackedEdit, stripTrackedMarkup } from "../lib/excerptDiff";
 import { confirmDialog } from "../lib/confirmDialog";
+import { buildWikiAccordions, openAncestorDetails } from "../lib/wikiAccordions";
+import { findLinkSuggestions } from "../lib/linkSuggestions";
 import { Icon, type IconName } from "./Icon";
 import {
   escapeHtml, inlineMarkdown, markdownToHtml, excerptHtmlToMarkdown,
   parseMarkdownTable, serializeMarkdownTable, markdownTableToHtml,
 } from "../lib/markdown";
 
-interface Props { article: Article; }
+interface Props {
+  article: Article;
+  // Quando informado (shell mobile), os 4 ícones "primários" do cabeçalho
+  // (buscar/sumário/chat/flashcards) são renderizados via portal dentro
+  // desse elemento — a barra de navegação superior do próprio shell — em vez
+  // de ficarem ao lado do <h1>, liberando espaço no título numa tela estreita.
+  // No desktop (sem slot), continuam inline como sempre.
+  headerActionsSlot?: HTMLElement | null;
+}
 
 // Sanitização final antes de qualquer dangerouslySetInnerHTML
 function sanitize(html: string): string {
@@ -744,9 +755,8 @@ function renderClozeForReview(clozeText: string, revealed: boolean, group = 1): 
 const FlashcardsPanel: React.FC<{
   cards: Flashcard[];
   loading: boolean;
-  onRegenerate: () => void;
   onStartReview: () => void;
-}> = ({ cards, loading, onRegenerate, onStartReview }) => {
+}> = ({ cards, loading, onStartReview }) => {
   const now = new Date().toISOString();
   const dueCount = cards.filter(c => c.due <= now).length;
   return (
@@ -754,9 +764,19 @@ const FlashcardsPanel: React.FC<{
       <div className="excerpts-panel-header">
         <h2 className="section-heading">Flashcards ({cards.length})</h2>
         <div className="flashcards-panel-actions">
-          <button onClick={onRegenerate} disabled={loading}>{loading ? "Atualizando…" : <><Icon name="refresh" /><span>Atualizar</span></>}</button>
-          <button className="primary" onClick={onStartReview} disabled={dueCount === 0}>
-            <Icon name="flashcards" /><span>Revisar ({dueCount})</span>
+          {/* Sem botão manual de regenerar: já roda sozinho depois de cada
+              salvamento de artigo/trecho (ver handleRegenerateFlashcards) —
+              loading só desabilita a revisão enquanto isso acontece. */}
+          <button
+            type="button"
+            className="icon-btn primary flashcards-review-btn"
+            onClick={onStartReview}
+            disabled={dueCount === 0 || loading}
+            title={`Revisar flashcards (${dueCount} vencido${dueCount === 1 ? "" : "s"})`}
+            aria-label={`Revisar flashcards (${dueCount} vencido${dueCount === 1 ? "" : "s"})`}
+          >
+            <Icon name="flashcards" />
+            {dueCount > 0 && <span className="flashcards-review-badge">{dueCount}</span>}
           </button>
         </div>
       </div>
@@ -1232,7 +1252,7 @@ const AttachmentsSection: React.FC<{
 // Componente principal
 // ─────────────────────────────────────────────────────────────────────────────
 
-export const ArticleView: React.FC<Props> = ({ article }) => {
+export const ArticleView: React.FC<Props> = ({ article, headerActionsSlot }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const summaryRef   = useRef<HTMLDivElement>(null);
   const [showSummary, setShowSummary]         = useState(false);
@@ -1242,13 +1262,13 @@ export const ArticleView: React.FC<Props> = ({ article }) => {
   // anterior se a nova geração vier pior).
   const [summaryPreview, setSummaryPreview] = useState<string | null>(null);
   // Se o resumo automático falhou na criação (ver useStore.ts/fetchFromWikipedia),
-  // o artigo é salvo com esse texto fixo — força a aba "Resumo" ao abrir, para
-  // que o botão "Regenerar resumo" já existente fique visível de cara, sem
-  // o usuário precisar descobrir a aba manualmente ou recriar o artigo.
+  // o artigo é salvo com esse texto fixo — o botão "Regenerar resumo" fica na
+  // aba Resumo normalmente. A aba padrão ao abrir qualquer artigo é sempre
+  // "Artigo": como este componente não é remontado ao trocar de artigo (só a
+  // prop muda), sem este reset a aba "Resumo" ficaria "grudada" ao navegar
+  // para outro artigo enquanto ela estivesse aberta.
   const summaryFailed = article.summary.trim() === "• Resumo não disponível.";
-  useEffect(() => {
-    if (summaryFailed) setShowSummary(true);
-  }, [article.id, summaryFailed]);
+  useEffect(() => { setShowSummary(false); }, [article.id]);
   const [saveModal, setSaveModal] = useState<{
     visible: boolean; kind: "text" | "table" | "image"; category: ExcerptCategory;
     html: string; src?: string; alt?: string;
@@ -1367,10 +1387,14 @@ export const ArticleView: React.FC<Props> = ({ article }) => {
     setFindIndex(0);
   }, [findOpen, findQuery, showSummary, article.id]);
 
-  // Marca o resultado atual e rola até ele
+  // Marca o resultado atual e rola até ele — abrindo antes qualquer
+  // accordion/toggle fechado em que o match esteja (senão o match existe no
+  // DOM mas fica invisível, escondido pelo <details> recolhido)
   useEffect(() => {
     findMatchesRef.current.forEach((m, i) => m.classList.toggle("find-match-current", i === findIndex));
-    findMatchesRef.current[findIndex]?.scrollIntoView({ behavior: "smooth", block: "center" });
+    const current = findMatchesRef.current[findIndex];
+    if (current) openAncestorDetails(current);
+    current?.scrollIntoView({ behavior: "smooth", block: "center" });
   }, [findIndex, findCount]);
 
   const handleFindNext = useCallback(() => {
@@ -1412,13 +1436,17 @@ export const ArticleView: React.FC<Props> = ({ article }) => {
 
   const handleJumpToHeading = useCallback((id: string) => {
     setTocOpen(false);
+    const jump = () => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      openAncestorDetails(el);
+      el.scrollIntoView({ behavior: "smooth", block: "start" });
+    };
     if (showSummary) {
       setShowSummary(false);
-      requestAnimationFrame(() => requestAnimationFrame(() => {
-        document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
-      }));
+      requestAnimationFrame(() => requestAnimationFrame(jump));
     } else {
-      document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+      jump();
     }
   }, [showSummary]);
 
@@ -1783,10 +1811,12 @@ export const ArticleView: React.FC<Props> = ({ article }) => {
   }, [article.id, article.title, loadArticles, showToast]);
 
   // Manual: content é Markdown → HTML + links por texto puro.
-  // Wikipedia: content é HTML com spans .wiki-term para ancorar os links.
+  // Wikipedia: content é HTML com spans .wiki-term para ancorar os links —
+  // e, só para essa fonte, os títulos viram accordions/toggles recolhíveis
+  // (ver lib/wikiAccordions.ts).
   const processedHtml = article.source === "manual"
     ? sanitize(linkifyPlainText(markdownToHtml(article.content), article.links))
-    : sanitize(injectInternalLinks(article.content, article.links));
+    : buildWikiAccordions(sanitize(injectInternalLinks(article.content, article.links)));
   const excerpts: ArticleExcerpt[] = article.excerpts ?? [];
 
   // Backlinks: artigos cujos links apontam para este
@@ -1801,28 +1831,10 @@ export const ArticleView: React.FC<Props> = ({ article }) => {
   // — a marcação de "isso era um conceito linkável" não se perde, só o href.
   // Cruza esses termos com títulos já existentes na base e sugere o link, em
   // vez de exigir que o usuário selecione o trecho manualmente toda vez.
-  const linkSuggestions = useMemo(() => {
-    if (article.source !== "wikipedia" || !article.content) return [];
-    const linkedTargetIds = new Set(article.links.map(l => l.targetId));
-    const titleIndex = new Map(
-      articles.filter(a => a.id !== article.id).map(a => [a.title.toLowerCase(), a])
-    );
-    const seen = new Set<string>();
-    const suggestions: Array<{ term: string; target: Article }> = [];
-    const re = /<span class="wiki-term">([\s\S]*?)<\/span>/g;
-    let m: RegExpExecArray | null;
-    while ((m = re.exec(article.content)) !== null) {
-      const raw = m[1].replace(/<[^>]+>/g, "").trim();
-      if (!raw) continue;
-      const key = raw.toLowerCase();
-      if (seen.has(key)) continue;
-      const target = titleIndex.get(key);
-      if (!target || linkedTargetIds.has(target.id)) continue;
-      seen.add(key);
-      suggestions.push({ term: raw, target });
-    }
-    return suggestions;
-  }, [article.source, article.content, article.links, article.id, articles]);
+  const linkSuggestions = useMemo(
+    () => findLinkSuggestions(article, articles),
+    [article, articles]
+  );
 
   const visibleSuggestions = linkSuggestions.filter(s => !dismissedTerms.has(s.term));
   const shownSuggestions = visibleSuggestions.slice(0, suggestionLimit);
@@ -1832,7 +1844,35 @@ export const ArticleView: React.FC<Props> = ({ article }) => {
     showToast(`Link criado: "${term}" → ${target.title}`);
   }, [article.id, addLink, showToast]);
 
+  // "Vincular todos": cria um link por sugestão visível, em sequência (a
+  // mesma chamada addLink recarrega o artigo a cada vez — em paralelo,
+  // escritas concorrentes no mesmo JSON poderiam se sobrescrever).
+  const handleAcceptAllSuggestions = useCallback(async (suggestions: Array<{ term: string; target: Article }>) => {
+    for (const { term, target } of suggestions) {
+      await addLink(article.id, term, target.id, target.title);
+    }
+    showToast(`${suggestions.length} link${suggestions.length > 1 ? "s" : ""} criado${suggestions.length > 1 ? "s" : ""}.`);
+  }, [article.id, addLink, showToast]);
+
   const summaryHtml = summaryToHtml(article.summary);
+
+  // Os 4 ícones "primários" do cabeçalho — no mobile, vão via portal para a
+  // barra de navegação do shell (ver prop headerActionsSlot); no desktop
+  // (sem slot) renderizam aqui mesmo, ao lado do <h1>.
+  const primaryHeaderActions = (
+    <>
+      <button className={`icon-btn ${findOpen ? "icon-btn-active" : ""}`} title="Buscar na página" aria-label="Buscar na página"
+              onClick={() => setFindOpen(o => !o)}><Icon name="search" /></button>
+      {tocItems.length > 0 && (
+        <button className="icon-btn" title="Conteúdo" aria-label="Conteúdo" onClick={() => setTocOpen(true)}><Icon name="densityCompact" /></button>
+      )}
+      <button className={`icon-btn ${chatOpen ? "icon-btn-active" : ""}`} title="Perguntar ao Claude" aria-label="Perguntar ao Claude"
+              onClick={() => setChatOpen(o => !o)}><Icon name="chat" /></button>
+      <button className="icon-btn" title="Revisar flashcards deste artigo" aria-label="Revisar flashcards deste artigo"
+              onClick={() => setReviewOpen(true)}
+              disabled={flashcards.filter(c => c.due <= new Date().toISOString()).length === 0}><Icon name="flashcards" /></button>
+    </>
+  );
 
   return (
     <div className="article-view">
@@ -1842,16 +1882,7 @@ export const ArticleView: React.FC<Props> = ({ article }) => {
         <div className="article-title-row">
           <h1 className="article-title">{article.title}</h1>
           <div className="article-header-actions">
-            <button className={`icon-btn ${findOpen ? "icon-btn-active" : ""}`} title="Buscar na página" aria-label="Buscar na página"
-                    onClick={() => setFindOpen(o => !o)}><Icon name="search" /></button>
-            {tocItems.length > 0 && (
-              <button className="icon-btn" title="Conteúdo" aria-label="Conteúdo" onClick={() => setTocOpen(true)}><Icon name="densityCompact" /></button>
-            )}
-            <button className={`icon-btn ${chatOpen ? "icon-btn-active" : ""}`} title="Perguntar ao Claude" aria-label="Perguntar ao Claude"
-                    onClick={() => setChatOpen(o => !o)}><Icon name="chat" /></button>
-            <button className="icon-btn" title="Revisar flashcards deste artigo" aria-label="Revisar flashcards deste artigo"
-                    onClick={() => setReviewOpen(true)}
-                    disabled={flashcards.filter(c => c.due <= new Date().toISOString()).length === 0}><Icon name="flashcards" /></button>
+            {!headerActionsSlot && primaryHeaderActions}
             <button className="icon-btn" title="Histórico de versões" aria-label="Histórico de versões"
                     onClick={() => setHistoryOpen(true)}><Icon name="history" /></button>
             {article.source === "manual" && !isEditing && (
@@ -1861,6 +1892,7 @@ export const ArticleView: React.FC<Props> = ({ article }) => {
                     onClick={handleDeleteArticle}><Icon name="trash" /></button>
           </div>
         </div>
+        {headerActionsSlot && createPortal(primaryHeaderActions, headerActionsSlot)}
 
         <div className="article-header-meta">
           <span className={`source-badge source-${article.source}`}>
@@ -1990,17 +2022,24 @@ export const ArticleView: React.FC<Props> = ({ article }) => {
           </div>
         )}
 
-        {/* Sugestões de link automáticas — termos que eram <a> na Wikipedia
-            original e batem com títulos já existentes na base */}
+        {/* Sugestões de link automáticas — termos marcados como conceito na
+            Wikipedia original, ou o título de outro artigo já existente
+            encontrado no texto de qualquer fonte (Claude/manual incluídos) */}
         {visibleSuggestions.length > 0 && !showSummary && (
           <div className="wiki-toc link-suggestions">
-            <div className="wiki-toc-title">
-              Links sugeridos
-              {visibleSuggestions.length > shownSuggestions.length && (
-                <span className="link-suggestions-count">
-                  {" "}— mostrando {shownSuggestions.length} de {visibleSuggestions.length}
-                </span>
-              )}
+            <div className="wiki-toc-title link-suggestions-title-row">
+              <span>
+                Links sugeridos
+                {visibleSuggestions.length > shownSuggestions.length && (
+                  <span className="link-suggestions-count">
+                    {" "}— mostrando {shownSuggestions.length} de {visibleSuggestions.length}
+                  </span>
+                )}
+              </span>
+              <button type="button" className="link-suggestions-accept-all-btn"
+                      onClick={() => handleAcceptAllSuggestions(shownSuggestions)}>
+                Vincular todos
+              </button>
             </div>
             <ol className="wiki-toc-list">
               {shownSuggestions.map(({ term, target }) => (
@@ -2090,7 +2129,6 @@ export const ArticleView: React.FC<Props> = ({ article }) => {
         <FlashcardsPanel
           cards={flashcards}
           loading={flashcardsLoading}
-          onRegenerate={handleRegenerateFlashcards}
           onStartReview={() => setReviewOpen(true)}
         />
 
