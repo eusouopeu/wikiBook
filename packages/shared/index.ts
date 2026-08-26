@@ -9,6 +9,7 @@ export { default as App } from "./App";
 export { useStore, computeLocalSubgraph } from "./store/useStore";
 export { ArticleView, ReviewModal } from "./components/ArticleView";
 export { GraphView } from "./components/GraphView";
+export { PathView } from "./components/PathView";
 export { FolderPicker } from "./components/FolderPicker";
 export { LogoMark } from "./components/LogoMark";
 export { VirtualList } from "./components/VirtualList";

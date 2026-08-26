@@ -11,13 +11,14 @@ import { useStore } from "@lexicon/shared";
 import { ArticleListScreen } from "./screens/ArticleListScreen";
 import { ArticleScreen } from "./screens/ArticleScreen";
 import { GraphScreen } from "./screens/GraphScreen";
+import { PathScreen } from "./screens/PathScreen";
 import { NewArticleModal } from "./screens/NewArticleModal";
 import { SettingsModal } from "./screens/SettingsModal";
 import { OnboardingWizard } from "./screens/OnboardingWizard";
 import { StatusOverlay } from "./StatusOverlay";
 
 export function MobileApp() {
-  const [screen, setScreen] = useState<"list" | "article" | "graph">("list");
+  const [screen, setScreen] = useState<"list" | "article" | "graph" | "path">("list");
   const [showNewModal, setShowNewModal] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
 
@@ -65,6 +66,8 @@ export function MobileApp() {
       : <div className="mobile-screen"><p className="mobile-empty">Carregando…</p></div>;
   } else if (screen === "graph") {
     content = <GraphScreen onBack={() => setScreen("list")} onOpenArticle={handleGraphNodeOpen} />;
+  } else if (screen === "path") {
+    content = <PathScreen onBack={() => setScreen("list")} />;
   } else {
     content = (
       <ArticleListScreen
@@ -72,6 +75,7 @@ export function MobileApp() {
         onNewArticle={() => setShowNewModal(true)}
         onSettings={() => setShowSettings(true)}
         onOpenGraph={() => setScreen("graph")}
+        onOpenPath={() => setScreen("path")}
       />
     );
   }

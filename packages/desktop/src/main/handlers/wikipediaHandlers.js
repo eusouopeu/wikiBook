@@ -209,4 +209,4 @@ function createWikipediaHandlers(ipcMain) {
   });
 }
 
-module.exports = { createWikipediaHandlers };
+module.exports = { createWikipediaHandlers, searchWikipedia };

@@ -2659,3 +2659,173 @@ mark.hl-orange { background: #ffd9b0; color: #5c3400; padding: 0 2px; border-rad
 }
 .table-editor-controls button:hover:not(:disabled) { border-color: var(--accent); }
 .table-editor-controls button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   TRILHA DE APRENDIZADO (PathView) — percurso guiado estilo Duolingo
+══════════════════════════════════════════════════════════════════════════ */
+
+button.primary {
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  color: #fff;
+  cursor: pointer;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  padding: 7px 16px;
+}
+button.primary:hover { filter: brightness(1.1); }
+button.primary:disabled { cursor: not-allowed; opacity: 0.45; filter: none; }
+
+button.text-btn {
+  background: transparent;
+  border: none;
+  color: var(--fg-link);
+  cursor: pointer;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  padding: 4px 6px;
+}
+button.text-btn:hover { text-decoration: underline; }
+
+/* ── Lista de trilhas ─────────────────────────────────────────────────────── */
+.path-list-screen { max-width: 640px; margin: 0 auto; padding: 28px 20px 60px; width: 100%; }
+.path-list-header {
+  align-items: center; display: flex; justify-content: space-between; margin-bottom: 20px;
+}
+.path-list-header h2 { font-family: var(--font-title); font-size: 22px; font-weight: 400; }
+.path-list { display: flex; flex-direction: column; gap: 10px; list-style: none; }
+.path-list-item {
+  align-items: center;
+  background: var(--bg);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius);
+  cursor: pointer;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  padding: 14px 16px;
+  transition: border-color 0.12s, background 0.12s;
+}
+.path-list-item:hover { background: var(--bg-hover); border-color: var(--accent); }
+.path-list-item-main { flex: 1; min-width: 0; }
+.path-list-item-main strong { color: var(--fg); display: block; font-size: 14.5px; margin-bottom: 6px; }
+.path-list-progress-bar {
+  background: var(--border-light); border-radius: 4px; height: 6px; margin-bottom: 4px; overflow: hidden;
+}
+.path-list-progress-fill { background: var(--accent); height: 100%; }
+.path-list-progress-label { color: var(--fg3); font-size: 11.5px; }
+
+/* ── Assistente de criação (objetivo → entrevista → modelo → geração) ──────── */
+.path-wizard { max-width: 560px; margin: 0 auto; padding: 20px 20px 60px; width: 100%; }
+.path-wizard-header { margin-bottom: 8px; }
+.path-wizard-step { padding-top: 20px; }
+.path-wizard-step h2 { font-family: var(--font-title); font-size: 21px; font-weight: 400; margin-bottom: 10px; }
+.path-wizard-hint { color: var(--fg3); font-size: 12.5px; margin-bottom: 14px; }
+.path-wizard-progress { color: var(--fg3); font-size: 11px; letter-spacing: 0.03em; margin-bottom: 6px; text-transform: uppercase; }
+.path-wizard-goal-input {
+  background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  color: var(--fg); font-family: var(--font-ui); font-size: 15px; padding: 10px 12px; width: 100%;
+}
+.path-wizard-goal-input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(51,102,204,0.15); outline: none; }
+.path-wizard-choices { display: flex; flex-direction: column; gap: 8px; }
+.path-wizard-choice {
+  background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius);
+  color: var(--fg); cursor: pointer; font-family: var(--font-ui); font-size: 13.5px;
+  padding: 10px 14px; text-align: left; transition: border-color 0.12s, background 0.12s;
+}
+.path-wizard-choice:hover { background: var(--bg-hover); border-color: var(--accent); }
+.path-wizard-step textarea {
+  background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  color: var(--fg); font-family: var(--font-ui); font-size: 13.5px; padding: 10px 12px; resize: vertical; width: 100%;
+}
+.path-wizard-step textarea:focus { border-color: var(--accent); outline: none; }
+.path-wizard-profile-summary {
+  background: var(--bg-excerpt); border-radius: var(--radius); color: var(--fg2);
+  font-size: 13px; line-height: 1.6; margin-bottom: 16px; padding: 12px 14px;
+}
+.path-wizard-generating { align-items: center; display: flex; flex-direction: column; gap: 10px; padding: 60px 0; text-align: center; }
+.path-wizard-generating .spinner { border-width: 3px; height: 32px; width: 32px; }
+
+/* ── Tab-pill de escolha de modelo, com custo estimado ──────────────────────── */
+.path-model-pills { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+.path-model-pill {
+  background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius);
+  cursor: pointer; display: flex; flex-direction: column; gap: 3px;
+  padding: 10px 14px; text-align: left; transition: border-color 0.12s, background 0.12s;
+}
+.path-model-pill:hover { border-color: var(--accent); }
+.path-model-pill.active { background: var(--accent-soft); border-color: var(--accent); }
+.path-model-pill-label { color: var(--fg); font-size: 13.5px; font-weight: 600; }
+.path-model-pill-desc { color: var(--fg2); font-size: 12px; }
+.path-model-pill-cost { color: var(--fg3); font-size: 11px; }
+.path-model-pill.active .path-model-pill-cost { color: var(--accent); }
+
+/* ── Percurso serpentino ──────────────────────────────────────────────────── */
+.path-detail-screen { height: 100%; overflow-y: auto; padding-bottom: 60px; }
+.path-detail-header {
+  align-items: center; background: var(--bg-body); display: flex; gap: 14px;
+  padding: 14px 20px; position: sticky; top: 0; z-index: 5;
+}
+.path-detail-header h2 { flex: 1; font-family: var(--font-title); font-size: 18px; font-weight: 400; }
+.path-detail-progress-label { color: var(--fg3); font-size: 12px; }
+
+.path-serpentine { margin: 0 auto; max-width: 480px; padding: 10px 20px 20px; }
+.path-unit-title {
+  color: var(--fg3); font-size: 11px; font-weight: 600; letter-spacing: 0.05em;
+  margin: 26px 0 14px; text-align: center; text-transform: uppercase;
+}
+.path-unit-steps { display: flex; flex-direction: column; gap: 14px; }
+.path-step-node {
+  align-items: center; background: var(--bg); border: 1px solid var(--border-light);
+  border-radius: 999px; cursor: pointer; display: flex; gap: 10px;
+  max-width: 82%; padding: 10px 16px; transition: border-color 0.12s, transform 0.1s;
+}
+.path-step-node:hover:not(:disabled) { border-color: var(--accent); transform: translateY(-1px); }
+.path-step-align-left { align-self: flex-start; }
+.path-step-align-right { align-self: flex-end; }
+.path-step-icon { flex-shrink: 0; font-size: 15px; }
+.path-step-label { color: var(--fg); font-size: 13px; text-align: left; }
+.path-step-available { border-color: var(--accent); }
+.path-step-available .path-step-icon { color: var(--accent); }
+.path-step-done { background: var(--accent-soft); }
+.path-step-done .path-step-icon { color: var(--accent); }
+.path-step-locked { cursor: not-allowed; opacity: 0.45; }
+
+/* ── Painel de detalhe de um passo ────────────────────────────────────────── */
+.step-panel-overlay {
+  align-items: flex-start; background: rgba(0,0,0,0.45); bottom: 0; display: flex;
+  justify-content: center; left: 0; overflow-y: auto; padding: 40px 16px; position: fixed;
+  right: 0; top: 0; z-index: 600;
+}
+.step-panel {
+  background: var(--bg-modal); border: 1px solid var(--border); border-radius: var(--radius);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.3); max-width: 440px; padding: 24px; position: relative; width: 100%;
+}
+.step-panel-close {
+  background: none; border: none; color: var(--fg3); cursor: pointer;
+  font-size: 20px; line-height: 1; padding: 4px; position: absolute; right: 14px; top: 14px;
+}
+.step-panel h3 { font-family: var(--font-title); font-size: 19px; font-weight: 400; margin-bottom: 6px; padding-right: 24px; }
+.step-panel-objective { color: var(--fg2); font-size: 13.5px; margin-bottom: 8px; }
+.step-panel-meta { color: var(--fg3); font-size: 12px; margin-bottom: 16px; }
+.step-panel h4 { color: var(--fg3); font-size: 11px; font-weight: 600; letter-spacing: 0.04em; margin: 16px 0 6px; text-transform: uppercase; }
+.step-panel-resources { display: flex; flex-direction: column; gap: 8px; list-style: none; }
+.step-panel-resource { font-size: 13px; }
+.resource-link {
+  background: none; border: none; color: var(--fg-link); cursor: pointer;
+  font-family: var(--font-ui); font-size: 13px; padding: 2px 0; text-align: left;
+}
+.resource-link:hover { text-decoration: underline; }
+.resource-video { display: flex; flex-direction: column; gap: 6px; }
+.resource-video-label { color: var(--fg); font-size: 13px; }
+.resource-video-engines { display: flex; flex-wrap: wrap; gap: 6px; }
+.resource-engine-btn {
+  background: var(--bg-input); border: 1px solid var(--border); border-radius: 999px;
+  color: var(--fg2); cursor: pointer; font-family: var(--font-ui); font-size: 11.5px; padding: 4px 10px;
+}
+.resource-engine-btn:hover { border-color: var(--accent); color: var(--fg); }
+.step-panel-complete { margin-top: 20px; width: 100%; }
+.step-panel-done-badge {
+  color: var(--accent); font-size: 13px; font-weight: 600; margin-top: 20px; text-align: center;
+}

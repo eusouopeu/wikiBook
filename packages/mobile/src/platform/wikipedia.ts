@@ -54,7 +54,7 @@ const searchCache = new Map<string, Array<{ title: string; snippet: string }>>()
 const fetchCache = new Map<string, { title: string; html: string; plainTextExtract: string; sourceUrl: string }>();
 function cacheKey(lang: string, term: string) { return `${lang}::${term.trim().toLowerCase()}`; }
 
-async function searchWikipedia(query: string, lang: string, limit: number) {
+export async function searchWikipedia(query: string, lang: string, limit: number) {
   const key = cacheKey(lang, `${query}::${limit}`);
   const cached = searchCache.get(key);
   if (cached) return cached;

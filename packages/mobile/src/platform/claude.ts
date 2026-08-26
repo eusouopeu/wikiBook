@@ -16,6 +16,10 @@
 
 import { CapacitorHttp } from "@capacitor/core";
 import { getConfigValue } from "./config";
+import { searchWikipedia } from "./wikipedia";
+import type {
+  InterviewAnswer, PathGenerationModel, PathResource, PathStep, PathUnit,
+} from "@lexicon/shared";
 
 const SYSTEM_SUMMARIZE = `
 Você é um assistente especializado em criar resumos acadêmicos concisos.
@@ -152,7 +156,36 @@ function getHeader(headers: Record<string, string> | undefined, name: string): s
   return key ? headers[key] : undefined;
 }
 
-async function callClaude(apiKey: string, systemPrompt: string, userMessage: string, maxTokens = 800): Promise<string> {
+interface CallClaudeOpts {
+  model?: string;
+  maxTokens?: number;
+  thinking?: boolean;
+  thinkingBudgetTokens?: number;
+  tools?: unknown[];
+  toolChoice?: { type: string; name?: string };
+}
+
+// opts aceita número (maxTokens, compatibilidade com as chamadas antigas) ou
+// um objeto — mesma convenção do desktop (ver claudeHandlers.js/callClaude).
+// Quando `tools` é passado, retorna o `input` do bloco tool_use em vez do
+// texto — usado por generatePath (saída estruturada via tool use).
+async function callClaude(
+  apiKey: string, systemPrompt: string, userMessage: string, opts: number | CallClaudeOpts = 800
+): Promise<any> {
+  const o: CallClaudeOpts = typeof opts === "number" ? { maxTokens: opts } : { ...opts };
+  const body: Record<string, unknown> = {
+    model: o.model ?? "claude-haiku-4-5-20251001",
+    max_tokens: o.maxTokens ?? 800,
+    system: systemPrompt,
+    messages: [{ role: "user", content: userMessage }],
+  };
+  if (o.thinking) {
+    body.thinking = { type: "enabled", budget_tokens: o.thinkingBudgetTokens ?? 4000 };
+    if (o.toolChoice?.type === "tool") delete o.toolChoice;
+  }
+  if (o.tools) body.tools = o.tools;
+  if (o.toolChoice) body.tool_choice = o.toolChoice;
+
   const options = {
     url: "https://api.anthropic.com/v1/messages",
     headers: {
@@ -160,12 +193,7 @@ async function callClaude(apiKey: string, systemPrompt: string, userMessage: str
       "anthropic-version": "2023-06-01",
       "content-type": "application/json",
     },
-    data: {
-      model: "claude-haiku-4-5-20251001",
-      max_tokens: maxTokens,
-      system: systemPrompt,
-      messages: [{ role: "user", content: userMessage }],
-    },
+    data: body,
   };
 
   for (let attempt = 0; ; attempt++) {
@@ -180,13 +208,19 @@ async function callClaude(apiKey: string, systemPrompt: string, userMessage: str
 
     if (res.status === 200) {
       const data = typeof res.data === "string" ? JSON.parse(res.data) : res.data;
-      return data.content[0].text.trim();
+      if (o.tools) {
+        const toolUse = (data.content as any[]).find(b => b.type === "tool_use");
+        if (!toolUse) throw new Error("Claude não retornou o bloco de tool use esperado.");
+        return toolUse.input;
+      }
+      const textBlock = (data.content as any[]).find(b => b.type === "text");
+      return (textBlock?.text ?? "").trim();
     }
 
     const canRetry = RETRYABLE_STATUS.has(res.status) && attempt < RETRY_DELAYS_MS.length;
     if (!canRetry) {
-      const body = typeof res.data === "string" ? res.data : JSON.stringify(res.data);
-      throw new Error(`Anthropic API status ${res.status}: ${body}`);
+      const body2 = typeof res.data === "string" ? res.data : JSON.stringify(res.data);
+      throw new Error(`Anthropic API status ${res.status}: ${body2}`);
     }
 
     const retryAfter = Number(getHeader(res.headers, "retry-after"));
@@ -278,4 +312,195 @@ export async function searchRank(
 
   const knownIds = new Set(capped.map(c => c.id));
   return (ids as unknown[]).filter((id): id is string => typeof id === "string" && knownIds.has(id));
+}
+
+// ── Trilhas de aprendizado ───────────────────────────────────────────────────
+// Porta de packages/desktop/src/main/handlers/pathHandlers.js.
+const SYSTEM_CONSOLIDATE = `
+Você é um assistente que resume uma entrevista de nivelamento de aprendizado.
+Dado um objetivo de aprendizado e uma lista de perguntas/respostas, produza um
+perfil curto em português brasileiro, em 4 a 6 frases corridas (sem bullets),
+cobrindo: nível de experiência atual, meta concreta, tempo disponível por
+semana, recursos/condições disponíveis, formato preferido e possíveis
+obstáculos. Seja direto e específico — este perfil vai guiar a geração de uma
+trilha de estudo estruturada.
+Responda APENAS com o perfil, sem título, sem introdução.
+`.trim();
+
+const SYSTEM_GENERATE_PATH = `
+Você é um planejador de currículo especializado em criar trilhas de
+aprendizado estruturadas, no estilo de um app de ensino gamificado (como
+Duolingo): uma sequência ordenada de passos pequenos e concretos, do
+básico ao avançado, cada um construindo sobre o anterior.
+
+Dado um objetivo de aprendizado e um perfil do estudante, gere a trilha
+completa via a ferramenta fornecida. Regras:
+- Entre 4 e 8 unidades (agrupamentos temáticos), em ordem crescente de dificuldade
+- Cada unidade com 3 a 6 passos
+- Cada passo deve ser uma ação concreta e pequena (não "aprender teoria musical"
+  inteira de uma vez, mas "reconhecer as notas na primeira corda")
+- "objective": 1 frase do que o estudante SABE FAZER ao concluir o passo
+- "practice": 1 a 3 frases de exercício prático concreto para fixar o passo
+  (não apenas "leia sobre X" — algo que o estudante faça)
+- "estimatedMinutes": estimativa realista de tempo para completar o passo
+- Para "resources", cada passo deve ter 1 a 3 recursos:
+  - kind "wikipedia": quando o passo se beneficia de uma explicação
+    enciclopédica de um conceito (definições, contexto, teoria) — "query" é o
+    termo de busca na Wikipedia em português
+  - kind "video-search": quando o passo se beneficia de demonstração visual
+    (postura, movimento, pronúncia, técnica) — "query" é a consulta que
+    encontraria o vídeo ideal, não invente um título de vídeo específico
+  - Ajuste a proporção ao domínio: temas físicos/práticos pedem mais
+    "video-search"; temas conceituais pedem mais "wikipedia"
+- Leve o perfil do estudante em conta: nível inicial, tempo disponível,
+  formato preferido e obstáculos relatados
+- Todo texto em português brasileiro
+`.trim();
+
+const GENERATE_PATH_TOOL = {
+  name: "emit_learning_path",
+  description: "Emite a trilha de aprendizado estruturada.",
+  input_schema: {
+    type: "object",
+    properties: {
+      units: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            title: { type: "string" },
+            steps: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  title: { type: "string" },
+                  objective: { type: "string" },
+                  estimatedMinutes: { type: "integer" },
+                  practice: { type: "string" },
+                  resources: {
+                    type: "array",
+                    items: {
+                      type: "object",
+                      properties: {
+                        kind: { type: "string", enum: ["wikipedia", "video-search"] },
+                        title: { type: "string" },
+                        query: { type: "string" },
+                      },
+                      required: ["kind", "title", "query"],
+                    },
+                  },
+                },
+                required: ["title", "objective", "estimatedMinutes", "practice", "resources"],
+              },
+            },
+          },
+          required: ["title", "steps"],
+        },
+      },
+    },
+    required: ["units"],
+  },
+};
+
+const MODEL_CATALOG: Record<PathGenerationModel, {
+  apiModel: string; thinking: boolean; thinkingBudgetTokens?: number; maxTokens: number;
+}> = {
+  "sonnet-standard": { apiModel: "claude-sonnet-5", thinking: false, maxTokens: 8000 },
+  "sonnet-thinking": { apiModel: "claude-sonnet-5", thinking: true, thinkingBudgetTokens: 6000, maxTokens: 10000 },
+  "opus-standard": { apiModel: "claude-opus-5", thinking: false, maxTokens: 8000 },
+};
+
+export async function consolidateProfile(goal: string, answers: InterviewAnswer[]): Promise<string> {
+  const apiKey = await getConfigValue("anthropicApiKey");
+  if (!apiKey) throw new Error("API key da Anthropic não configurada.");
+  const qa = answers.map(a => `P: ${a.question}\nR: ${a.answer}`).join("\n\n");
+  const userMsg = `Objetivo: ${goal}\n\n${qa}`;
+  return callClaude(apiKey, SYSTEM_CONSOLIDATE, userMsg, 500);
+}
+
+function videoSearchEngines(query: string) {
+  const q = encodeURIComponent(query);
+  return [
+    { label: "YouTube", url: `https://www.youtube.com/results?search_query=${q}` },
+    { label: "DuckDuckGo (vídeos)", url: `https://duckduckgo.com/?q=${q}&iax=videos&ia=videos` },
+    { label: "Google (vídeos)", url: `https://www.google.com/search?q=${q}&tbm=vid` },
+  ];
+}
+
+async function resolveWikipediaResource(query: string, lang: string) {
+  try {
+    const results = await searchWikipedia(query, lang, 1);
+    if (results.length > 0) {
+      const title = results[0].title;
+      return {
+        title,
+        url: `https://${lang}.wikipedia.org/wiki/${encodeURIComponent(title.replace(/ /g, "_"))}`,
+        verified: true,
+      };
+    }
+  } catch {
+    // segue para o fallback de busca
+  }
+  return {
+    title: `Buscar "${query}" na Wikipédia`,
+    url: `https://${lang}.wikipedia.org/w/index.php?search=${encodeURIComponent(query)}`,
+    verified: true,
+  };
+}
+
+async function materializeResources(rawResources: any[], lang: string): Promise<PathResource[]> {
+  const out: PathResource[] = [];
+  for (const r of rawResources ?? []) {
+    if (r.kind === "wikipedia") {
+      const resolved = await resolveWikipediaResource(r.query, lang);
+      out.push({
+        id: crypto.randomUUID(), kind: "wikipedia",
+        title: resolved.title, url: resolved.url, query: r.query, verified: resolved.verified,
+      });
+    } else {
+      out.push({
+        id: crypto.randomUUID(), kind: "video-search",
+        title: r.title, query: r.query, verified: true, engines: videoSearchEngines(r.query),
+      });
+    }
+  }
+  return out;
+}
+
+async function materializeUnits(rawUnits: any[], lang: string): Promise<PathUnit[]> {
+  const units: PathUnit[] = [];
+  let previousStepId: string | null = null;
+  for (const rawUnit of rawUnits) {
+    const steps: PathStep[] = [];
+    let order = units.reduce((acc, u) => acc + u.steps.length, 0);
+    for (const rawStep of rawUnit.steps ?? []) {
+      const stepId = crypto.randomUUID();
+      const resources = await materializeResources(rawStep.resources, lang);
+      steps.push({
+        id: stepId, order: order++, title: rawStep.title, objective: rawStep.objective,
+        estimatedMinutes: Number(rawStep.estimatedMinutes) || 15, practice: rawStep.practice,
+        prerequisiteIds: previousStepId ? [previousStepId] : [],
+        resources, status: previousStepId ? "locked" : "available",
+      });
+      previousStepId = stepId;
+    }
+    units.push({ id: crypto.randomUUID(), title: rawUnit.title, steps });
+  }
+  return units;
+}
+
+export async function generatePath(
+  goal: string, profileSummary: string, model: PathGenerationModel, lang = "pt"
+): Promise<PathUnit[]> {
+  const apiKey = await getConfigValue("anthropicApiKey");
+  if (!apiKey) throw new Error("API key da Anthropic não configurada.");
+  const m = MODEL_CATALOG[model] ?? MODEL_CATALOG["sonnet-standard"];
+  const userMsg = `Objetivo de aprendizado: ${goal}\n\nPerfil do estudante:\n${profileSummary}`;
+  const result = await callClaude(apiKey, SYSTEM_GENERATE_PATH, userMsg, {
+    model: m.apiModel, maxTokens: m.maxTokens, thinking: m.thinking,
+    thinkingBudgetTokens: m.thinkingBudgetTokens,
+    tools: [GENERATE_PATH_TOOL], toolChoice: { type: "tool", name: "emit_learning_path" },
+  });
+  return materializeUnits(result.units ?? [], lang);
 }

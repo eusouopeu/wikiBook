@@ -3,7 +3,7 @@
 // Processo principal do Electron
 // ─────────────────────────────────────────────────────────────────────────────
 
-const { app, BrowserWindow, ipcMain, nativeTheme, dialog } = require("electron");
+const { app, BrowserWindow, ipcMain, nativeTheme, dialog, shell } = require("electron");
 const path = require("path");
 
 const { createArticleHandlers } = require("./handlers/articleHandlers");
@@ -12,6 +12,7 @@ const { createClaudeHandlers } = require("./handlers/claudeHandlers");
 const { createConfigHandlers, getConfig } = require("./handlers/configHandlers");
 const { createFlashcardHandlers } = require("./handlers/flashcardHandlers");
 const { createSyncHandlers } = require("./handlers/syncHandlers");
+const { createPathHandlers } = require("./handlers/pathHandlers");
 
 let mainWindow = null;
 
@@ -71,6 +72,28 @@ app.whenReady().then(() => {
   });
   createFlashcardHandlers(ipcMain);
   createSyncHandlers(ipcMain);
+  createPathHandlers(ipcMain);
+
+  // browser:open { url, internal? } — usado pelos recursos de vídeo da
+  // trilha de aprendizado (não há API do YouTube integrada ainda: são links
+  // de busca, não vídeos específicos). internal=true abre uma janela Chromium
+  // própria do app (não depende do navegador padrão do SO); internal=false
+  // (ou ausente) abre no navegador externo do usuário.
+  ipcMain.handle("browser:open", (_evt, { url, internal = true } = {}) => {
+    if (!url || !/^https:\/\//.test(url)) return { ok: false, error: "URL inválida." };
+    if (!internal) {
+      shell.openExternal(url);
+      return { ok: true };
+    }
+    const win = new BrowserWindow({
+      width: 900,
+      height: 700,
+      title: "Buscar vídeo",
+      webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
+    });
+    win.loadURL(url);
+    return { ok: true };
+  });
 
   // Confirmação nativa cross-platform (ver packages/shared/lib/confirmDialog.ts)
   // — usada por componentes compartilhados com o mobile, onde window.confirm()

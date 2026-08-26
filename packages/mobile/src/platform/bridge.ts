@@ -15,6 +15,7 @@ import * as claude from "./claude";
 import * as flashcards from "./flashcards";
 import * as exporter from "./export";
 import * as sync from "./sync";
+import * as paths from "./paths";
 
 interface IpcResponse<T = unknown> { ok: boolean; data?: T; error?: string; }
 
@@ -142,6 +143,27 @@ async function invoke(channel: string, payload?: any): Promise<IpcResponse> {
         return { ok: true, data: await exporter.exportMarkdown() };
       case "article:exportFlashcardsCsv":
         return { ok: true, data: await exporter.exportFlashcardsCsv() };
+
+      case "path:list":
+        return { ok: true, data: await paths.listPaths() };
+      case "path:get":
+        return { ok: true, data: await paths.getPath(payload.id) };
+      case "path:save":
+        return { ok: true, data: await paths.savePath(payload.path) };
+      case "path:delete":
+        await paths.deletePath(payload.id);
+        return { ok: true };
+      case "path:consolidateProfile":
+        return { ok: true, data: { profileSummary: await claude.consolidateProfile(payload.goal, payload.answers ?? []) } };
+      case "path:generate":
+        return { ok: true, data: { units: await claude.generatePath(payload.goal, payload.profileSummary, payload.model, payload.lang ?? "pt") } };
+
+      // Sem BrowserWindow própria no mobile — abre no navegador do sistema.
+      // Os recursos de vídeo da trilha são links de busca (sem API do
+      // YouTube integrada), então qualquer navegador serve.
+      case "browser:open":
+        window.open(payload.url, "_blank", "noopener,noreferrer");
+        return { ok: true };
 
       default:
         return { ok: false, error: `Canal "${channel}" ainda não implementado no mobile.` };

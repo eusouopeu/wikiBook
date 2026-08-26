@@ -8,6 +8,7 @@ import { useStore, computeLocalSubgraph } from "./store/useStore";
 import type { Article, Flashcard, FlashcardGrade } from "./shared/types";
 import { GraphView } from "./components/GraphView";
 import { ArticleView, ReviewModal } from "./components/ArticleView";
+import { PathView } from "./components/PathView";
 import { FolderPicker } from "./components/FolderPicker";
 import { LogoMark } from "./components/LogoMark";
 import { MiniGraphPreview } from "./components/MiniGraphPreview";
@@ -994,6 +995,12 @@ export default function App() {
           >
             Grafo
           </button>
+          <button
+            className={view === "path" ? "tab active" : "tab"}
+            onClick={() => setView("path")}
+          >
+            Trilha
+          </button>
           {view === "graph" && (
             <>
               <div className="graph-scope-toggle">
@@ -1027,7 +1034,7 @@ export default function App() {
                     + Novo artigo
                   </button>
                 </div>
-          ) : (
+          ) : view === "graph" ? (
             <div className="graph-container">
               {displayedGraph.nodes.length > 0 ? (
                 <>
@@ -1048,6 +1055,8 @@ export default function App() {
                 </div>
               )}
             </div>
+          ) : (
+            <PathView />
           )}
         </div>
       </main>

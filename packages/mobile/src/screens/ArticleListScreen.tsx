@@ -26,9 +26,10 @@ interface Props {
   onNewArticle: () => void;
   onSettings: () => void;
   onOpenGraph: () => void;
+  onOpenPath: () => void;
 }
 
-export function ArticleListScreen({ onOpenArticle, onNewArticle, onSettings, onOpenGraph }: Props) {
+export function ArticleListScreen({ onOpenArticle, onNewArticle, onSettings, onOpenGraph, onOpenPath }: Props) {
   const {
     articles, activeArticleId, loadArticles,
     searchQuery, setSearchQuery, selectedTags, toggleSelectedTag, showToast,
@@ -212,6 +213,7 @@ export function ArticleListScreen({ onOpenArticle, onNewArticle, onSettings, onO
             {listDensity === "compact" ? "☰" : "▤"}
           </button>
           <button className="mobile-icon-btn" title="Grafo" aria-label="Abrir grafo" onClick={onOpenGraph}>🕸</button>
+          <button className="mobile-icon-btn" title="Trilha" aria-label="Abrir trilhas de aprendizado" onClick={onOpenPath}>🧭</button>
           <button className="mobile-icon-btn" title="Configurações" aria-label="Configurações" onClick={onSettings}>⚙</button>
         </div>
       </header>

@@ -37,7 +37,29 @@ function httpsPost(hostname, path, headers, body) {
   });
 }
 
-async function callClaude(apiKey, systemPrompt, userMessage, maxTokens = 800) {
+// opts (4º argumento) aceita tanto um número (maxTokens, compatibilidade com
+// as chamadas antigas — sempre no modelo padrão claude-haiku-4-5, sem
+// pensamento estendido) quanto um objeto { model, maxTokens, thinking,
+// thinkingBudgetTokens, tools, toolChoice } — usado pela geração de trilha
+// (path:generate), que precisa escolher modelo/pensamento e forçar saída
+// estruturada via tool use.
+async function callClaude(apiKey, systemPrompt, userMessage, opts = 800) {
+  const o = typeof opts === "number" ? { maxTokens: opts } : opts;
+  const body = {
+    model: o.model ?? "claude-haiku-4-5-20251001",
+    max_tokens: o.maxTokens ?? 800,
+    system: systemPrompt,
+    messages: [{ role: "user", content: userMessage }],
+  };
+  if (o.thinking) {
+    body.thinking = { type: "enabled", budget_tokens: o.thinkingBudgetTokens ?? 4000 };
+    // Extended thinking exige temperatura padrão (1) e não é compatível com
+    // forçar uma tool específica — só "auto" ou "any" continuam válidos.
+    if (o.toolChoice?.type === "tool") delete o.toolChoice;
+  }
+  if (o.tools) body.tools = o.tools;
+  if (o.toolChoice) body.tool_choice = o.toolChoice;
+
   const requestArgs = [
     "api.anthropic.com",
     "/v1/messages",
@@ -46,12 +68,7 @@ async function callClaude(apiKey, systemPrompt, userMessage, maxTokens = 800) {
       "anthropic-version": "2023-06-01",
       "content-type": "application/json",
     },
-    {
-      model: "claude-haiku-4-5-20251001",
-      max_tokens: maxTokens,
-      system: systemPrompt,
-      messages: [{ role: "user", content: userMessage }],
-    },
+    body,
   ];
 
   for (let attempt = 0; ; attempt++) {
@@ -66,7 +83,13 @@ async function callClaude(apiKey, systemPrompt, userMessage, maxTokens = 800) {
 
     if (res.status === 200) {
       const data = JSON.parse(res.body);
-      return data.content[0].text.trim();
+      if (o.tools) {
+        const toolUse = data.content.find(b => b.type === "tool_use");
+        if (!toolUse) throw new Error("Claude não retornou o bloco de tool use esperado.");
+        return toolUse.input;
+      }
+      const textBlock = data.content.find(b => b.type === "text");
+      return (textBlock?.text ?? "").trim();
     }
 
     const canRetry = RETRYABLE_STATUS.has(res.status) && attempt < RETRY_DELAYS_MS.length;
@@ -348,4 +371,4 @@ function createClaudeHandlers(ipcMain) {
   });
 }
 
-module.exports = { createClaudeHandlers };
+module.exports = { createClaudeHandlers, callClaude };

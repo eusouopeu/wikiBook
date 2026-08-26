@@ -4,7 +4,10 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { create } from "zustand";
-import type { Article, ArticleLink, ExcerptOutlineItem, Folder, GraphNode, GraphEdge } from "../shared/types";
+import type {
+  Article, ArticleLink, ExcerptOutlineItem, Folder, GraphNode, GraphEdge,
+  LearningPath, InterviewAnswer, PathGenerationModel, PathUnit,
+} from "../shared/types";
 
 // Tipo do bridge exposto pelo preload
 declare global {
@@ -44,7 +47,11 @@ interface AppState {
   loadingArticle: boolean;
 
   // ── Modo de visualização ──────────────────────────────────────────────────
-  view: "article" | "graph";
+  view: "article" | "graph" | "path";
+
+  // ── Trilhas de aprendizado ───────────────────────────────────────────────
+  paths: LearningPath[];
+  activePathId: string | null;
 
   // ── Grafo ─────────────────────────────────────────────────────────────────
   graphNodes: GraphNode[];
@@ -117,7 +124,16 @@ interface AppState {
   addLink: (parentId: string, anchorText: string, targetId: string, targetTitle: string) => Promise<void>;
   removeLink: (parentId: string, linkId: string) => Promise<void>;
 
-  setView: (v: "article" | "graph") => void;
+  setView: (v: "article" | "graph" | "path") => void;
+
+  // ── Trilhas de aprendizado ───────────────────────────────────────────────
+  loadPaths: () => Promise<void>;
+  openPath: (id: string) => void;
+  savePathRecord: (partial: Partial<LearningPath> & { goal: string }) => Promise<LearningPath>;
+  deletePathRecord: (id: string) => Promise<void>;
+  consolidateProfile: (goal: string, answers: InterviewAnswer[]) => Promise<string>;
+  generatePathUnits: (goal: string, profileSummary: string, model: PathGenerationModel) => Promise<PathUnit[]>;
+  completeStep: (pathId: string, stepId: string) => Promise<void>;
   setSearchQuery: (q: string) => void;
   setSearchOpen: (open: boolean) => void;
   setWikipediaLang: (lang: string) => Promise<void>;
@@ -269,6 +285,8 @@ export const useStore = create<AppState>((set, get) => ({
   activeArticleId: null,
   loadingArticle: false,
   view: "article",
+  paths: [],
+  activePathId: null,
   graphNodes: [],
   graphEdges: [],
   searchQuery: "",
@@ -321,6 +339,7 @@ export const useStore = create<AppState>((set, get) => ({
       if (onboardingSeen === "true") set({ onboardingSeen: true });
     } catch { /* mantém o padrão false */ }
     await get().loadFolders();
+    try { await get().loadPaths(); } catch { /* trilhas ficam vazias se falhar */ }
   },
 
   // ── openArticle ─────────────────────────────────────────────────────────────
@@ -479,6 +498,58 @@ export const useStore = create<AppState>((set, get) => ({
       const { nodes, edges } = computeGraphData(articles);
       return { articles, graphNodes: nodes, graphEdges: edges };
     });
+  },
+
+  // ── Trilhas de aprendizado ────────────────────────────────────────────────
+  loadPaths: async () => {
+    const paths = await ipc<LearningPath[]>("path:list");
+    set({ paths });
+  },
+  openPath: (id) => set({ activePathId: id, view: "path" }),
+  savePathRecord: async (partial) => {
+    const saved = await ipc<LearningPath>("path:save", { path: partial });
+    set(s => {
+      const exists = s.paths.find(p => p.id === saved.id);
+      const paths = exists ? s.paths.map(p => p.id === saved.id ? saved : p) : [saved, ...s.paths];
+      return { paths, activePathId: saved.id };
+    });
+    return saved;
+  },
+  deletePathRecord: async (id) => {
+    await ipc("path:delete", { id });
+    set(s => ({
+      paths: s.paths.filter(p => p.id !== id),
+      activePathId: s.activePathId === id ? null : s.activePathId,
+    }));
+  },
+  consolidateProfile: async (goal, answers) => {
+    const r = await ipc<{ profileSummary: string }>("path:consolidateProfile", { goal, answers });
+    return r.profileSummary;
+  },
+  generatePathUnits: async (goal, profileSummary, model) => {
+    const r = await ipc<{ units: PathUnit[] }>("path:generate", { goal, profileSummary, model });
+    return r.units;
+  },
+  completeStep: async (pathId, stepId) => {
+    const learningPath = get().paths.find(p => p.id === pathId);
+    if (!learningPath) return;
+    const now = new Date().toISOString();
+    const doneIds = new Set<string>();
+    for (const unit of learningPath.units) {
+      for (const step of unit.steps) {
+        if (step.status === "done" || step.id === stepId) doneIds.add(step.id);
+      }
+    }
+    const units = learningPath.units.map(unit => ({
+      ...unit,
+      steps: unit.steps.map(step => {
+        if (step.id === stepId) return { ...step, status: "done" as const, completedAt: now };
+        if (step.status === "done") return step;
+        const unlocked = step.prerequisiteIds.every(id => doneIds.has(id));
+        return unlocked ? { ...step, status: "available" as const } : step;
+      }),
+    }));
+    await get().savePathRecord({ ...learningPath, units });
   },
 
   // ── UI actions ──────────────────────────────────────────────────────────────

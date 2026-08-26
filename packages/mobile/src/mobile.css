@@ -245,3 +245,27 @@
 .mobile-graph-screen .graph-container {
   padding: 0 8px 16px;
 }
+
+/* ── Tela de trilha (PathView de @lexicon/shared, reaproveitado) ───────────── */
+
+.mobile-path-screen {
+  height: 100vh;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+}
+
+.mobile-path-screen .path-list-screen,
+.mobile-path-screen .path-wizard,
+.mobile-path-screen .path-detail-screen {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* Alvos de toque maiores para dedo — mesma ideia do grafo mobile acima. */
+.mobile-path-screen .path-model-pill,
+.mobile-path-screen .path-wizard-choice,
+.mobile-path-screen .path-step-node {
+  min-height: 44px;
+}

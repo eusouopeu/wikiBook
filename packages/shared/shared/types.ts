@@ -142,6 +142,83 @@ export interface Flashcard {
   lapses: number;
 }
 
+// ── Trilhas de aprendizado (percurso guiado estilo Duolingo) ────────────────
+// Uma LearningPath é gerada a partir de um objetivo em linguagem natural
+// ("quero aprender violão") + um perfil consolidado a partir de uma
+// entrevista de nivelamento (roteiro fixo de perguntas + 1 chamada de
+// consolidação ao Claude). Persistida como arquivo próprio (um JSON por
+// trilha), igual aos artigos — não reaproveita Article/ArticleLink porque
+// passo de trilha tem ordem, pré-requisito e estado de conclusão, coisas que
+// não existem no hipertexto do grafo.
+export type PathResourceKind = "wikipedia" | "video-search" | "external";
+
+// Para vídeo, o Claude não tem acesso a URLs reais do YouTube — inventar uma
+// teria taxa de acerto ~0. Em vez de um link específico, geramos consultas de
+// busca e vários pontos de entrada determinísticos (não dependem de API paga
+// do YouTube): a própria página de busca do YouTube, um buscador alternativo
+// de vídeos, e a mesma URL do YouTube pode ser interceptada pelo NewPipe no
+// Android caso o usuário o tenha configurado como app padrão para links do
+// YouTube — por isso não é um esquema de URI próprio, é a URL comum.
+export interface VideoSearchEngine {
+  label: string;
+  url: string;
+}
+
+export interface PathResource {
+  id: string;
+  kind: PathResourceKind;
+  title: string;
+  // wikipedia: URL do artigo já resolvido (verified indica se a busca achou
+  // um artigo real); video-search: query usada; external: url informativa
+  url?: string;
+  query?: string;
+  verified: boolean;
+  engines?: VideoSearchEngine[];
+}
+
+export type PathStepStatus = "locked" | "available" | "done";
+
+export interface PathStep {
+  id: string;
+  order: number;
+  title: string;
+  objective: string;
+  estimatedMinutes: number;
+  practice: string;
+  prerequisiteIds: string[];
+  resources: PathResource[];
+  status: PathStepStatus;
+  completedAt?: string;
+  articleId?: string;
+}
+
+export interface PathUnit {
+  id: string;
+  title: string;
+  steps: PathStep[];
+}
+
+// Resposta bruta de uma pergunta do roteiro fixo de entrevista — ver
+// packages/shared/lib/interviewScript.ts
+export interface InterviewAnswer {
+  questionId: string;
+  question: string;
+  answer: string;
+}
+
+export type PathGenerationModel = "sonnet-standard" | "sonnet-thinking" | "opus-standard";
+
+export interface LearningPath {
+  id: string;
+  goal: string;
+  interviewAnswers: InterviewAnswer[];
+  profileSummary: string;
+  model: PathGenerationModel;
+  units: PathUnit[];
+  createdAt: string;
+  updatedAt: string;
+}
+
 export type IpcChannel =
   | "article:list"
   | "article:get"
@@ -177,7 +254,14 @@ export type IpcChannel =
   | "config:get"
   | "config:set"
   | "sync:test"
-  | "sync:run";
+  | "sync:run"
+  | "path:list"
+  | "path:get"
+  | "path:save"
+  | "path:delete"
+  | "path:consolidateProfile"
+  | "path:generate"
+  | "browser:open";
 
 export interface IpcRequest<T = unknown> { channel: IpcChannel; payload?: T; }
 export interface IpcResponse<T = unknown> { ok: boolean; data?: T; error?: string; }
