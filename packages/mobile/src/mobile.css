@@ -258,6 +258,7 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  padding-top: calc(env(safe-area-inset-top) + 12px);
 }
 
 /* Alvos de toque maiores para dedo — mesma ideia do grafo mobile acima. */

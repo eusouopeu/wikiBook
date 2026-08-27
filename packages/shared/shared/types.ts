@@ -160,16 +160,20 @@ export interface Flashcard {
 // trilha), igual aos artigos — não reaproveita Article/ArticleLink porque
 // passo de trilha tem ordem, pré-requisito e estado de conclusão, coisas que
 // não existem no hipertexto do grafo.
-export type PathResourceKind = "wikipedia" | "video-search" | "external";
+export type PathResourceKind = "wikipedia" | "video-search" | "image-search" | "external";
 
-// Para vídeo, o Claude não tem acesso a URLs reais do YouTube — inventar uma
-// teria taxa de acerto ~0. Em vez de um link específico, geramos consultas de
-// busca e vários pontos de entrada determinísticos (não dependem de API paga
-// do YouTube): a própria página de busca do YouTube, um buscador alternativo
-// de vídeos, e a mesma URL do YouTube pode ser interceptada pelo NewPipe no
-// Android caso o usuário o tenha configurado como app padrão para links do
-// YouTube — por isso não é um esquema de URI próprio, é a URL comum.
-export interface VideoSearchEngine {
+// Para vídeo/imagem, o Claude não tem acesso a URLs reais de um pin do
+// Pinterest ou vídeo do YouTube — inventar uma teria taxa de acerto ~0, e
+// nenhum dos dois oferece busca de conteúdo alheio sem credencial própria de
+// app registrado (Pinterest exige OAuth + review de app; não dá pra embutir
+// num app pessoal sem pedir ao usuário para criar e colar sua própria
+// credencial). Em vez de um link específico, geramos consultas de busca e
+// vários pontos de entrada determinísticos, sem chave nenhuma: a própria
+// página de busca do serviço, mais alternativas. A mesma URL do YouTube pode
+// ainda ser interceptada pelo NewPipe no Android caso o usuário o tenha
+// configurado como app padrão para links do YouTube — por isso não é um
+// esquema de URI próprio, é a URL comum.
+export interface SearchEngineLink {
   label: string;
   url: string;
 }
@@ -179,11 +183,12 @@ export interface PathResource {
   kind: PathResourceKind;
   title: string;
   // wikipedia: URL do artigo já resolvido (verified indica se a busca achou
-  // um artigo real); video-search: query usada; external: url informativa
+  // um artigo real); video-search/image-search: query usada; external: url
+  // informativa
   url?: string;
   query?: string;
   verified: boolean;
-  engines?: VideoSearchEngine[];
+  engines?: SearchEngineLink[];
   // wikipedia: id do artigo importado para a pasta da trilha (ver
   // useStore.importPathArticles) — quando presente, o recurso abre dentro do
   // app em vez do navegador externo.

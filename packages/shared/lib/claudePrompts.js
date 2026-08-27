@@ -133,6 +133,119 @@ const PATH_MODELS = {
   "opus-standard": { apiModel: "claude-opus-5", thinking: false, maxTokens: 8000 },
 };
 
+// ── Geração de trilha (ver path:generate / PathGenerationModel) ────────────
+// Antes duplicado byte a byte entre pathHandlers.js (desktop) e claude.ts
+// (mobile) — só o texto/schema do prompt e os geradores de link de busca,
+// que não têm razão pra divergir; a parte que resta em cada shell
+// (resolveWikipediaResource, materializeResources/Units) depende de
+// searchWikipedia, que é específica de plataforma (Node https vs.
+// CapacitorHttp).
+const SYSTEM_GENERATE_PATH = `
+Você é um planejador de currículo especializado em criar trilhas de
+aprendizado estruturadas, no estilo de um app de ensino gamificado (como
+Duolingo): uma sequência ordenada de passos pequenos e concretos, do
+básico ao avançado, cada um construindo sobre o anterior.
+
+Dado um objetivo de aprendizado e um perfil do estudante, gere a trilha
+completa via a ferramenta fornecida. Regras:
+- Entre 4 e 8 unidades (agrupamentos temáticos), em ordem crescente de dificuldade
+- Cada unidade com 3 a 6 passos
+- Cada passo deve ser uma ação concreta e pequena (não "aprender teoria musical"
+  inteira de uma vez, mas "reconhecer as notas na primeira corda")
+- "objective": 1 frase do que o estudante SABE FAZER ao concluir o passo
+- "practice": 1 a 3 frases de exercício prático concreto para fixar o passo
+  (não apenas "leia sobre X" — algo que o estudante faça)
+- "estimatedMinutes": estimativa realista de tempo para completar o passo
+- Para "resources", cada passo deve ter 1 a 3 recursos:
+  - kind "wikipedia": quando o passo se beneficia de uma explicação
+    enciclopédica de um conceito (definições, contexto, teoria) — "query" é o
+    termo de busca na Wikipedia em português
+  - kind "video-search": quando o passo se beneficia de demonstração visual
+    em movimento (postura, movimento, pronúncia, técnica) — "query" é a
+    consulta que encontraria o vídeo ideal, não invente um título de vídeo
+    específico
+  - kind "image-search": quando o passo se beneficia de uma referência
+    visual estática rápida de consulta — mapa mental, cheatsheet, diagrama,
+    tabela-resumo — "query" é a busca que encontraria esse material (ex.:
+    "cheatsheet acordes violão iniciante", "mapa mental fotossíntese")
+  - Ajuste a proporção ao domínio: temas físicos/práticos (instrumento,
+    exercício físico, pronúncia) pedem mais "video-search"; temas
+    conceituais ou que envolvam memorização de estrutura/vocabulário pedem
+    mais "image-search"/"wikipedia"
+- Leve o perfil do estudante em conta: nível inicial, tempo disponível
+  (ajuste a duração/quantidade de passos), formato preferido e obstáculos
+  relatados
+- Todo texto em português brasileiro
+`.trim();
+
+const GENERATE_PATH_TOOL = {
+  name: "emit_learning_path",
+  description: "Emite a trilha de aprendizado estruturada.",
+  input_schema: {
+    type: "object",
+    properties: {
+      units: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            title: { type: "string" },
+            steps: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  title: { type: "string" },
+                  objective: { type: "string" },
+                  estimatedMinutes: { type: "integer" },
+                  practice: { type: "string" },
+                  resources: {
+                    type: "array",
+                    items: {
+                      type: "object",
+                      properties: {
+                        kind: { type: "string", enum: ["wikipedia", "video-search", "image-search"] },
+                        title: { type: "string" },
+                        query: { type: "string" },
+                      },
+                      required: ["kind", "title", "query"],
+                    },
+                  },
+                },
+                required: ["title", "objective", "estimatedMinutes", "practice", "resources"],
+              },
+            },
+          },
+          required: ["title", "steps"],
+        },
+      },
+    },
+    required: ["units"],
+  },
+};
+
+// Sem API de terceiro (Pinterest exige app registrado + review para buscar
+// pins fora da conta do próprio usuário — não dá pra embutir num app pessoal
+// sem credencial própria do usuário). Mesma estratégia do vídeo: pontos de
+// entrada de busca determinísticos, sem chave nenhuma.
+function videoSearchEngines(query) {
+  const q = encodeURIComponent(query);
+  return [
+    { label: "YouTube", url: `https://www.youtube.com/results?search_query=${q}` },
+    { label: "DuckDuckGo (vídeos)", url: `https://duckduckgo.com/?q=${q}&iax=videos&ia=videos` },
+    { label: "Google (vídeos)", url: `https://www.google.com/search?q=${q}&tbm=vid` },
+  ];
+}
+
+function imageSearchEngines(query) {
+  const q = encodeURIComponent(query);
+  return [
+    { label: "Pinterest", url: `https://www.pinterest.com/search/pins/?q=${q}` },
+    { label: "Google Imagens", url: `https://www.google.com/search?q=${q}&tbm=isch` },
+    { label: "DuckDuckGo (imagens)", url: `https://duckduckgo.com/?q=${q}&iax=images&ia=images` },
+  ];
+}
+
 module.exports = {
   SYSTEM_SUMMARIZE,
   SYSTEM_ASK,
@@ -140,4 +253,8 @@ module.exports = {
   GENERATE_TEMPLATES,
   resolveGenerateTemplate,
   PATH_MODELS,
+  SYSTEM_GENERATE_PATH,
+  GENERATE_PATH_TOOL,
+  videoSearchEngines,
+  imageSearchEngines,
 };

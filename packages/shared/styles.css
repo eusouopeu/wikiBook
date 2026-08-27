@@ -654,6 +654,7 @@ html, body, #root {
   font-weight: 700;
   margin: 0;
   padding: 0;
+  text-align: left;
 }
 .wiki-content .wiki-accordion-body { padding-top: 0.2em; }
 
@@ -682,6 +683,7 @@ html, body, #root {
   font-weight: 700;
   margin: 0;
   padding: 0;
+  text-align: left;
 }
 .wiki-content .wiki-toggle-body {
   border-left: 2px solid var(--border-light);

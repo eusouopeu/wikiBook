@@ -270,7 +270,9 @@ const StepPanel: React.FC<{ step: PathStep; pathId: string; onClose: () => void;
                     </button>
                   ) : (
                     <div className="resource-video">
-                      <span className="resource-video-label"><Icon name="video" /><span>{r.title}</span></span>
+                      <span className="resource-video-label">
+                        <Icon name={r.kind === "image-search" ? "image" : "video"} /><span>{r.title}</span>
+                      </span>
                       <div className="resource-video-engines">
                         {r.engines?.map(eng => (
                           <button key={eng.label} className="resource-engine-btn" onClick={() => openResourceLink(eng.url)}>

@@ -24,6 +24,7 @@ import type {
 // ver o comentário daquele arquivo para o porquê de ser .js/CommonJS.
 import {
   SYSTEM_SUMMARIZE, SYSTEM_ASK, GENERATE_TEMPLATES, resolveGenerateTemplate, PATH_MODELS,
+  SYSTEM_GENERATE_PATH, GENERATE_PATH_TOOL, videoSearchEngines, imageSearchEngines,
 } from "@lexicon/shared/lib/claudePrompts.js";
 
 // Retry com backoff exponencial só para falhas transitórias (rate limit, erro
@@ -188,81 +189,10 @@ trilha de estudo estruturada.
 Responda APENAS com o perfil, sem título, sem introdução.
 `.trim();
 
-const SYSTEM_GENERATE_PATH = `
-Você é um planejador de currículo especializado em criar trilhas de
-aprendizado estruturadas, no estilo de um app de ensino gamificado (como
-Duolingo): uma sequência ordenada de passos pequenos e concretos, do
-básico ao avançado, cada um construindo sobre o anterior.
-
-Dado um objetivo de aprendizado e um perfil do estudante, gere a trilha
-completa via a ferramenta fornecida. Regras:
-- Entre 4 e 8 unidades (agrupamentos temáticos), em ordem crescente de dificuldade
-- Cada unidade com 3 a 6 passos
-- Cada passo deve ser uma ação concreta e pequena (não "aprender teoria musical"
-  inteira de uma vez, mas "reconhecer as notas na primeira corda")
-- "objective": 1 frase do que o estudante SABE FAZER ao concluir o passo
-- "practice": 1 a 3 frases de exercício prático concreto para fixar o passo
-  (não apenas "leia sobre X" — algo que o estudante faça)
-- "estimatedMinutes": estimativa realista de tempo para completar o passo
-- Para "resources", cada passo deve ter 1 a 3 recursos:
-  - kind "wikipedia": quando o passo se beneficia de uma explicação
-    enciclopédica de um conceito (definições, contexto, teoria) — "query" é o
-    termo de busca na Wikipedia em português
-  - kind "video-search": quando o passo se beneficia de demonstração visual
-    (postura, movimento, pronúncia, técnica) — "query" é a consulta que
-    encontraria o vídeo ideal, não invente um título de vídeo específico
-  - Ajuste a proporção ao domínio: temas físicos/práticos pedem mais
-    "video-search"; temas conceituais pedem mais "wikipedia"
-- Leve o perfil do estudante em conta: nível inicial, tempo disponível,
-  formato preferido e obstáculos relatados
-- Todo texto em português brasileiro
-`.trim();
-
-const GENERATE_PATH_TOOL = {
-  name: "emit_learning_path",
-  description: "Emite a trilha de aprendizado estruturada.",
-  input_schema: {
-    type: "object",
-    properties: {
-      units: {
-        type: "array",
-        items: {
-          type: "object",
-          properties: {
-            title: { type: "string" },
-            steps: {
-              type: "array",
-              items: {
-                type: "object",
-                properties: {
-                  title: { type: "string" },
-                  objective: { type: "string" },
-                  estimatedMinutes: { type: "integer" },
-                  practice: { type: "string" },
-                  resources: {
-                    type: "array",
-                    items: {
-                      type: "object",
-                      properties: {
-                        kind: { type: "string", enum: ["wikipedia", "video-search"] },
-                        title: { type: "string" },
-                        query: { type: "string" },
-                      },
-                      required: ["kind", "title", "query"],
-                    },
-                  },
-                },
-                required: ["title", "objective", "estimatedMinutes", "practice", "resources"],
-              },
-            },
-          },
-          required: ["title", "steps"],
-        },
-      },
-    },
-    required: ["units"],
-  },
-};
+// SYSTEM_GENERATE_PATH/GENERATE_PATH_TOOL/videoSearchEngines/
+// imageSearchEngines vêm de packages/shared/lib/claudePrompts.js (import no
+// topo do arquivo) — compartilhados com
+// packages/desktop/src/main/handlers/pathHandlers.js.
 
 // Fonte única em packages/shared/lib/claudePrompts.js (PATH_MODELS) —
 // compartilhada com packages/desktop/src/main/handlers/pathHandlers.js.
@@ -276,15 +206,6 @@ export async function consolidateProfile(goal: string, answers: InterviewAnswer[
   const qa = answers.map(a => `P: ${a.question}\nR: ${a.answer}`).join("\n\n");
   const userMsg = `Objetivo: ${goal}\n\n${qa}`;
   return callClaude(apiKey, SYSTEM_CONSOLIDATE, userMsg, 500);
-}
-
-function videoSearchEngines(query: string) {
-  const q = encodeURIComponent(query);
-  return [
-    { label: "YouTube", url: `https://www.youtube.com/results?search_query=${q}` },
-    { label: "DuckDuckGo (vídeos)", url: `https://duckduckgo.com/?q=${q}&iax=videos&ia=videos` },
-    { label: "Google (vídeos)", url: `https://www.google.com/search?q=${q}&tbm=vid` },
-  ];
 }
 
 async function resolveWikipediaResource(query: string, lang: string) {
@@ -316,6 +237,11 @@ async function materializeResources(rawResources: any[], lang: string): Promise<
       out.push({
         id: crypto.randomUUID(), kind: "wikipedia",
         title: resolved.title, url: resolved.url, query: r.query, verified: resolved.verified,
+      });
+    } else if (r.kind === "image-search") {
+      out.push({
+        id: crypto.randomUUID(), kind: "image-search",
+        title: r.title, query: r.query, verified: true, engines: imageSearchEngines(r.query),
       });
     } else {
       out.push({
