@@ -1,5 +1,154 @@
 # Ideias de melhoria — Lexicon (wikiBook)
 
+## Rodada 2026-08-27
+
+Dois commits novos desde a última rodada: `4286aff` (refaz UI mobile/desktop,
+accordions de artigo, reduz duplicação Claude) e `47ed441` (abas reais no
+mobile, popovers, remoção do resumo automático, contraste dark, view
+pastas/soltos) — HEAD atual. Vários itens de rodadas anteriores já foram
+resolvidos nesses commits (`TrashModal`, `SettingsModal` unificado em
+`shared/components`, busca local via `searchRelevance.ts` no lugar da busca
+semântica via Claude, accordions de seção via `wikiAccordions.ts`). Esta
+rodada, a pedido, focou **só em usabilidade e UI**: o que simplificar/cortar
+na interface atual e o que falta como funcionalidade de interface. 12
+recomendações.
+
+### Simplificação e exclusão
+
+**1. Três padrões diferentes de diálogo de confirmação convivem no mesmo
+app.** `handleDeleteFolder` no desktop (`App.tsx`) ainda usa `window.confirm`
+nativo do SO; a mesma ação no mobile (`ArticleListScreen.tsx`, linhas 55-64)
+usa `Dialog.confirm` do Capacitor; e `PathView.tsx` (linhas 61-71) e o
+`TrashModal` usam um terceiro componente próprio, `confirmDialog` custom. O
+usuário vê três aparências distintas de "tem certeza?" dependendo de qual
+ação está confirmando e em qual plataforma — quebra a sensação de app coeso
+bem no momento mais sensível (ação destrutiva). Adotar só o `confirmDialog`
+custom (o único que já respeita tema e é cross-platform) em todos os pontos
+de exclusão eliminaria a inconsistência e ainda reduziria código.
+
+**2. Fileira de ícones sem rótulo se repete em três lugares com o mesmo
+problema de descoberta.** A sidebar desktop (`App.tsx`, linhas 590-605), o
+cabeçalho de `ArticleListScreen.tsx` no mobile (linhas 155-177) e o
+cabeçalho de `ArticleView.tsx` (até 7 ícones em linha, linhas 1941-1997) só
+têm `title`/`aria-label` como identificação — nada visível sem hover (que no
+touch nem existe). São ações de frequência muito desigual (exportar
+Markdown/CSV é raro; buscar-na-página e revisar flashcards são comuns)
+tratadas com o mesmo peso visual. Agrupar as ações raras (exportar MD,
+exportar CSV, densidade de lista) num menu "Mais ações" (⋯) libera espaço
+para dar rótulo textual às ações frequentes que sobram — e reduz o mesmo
+problema simultaneamente nos três lugares, já que hoje uma correção não
+atravessa as telas.
+
+**3. "Conceitos vinculados" e "Links sugeridos" ocupam o topo do artigo
+sempre expandidos, mesmo quando o usuário só quer ler.** `ArticleView.tsx`
+(linhas 2006-2062): os dois painéis renderizam sempre que há dados,
+empilhados acima do conteúdo, sem opção de recolher — em artigos bem
+conectados (o caso que a própria funcionalidade de sugestão de link foi
+pensada para beneficiar) o usuário rola por dois blocos de metadado antes de
+chegar ao texto que veio ler. Tornar os dois colapsáveis (como os accordions
+de seção que o próprio `wikiAccordions.ts` já introduz para o corpo do
+artigo) e lembrar o estado por sessão resolveria sem tirar a funcionalidade.
+
+**4. Botão "Salvar" do `SettingsModal` é ambíguo sobre o que realmente
+salva.** `SettingsModal.tsx` (linhas 202-204): o botão único no rodapé só
+persiste a API key — URL/token de sincronização já gravam sozinhos via
+`onBlur` (linhas 68-75), e tema é aplicado on-click. O usuário não tem como
+saber, olhando a tela, que só um dos cinco campos depende daquele botão;
+clicar "Salvar" depois de mexer só no tema, por exemplo, não faz nada visível
+além do toast genérico "✓ Salvo". Ou se remove o botão e cada campo ganha seu
+próprio indicador inline de estado salvo (como já ocorre para sync/tema), ou
+o botão passa a salvar tudo de uma vez, com um único fluxo consistente.
+
+### Alteração de fundamento
+
+**5. Sumário (TOC) é um modal central que precisa ser reaberto a cada
+consulta, em vez de painel lateral persistente.** `ArticleView.tsx` (linha
+996, `toc-modal`): consultar o sumário durante a leitura de um artigo longo
+exige abrir o modal, clicar no item, ele fecha, e para conferir de novo é
+preciso reabrir — em vez do padrão scroll-spy (sumário sempre visível numa
+coluna, com o item atual destacado conforme o scroll) mais comum nesse tipo
+de app de leitura/estudo. Como o app já tem espaço lateral livre no desktop
+quando nenhum painel extra está aberto, um TOC de coluna fixa e colapsável
+resolveria o atrito sem regredir no mobile (onde o modal continua fazendo
+sentido, por espaço de tela).
+
+**6. Cor de UI definida fora do sistema de variáveis em ~170 pontos do CSS, e
+o bloco de tema escuro está espalhado em 7 lugares do arquivo.**
+`styles.css` (3016 linhas): a paleta cíclica dos accordions
+(`wikiAccordions.ts`, linhas 24-37), os swatches de destaque `.hl-swatch-*`
+(linhas 2678-2682, com `!important`) e a paleta de fontes do grafo usam hex
+literal em vez das custom properties `--accent`/`--fg`/etc. já definidas em
+`:root`. Na prática isso significa que um retint de tema (ex.: usuário pede
+"deixa o app mais azul") não se propaga para essas cores, e o próprio tema
+escuro — que deveria ser uma decisão central — está reaberto em 7 blocos
+`@media (prefers-color-scheme: dark)` diferentes ao longo do arquivo,
+dificultando garantir contraste consistente. Migrar essas cores para tokens
+nomeados (ex.: `--accordion-1` a `--accordion-12`) e consolidar os blocos de
+dark mode resolveria na raiz, não por página.
+
+**7. Accordions de seção da Wikipedia vêm todos fechados, sem ação
+"expandir tudo".** `wikiAccordions.ts`: todo H1/H2/H3 do artigo importado
+vira `<details>` fechado por padrão (only reabre automaticamente quando a
+busca-na-página encontra algo dentro, via `openAncestorDetails`, linhas
+120-126). Para quem quer ler o artigo inteiro de uma vez — não só consultar
+uma seção pontual — isso obriga abrir cada seção manualmente, inclusive as
+aninhadas (H3 dentro de H2). Um botão "expandir tudo / recolher tudo" no
+cabeçalho do artigo (estado persistido por artigo, não global) cobriria os
+dois modos de leitura sem regredir o comportamento atual como padrão.
+
+**8. Passos bloqueados da trilha de aprendizado não dizem por que estão
+bloqueados.** `PathView.tsx`: passos em estado `locked` aparecem `disabled`
+simplesmente — sem texto tipo "conclua o passo anterior" nem indicação de
+qual é o passo que precisa ser feito primeiro. Como o layout é uma
+"serpentina" visual sem numeração explícita sempre visível, um usuário que
+entra direto numa trilha em andamento (ex.: retomando dias depois) não
+recupera o contexto sem clicar em cada passo bloqueado para ver o que
+acontece. Um tooltip ou legenda fixa ("bloqueado até concluir passo N")
+resolveria com custo mínimo.
+
+### Novas funcionalidades
+
+**9. Não existe busca de nó dentro do próprio grafo.** `GraphView.tsx`: zoom,
+pan e clique em nó já funcionam bem, mas achar um artigo específico num
+grafo grande é puramente visual — não há input de busca por título que
+centralize e destaque o nó correspondente. Como o grafo já tem um mecanismo
+de foco por teclado com anel visual e `aria-live` (linhas 220-229, 454-456)
+pensado para navegação sem mouse, um campo de busca que reaproveita esse
+mesmo destaque (Enter para focar e centralizar) seria uma extensão natural,
+não uma feature nova do zero.
+
+**10. Onboarding wizard só aparece na primeira execução, sem forma de
+reabrir.** `App.tsx` (linhas 257-334): o tour de 3 passos (colar API key,
+criar primeiro artigo, conhecer o grafo) só dispara automaticamente uma vez;
+depois disso não existe nenhum botão "ver tour novamente" em Configurações.
+Quem reinstala, troca de máquina, ou simplesmente esqueceu como algo
+funciona não tem onde recuperar essa introdução guiada sem reler o README. Um
+link discreto em Configurações ("Rever introdução") reaproveitaria o
+componente já pronto.
+
+**11. Botão da Lixeira em Configurações não mostra quantos itens tem antes de
+abrir.** `SettingsModal.tsx` (linhas 189-198): o item "Lixeira" é só um ícone
+e um rótulo fixo, sem contagem — o usuário não sabe se há algo para
+restaurar/limpar sem entrar no `TrashModal`. Um badge numérico simples (like
+o "Revisar flashcards (N)" que a sidebar já usa) tornaria a lixeira visível
+como estado, não só como ação.
+
+**12. Criar artigo não é alcançável pela navegação principal do mobile, e o
+destaque de aba erra quando se navega a partir do grafo.** `BottomNav.tsx`
+(linhas 16-21) tem 4 abas fixas — Artigos, Trilha, Grafo, Ajustes — mas
+nenhuma ação de "novo artigo"; criar só existe dentro da tela de Artigos
+(botão "+ Novo artigo" em `ArticleListScreen.tsx`, linha 230), então a partir
+das abas Trilha/Grafo/Ajustes é preciso voltar para Artigos primeiro. Some a
+isso que `MobileApp.tsx` (linha 84) mapeia a tela "artigo aberto" sempre para
+a aba "Artigos" — abrir um artigo a partir do Grafo destaca "Artigos" na
+barra inferior mesmo a navegação tendo partido do Grafo, o que confunde sobre
+"onde eu estou". Um FAB de "novo artigo" acessível de qualquer aba (ou um
+botão fixo na própria BottomNav) resolve o primeiro ponto; manter o
+destaque na aba de origem (ou introduzir um estado "nenhuma aba destacada"
+quando o artigo foi aberto de outro lugar) resolve o segundo.
+
+---
+
 ## Rodada 2026-08-26
 
 Dois commits novos desde a última rodada: `edaa7cb` (trilhas de aprendizado
