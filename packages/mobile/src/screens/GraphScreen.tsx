@@ -16,7 +16,6 @@ import React, { useMemo, useState } from "react";
 import { useStore, computeLocalSubgraph, GraphView } from "@lexicon/shared";
 
 interface Props {
-  onBack: () => void;
   onOpenArticle: (id: string) => void;
 }
 
@@ -28,7 +27,7 @@ const GraphControls: React.FC<{ canvasRef: React.RefObject<HTMLCanvasElement | n
   </div>
 );
 
-export function GraphScreen({ onBack, onOpenArticle }: Props) {
+export function GraphScreen({ onOpenArticle }: Props) {
   const {
     graphNodes, graphEdges, activeArticleId,
     graphScope, setGraphScope, localDepth, setLocalDepth,
@@ -42,10 +41,6 @@ export function GraphScreen({ onBack, onOpenArticle }: Props) {
 
   return (
     <div className="mobile-graph-screen">
-      <div className="mobile-article-screen-nav">
-        <button className="mobile-back-btn" onClick={onBack}>‹ Artigos</button>
-      </div>
-
       <div className="mobile-graph-toolbar">
         <div className="graph-scope-toggle">
           <button className={graphScope === "global" ? "active" : ""} onClick={() => setGraphScope("global")}>

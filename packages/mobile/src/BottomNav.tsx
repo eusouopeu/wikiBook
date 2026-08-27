@@ -15,8 +15,8 @@ interface NavItem { tab: BottomNavTab; label: string; icon: IconName; }
 
 const ITEMS: NavItem[] = [
   { tab: "list", label: "Artigos", icon: "read" },
-  { tab: "graph", label: "Grafo", icon: "graph" },
   { tab: "path", label: "Trilha", icon: "path" },
+  { tab: "graph", label: "Grafo", icon: "graph" },
   { tab: "settings", label: "Ajustes", icon: "settings" },
 ];
 
@@ -35,10 +35,11 @@ export function BottomNav({ active, onSelect }: Props) {
           role="tab"
           aria-selected={active === item.tab}
           className={`mobile-bottom-nav-item ${active === item.tab ? "active" : ""}`}
+          title={item.label}
+          aria-label={item.label}
           onClick={() => onSelect(item.tab)}
         >
           <Icon name={item.icon} />
-          <span>{item.label}</span>
         </button>
       ))}
     </nav>

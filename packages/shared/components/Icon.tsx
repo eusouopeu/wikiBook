@@ -45,6 +45,7 @@ import {
   PencilIcon,
   PhotoIcon,
   PlayCircleIcon,
+  PlusIcon,
   RectangleStackIcon,
   ShareIcon,
   SignalIcon,
@@ -58,6 +59,7 @@ import {
 // O nome é semântico (o que o ícone significa), nunca o desenho: se amanhã
 // "grafo" virar outro pictograma, os call sites continuam válidos.
 const ICONS = {
+  add: PlusIcon,
   attachment: PaperClipIcon,
   back: ArrowLeftIcon,
   batchImport: DocumentDuplicateIcon,

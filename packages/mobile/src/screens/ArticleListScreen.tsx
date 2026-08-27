@@ -15,12 +15,6 @@ import { Dialog } from "@capacitor/dialog";
 import { useStore, ReviewModal, FolderPicker, VirtualList, LogoMark, Icon, scoreQueryMatch } from "@lexicon/shared";
 import type { Article, Flashcard, FlashcardGrade } from "@lexicon/shared";
 
-const SOURCE_COLOR: Record<Article["source"], string> = {
-  wikipedia: "#378ADD",
-  claude: "#BA7517",
-  manual: "#1D9E75",
-};
-
 interface Props {
   onOpenArticle: (id: string) => void;
   onNewArticle: () => void;
@@ -35,6 +29,9 @@ export function ArticleListScreen({ onOpenArticle, onNewArticle }: Props) {
     listDensity, setListDensity, beginPendingTask, endPendingTask,
   } = useStore();
 
+  // Alterna entre ver artigos agrupados por pasta (chips de pasta visíveis,
+  // renomear/excluir pasta) e ver tudo solto, sem organização por pasta.
+  const [libraryView, setLibraryView] = useState<"folders" | "flat">("folders");
   const [dueCount, setDueCount] = useState(0);
   const [globalReviewOpen, setGlobalReviewOpen] = useState(false);
   const [globalDueCards, setGlobalDueCards] = useState<Flashcard[]>([]);
@@ -139,7 +136,7 @@ export function ArticleListScreen({ onOpenArticle, onNewArticle }: Props) {
     const qTokens = q.split(/\s+/).filter(Boolean);
     let result = articles.filter(a => {
       if (!selectedTags.every(t => (a.tags ?? []).includes(t))) return false;
-      if (selectedFolder && a.folderId !== selectedFolder) return false;
+      if (libraryView === "folders" && selectedFolder && a.folderId !== selectedFolder) return false;
       if (!q) return true;
       const blob = searchIndex.get(a.id) ?? "";
       return qTokens.some(tok => blob.includes(tok));
@@ -151,13 +148,21 @@ export function ArticleListScreen({ onOpenArticle, onNewArticle }: Props) {
         .map(x => x.a);
     }
     return result;
-  }, [articles, searchQuery, selectedTags, selectedFolder, searchIndex]);
+  }, [articles, searchQuery, selectedTags, selectedFolder, searchIndex, libraryView]);
 
   return (
     <div className="mobile-screen">
       <header className="mobile-header">
         <h1 className="mobile-header-logo"><LogoMark size={22} /> Wikibook</h1>
         <div className="mobile-header-actions">
+          <button
+            className="mobile-icon-btn"
+            title={libraryView === "folders" ? "Ver arquivos soltos (sem pastas)" : "Ver por pastas"}
+            aria-label={libraryView === "folders" ? "Ver arquivos soltos (sem pastas)" : "Ver por pastas"}
+            onClick={() => setLibraryView(v => v === "folders" ? "flat" : "folders")}
+          >
+            <Icon name={libraryView === "folders" ? "file" : "folder"} />
+          </button>
           <button className="mobile-icon-btn" title="Exportar Markdown" aria-label="Exportar Markdown" onClick={handleExportMarkdown}><Icon name="save" /></button>
           <button className="mobile-icon-btn" title="Exportar flashcards (CSV)" aria-label="Exportar flashcards (CSV)" onClick={handleExportFlashcardsCsv}><Icon name="flashcardsExport" /></button>
           <button
@@ -181,7 +186,7 @@ export function ArticleListScreen({ onOpenArticle, onNewArticle }: Props) {
         />
       </div>
 
-      {folders.length > 0 && (
+      {libraryView === "folders" && folders.length > 0 && (
         <div className="mobile-folders">
           {folders.map(f => (
             <div key={f.id} className={`folder-chip ${selectedFolder === f.id ? "active" : ""}`}>
@@ -216,6 +221,14 @@ export function ArticleListScreen({ onOpenArticle, onNewArticle }: Props) {
         </div>
       )}
 
+      {dueCount > 0 && (
+        <button className="global-review-btn" onClick={handleOpenGlobalReview}>
+          <Icon name="flashcards" /><span>Revisar flashcards ({dueCount})</span>
+        </button>
+      )}
+
+      <button className="mobile-new-article-btn" onClick={onNewArticle}>+ Novo artigo</button>
+
       {allTags.length > 0 && (
         <div className="mobile-tags">
           {allTags.map(t => (
@@ -229,14 +242,6 @@ export function ArticleListScreen({ onOpenArticle, onNewArticle }: Props) {
           ))}
         </div>
       )}
-
-      {dueCount > 0 && (
-        <button className="global-review-btn" onClick={handleOpenGlobalReview}>
-          <Icon name="flashcards" /><span>Revisar flashcards ({dueCount})</span>
-        </button>
-      )}
-
-      <button className="mobile-new-article-btn" onClick={onNewArticle}>+ Novo artigo</button>
 
       {filteredArticles.length === 0 ? (
         <ul className="mobile-article-list">
@@ -255,7 +260,6 @@ export function ArticleListScreen({ onOpenArticle, onNewArticle }: Props) {
               className={`mobile-article-item ${a.id === activeArticleId ? "active" : ""}`}
               onClick={() => onOpenArticle(a.id)}
             >
-              <span className="mobile-dot" style={{ background: SOURCE_COLOR[a.source] }} />
               <div className="mobile-article-main">
                 <span className="mobile-article-title">{a.title}</span>
                 {listDensity === "comfortable" && (

@@ -420,25 +420,15 @@ export const useStore = create<AppState>((set, get) => ({
         return existing;
       }
 
-      // Gera resumo via Claude automaticamente
-      get().updatePendingTask(token, `Resumindo "${wiki.title}" com Claude…`);
-      let summary = "";
-      try {
-        const r = await ipc<{ summary: string }>("claude:summarize", {
-          title: wiki.title,
-          text: wiki.plainTextExtract,
-        });
-        summary = r.summary;
-      } catch {
-        summary = "• Resumo não disponível.";
-      }
-
+      // Sem resumo automático — fica em branco até o usuário pedir explicitamente
+      // pelo botão "Regenerar resumo" na aba Resumo (evita pagar uma chamada à
+      // API a cada importação, e o "resumo falhou" que aparecia sem API key).
       get().updatePendingTask(token, `Salvando "${wiki.title}"…`);
       const article = await get().saveArticle({
         title: wiki.title,
         source: "wikipedia",
         content: wiki.html,
-        summary,
+        summary: "",
         links: [],
       });
 

@@ -1861,13 +1861,77 @@ export const ArticleView: React.FC<Props> = ({ article, headerActionsSlot }) => 
   // (sem slot) renderizam aqui mesmo, ao lado do <h1>.
   const primaryHeaderActions = (
     <>
-      <button className={`icon-btn ${findOpen ? "icon-btn-active" : ""}`} title="Buscar na página" aria-label="Buscar na página"
-              onClick={() => setFindOpen(o => !o)}><Icon name="search" /></button>
+      <span className="header-popover-anchor">
+        <button className={`icon-btn ${findOpen ? "icon-btn-active" : ""}`} title="Buscar na página" aria-label="Buscar na página"
+                onClick={() => setFindOpen(o => !o)}><Icon name="search" /></button>
+        {findOpen && (
+          <FindInPageBar
+            query={findQuery} count={findCount} index={findIndex}
+            onQueryChange={setFindQuery}
+            onNext={handleFindNext} onPrev={handleFindPrev} onClose={handleFindClose}
+          />
+        )}
+      </span>
       {tocItems.length > 0 && (
         <button className="icon-btn" title="Conteúdo" aria-label="Conteúdo" onClick={() => setTocOpen(true)}><Icon name="densityCompact" /></button>
       )}
-      <button className={`icon-btn ${chatOpen ? "icon-btn-active" : ""}`} title="Perguntar ao Claude" aria-label="Perguntar ao Claude"
-              onClick={() => setChatOpen(o => !o)}><Icon name="chat" /></button>
+      <span className="header-popover-anchor">
+        <button className={`icon-btn ${chatOpen ? "icon-btn-active" : ""}`} title="Perguntar ao Claude" aria-label="Perguntar ao Claude"
+                onClick={() => setChatOpen(o => !o)}><Icon name="chat" /></button>
+        {chatOpen && (
+          <div className="ask-claude-panel ask-claude-popover">
+            {chatMessages.length > 0 && (
+              <button
+                type="button"
+                className="icon-btn ask-claude-clear-btn"
+                title="Limpar conversa"
+                aria-label="Limpar conversa"
+                onClick={() => { setChatMessages([]); setSavedChatIndices(new Set()); }}
+              >
+                <Icon name="clear" />
+              </button>
+            )}
+            <div className="ask-claude-messages">
+              {chatMessages.length === 0 && (
+                <p className="ask-claude-hint">
+                  Pergunte algo sobre este artigo — o Claude responde usando o conteúdo
+                  e os artigos vinculados como contexto.
+                </p>
+              )}
+              {chatMessages.map((m, i) => (
+                <div key={i} className={`ask-claude-msg ask-claude-${m.role}`}>
+                  {m.text}
+                  {m.role === "assistant" && (
+                    <button
+                      type="button"
+                      className="ask-claude-save-btn"
+                      disabled={savedChatIndices.has(i)}
+                      onClick={() => handleSaveChatAnswer(i, m.text)}
+                      title="Salvar esta resposta como trecho do artigo"
+                    >
+                      {savedChatIndices.has(i)
+                        ? <><Icon name="check" /><span>Salvo</span></>
+                        : <><Icon name="save" /><span>Salvar no artigo</span></>}
+                    </button>
+                  )}
+                </div>
+              ))}
+              {chatLoading && (
+                <div className="ask-claude-msg ask-claude-assistant ask-claude-loading">Pensando…</div>
+              )}
+            </div>
+            <form className="ask-claude-form" onSubmit={e => { e.preventDefault(); handleAskClaude(); }}>
+              <input
+                value={chatInput} onChange={e => setChatInput(e.target.value)}
+                placeholder="Pergunte sobre este artigo…" disabled={chatLoading}
+              />
+              <button type="submit" className="primary" disabled={chatLoading || !chatInput.trim()}>
+                Perguntar
+              </button>
+            </form>
+          </div>
+        )}
+      </span>
       <button className="icon-btn" title="Revisar flashcards deste artigo" aria-label="Revisar flashcards deste artigo"
               onClick={() => setReviewOpen(true)}
               disabled={flashcards.filter(c => c.due <= new Date().toISOString()).length === 0}><Icon name="flashcards" /></button>
@@ -1932,75 +1996,11 @@ export const ArticleView: React.FC<Props> = ({ article, headerActionsSlot }) => 
         </div>
       </div>
 
-      {/* ── Buscar na página ─────────────────────────────────────────────── */}
-      {findOpen && (
-        <FindInPageBar
-          query={findQuery} count={findCount} index={findIndex}
-          onQueryChange={setFindQuery}
-          onNext={handleFindNext} onPrev={handleFindPrev} onClose={handleFindClose}
-        />
-      )}
-
       {/* ── Linha divisória ─────────────────────────────────────────────── */}
       <div className="wiki-divider" />
 
       {/* ── Corpo ───────────────────────────────────────────────────────── */}
       <div className="article-body">
-
-        {/* Chat contextual — pergunta usando o artigo (e vínculos) como contexto */}
-        {chatOpen && (
-          <div className="ask-claude-panel">
-            {chatMessages.length > 0 && (
-              <button
-                type="button"
-                className="ask-claude-clear-btn"
-                title="Limpar conversa"
-                aria-label="Limpar conversa"
-                onClick={() => { setChatMessages([]); setSavedChatIndices(new Set()); }}
-              >
-                <Icon name="clear" /><span>Limpar conversa</span>
-              </button>
-            )}
-            <div className="ask-claude-messages">
-              {chatMessages.length === 0 && (
-                <p className="ask-claude-hint">
-                  Pergunte algo sobre este artigo — o Claude responde usando o conteúdo
-                  e os artigos vinculados como contexto.
-                </p>
-              )}
-              {chatMessages.map((m, i) => (
-                <div key={i} className={`ask-claude-msg ask-claude-${m.role}`}>
-                  {m.text}
-                  {m.role === "assistant" && (
-                    <button
-                      type="button"
-                      className="ask-claude-save-btn"
-                      disabled={savedChatIndices.has(i)}
-                      onClick={() => handleSaveChatAnswer(i, m.text)}
-                      title="Salvar esta resposta como trecho do artigo"
-                    >
-                      {savedChatIndices.has(i)
-                        ? <><Icon name="check" /><span>Salvo</span></>
-                        : <><Icon name="save" /><span>Salvar no artigo</span></>}
-                    </button>
-                  )}
-                </div>
-              ))}
-              {chatLoading && (
-                <div className="ask-claude-msg ask-claude-assistant ask-claude-loading">Pensando…</div>
-              )}
-            </div>
-            <form className="ask-claude-form" onSubmit={e => { e.preventDefault(); handleAskClaude(); }}>
-              <input
-                value={chatInput} onChange={e => setChatInput(e.target.value)}
-                placeholder="Pergunte sobre este artigo…" disabled={chatLoading}
-              />
-              <button type="submit" className="primary" disabled={chatLoading || !chatInput.trim()}>
-                Perguntar
-              </button>
-            </form>
-          </div>
-        )}
 
         {/* Índice de links internos (estilo "Sumário" da Wikipedia) */}
         {article.links.length > 0 && !showSummary && (

@@ -30,12 +30,14 @@ const THEME_OPTIONS: Array<{ value: "system" | "light" | "dark"; label: string; 
   { value: "dark", label: "Escuro", icon: "themeDark" },
 ];
 
-export const SettingsModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
+// embedded: true quando Ajustes é uma aba persistente (shell mobile) em vez
+// de popup — sem overlay/moldura de modal, sem Esc pra fechar, sem "Fechar".
+export const SettingsModal: React.FC<{ onClose?: () => void; embedded?: boolean }> = ({ onClose, embedded }) => {
   const [apiKey, setApiKey] = useState("");
   const [saved, setSaved] = useState(false);
   const [trashOpen, setTrashOpen] = useState(false);
   const { wikipediaLang, setWikipediaLang, theme, setTheme, showToast } = useStore();
-  useEscToClose(onClose);
+  useEscToClose(embedded ? () => {} : (onClose ?? (() => {})));
 
   useEffect(() => {
     window.lexicon.invoke("config:get", { key: "anthropicApiKey" }).then(r => {
@@ -101,11 +103,9 @@ export const SettingsModal: React.FC<{ onClose: () => void }> = ({ onClose }) =>
     }
   }
 
-  return (
+  const body = (
     <>
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={e => e.stopPropagation()}>
-        <h2>Configurações</h2>
+        {!embedded && <h2>Configurações</h2>}
         <label>
           Anthropic API Key
           <input
@@ -191,20 +191,31 @@ export const SettingsModal: React.FC<{ onClose: () => void }> = ({ onClose }) =>
           Artigos excluídos ficam guardados por 30 dias antes de serem apagados automaticamente.
         </p>
         <div className="modal-actions">
-          <button type="button" onClick={() => setTrashOpen(true)}>
-            <Icon name="trash" /><span>Ver lixeira</span>
+          <button type="button" className="icon-btn" title="Ver lixeira" aria-label="Ver lixeira"
+                  onClick={() => setTrashOpen(true)}>
+            <Icon name="trash" />
           </button>
         </div>
 
         <div className="modal-actions">
-          <button onClick={onClose}>Fechar</button>
+          {!embedded && <button onClick={onClose}>Fechar</button>}
           <button className="primary" onClick={handleSave}>
             {saved ? <><Icon name="check" /><span>Salvo</span></> : "Salvar"}
           </button>
         </div>
-      </div>
-    </div>
-    {trashOpen && <TrashModal onClose={() => setTrashOpen(false)} />}
+    </>
+  );
+
+  return (
+    <>
+      {embedded ? (
+        <div className="modal settings-embedded">{body}</div>
+      ) : (
+        <div className="modal-overlay" onClick={onClose}>
+          <div className="modal" onClick={e => e.stopPropagation()}>{body}</div>
+        </div>
+      )}
+      {trashOpen && <TrashModal onClose={() => setTrashOpen(false)} />}
     </>
   );
 };

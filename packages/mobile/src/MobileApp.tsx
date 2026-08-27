@@ -19,9 +19,8 @@ import { StatusOverlay } from "./StatusOverlay";
 import { BottomNav, type BottomNavTab } from "./BottomNav";
 
 export function MobileApp() {
-  const [screen, setScreen] = useState<"list" | "article" | "graph" | "path">("list");
+  const [screen, setScreen] = useState<"list" | "article" | "graph" | "path" | "settings">("list");
   const [showNewModal, setShowNewModal] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
 
   const {
     articles, activeArticleId, loadingArticle, openArticle,
@@ -66,9 +65,11 @@ export function MobileApp() {
       ? <ArticleScreen article={activeArticle} onBack={() => setScreen("list")} />
       : <div className="mobile-screen"><p className="mobile-empty">Carregando…</p></div>;
   } else if (screen === "graph") {
-    content = <GraphScreen onBack={() => setScreen("list")} onOpenArticle={handleGraphNodeOpen} />;
+    content = <GraphScreen onOpenArticle={handleGraphNodeOpen} />;
   } else if (screen === "path") {
-    content = <PathScreen onBack={() => setScreen("list")} />;
+    content = <PathScreen />;
+  } else if (screen === "settings") {
+    content = <SettingsModal embedded />;
   } else {
     content = (
       <ArticleListScreen
@@ -78,17 +79,11 @@ export function MobileApp() {
     );
   }
 
-  // A aba ativa é sempre uma das quatro views da barra inferior — o artigo
-  // aberto é tratado como parte da aba "Artigos" (não existe aba própria para
-  // ele), e Ajustes tem prioridade quando o modal está aberto por cima de
-  // qualquer tela.
-  const activeTab: BottomNavTab = showSettings
-    ? "settings"
-    : screen === "article" ? "list" : screen;
+  // A aba ativa é uma das cinco views da barra inferior — o artigo aberto é
+  // tratado como parte da aba "Artigos" (não existe aba própria para ele).
+  const activeTab: BottomNavTab = screen === "article" ? "list" : screen;
 
   function handleSelectTab(tab: BottomNavTab) {
-    if (tab === "settings") { setShowSettings(true); return; }
-    setShowSettings(false);
     setScreen(tab);
   }
 
@@ -97,7 +92,6 @@ export function MobileApp() {
       <div className="mobile-app-content">{content}</div>
       <BottomNav active={activeTab} onSelect={handleSelectTab} />
       {showNewModal && <NewArticleModal onClose={() => setShowNewModal(false)} />}
-      {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
       {bootstrapped && !onboardingSeen && (
         <OnboardingWizard
           onFinish={() => dismissOnboarding()}

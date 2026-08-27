@@ -553,7 +553,7 @@ html, body, #root {
    custom properties (--wa-100/600/700/800/900) — os toggles e subtítulos
    dentro dele herdam essas variáveis sem precisar de uma classe por cor. */
 .wiki-content .wiki-accordion {
-  background: var(--wa-100, var(--bg-toc));
+  border: 1px solid var(--wa-900, var(--border));
   border-radius: var(--radius);
   margin: 1.1em 0;
   padding: 0.1em 16px 14px;
@@ -581,6 +581,7 @@ html, body, #root {
   border: none;
   color: inherit;
   font-size: 20px;
+  font-weight: 700;
   margin: 0;
   padding: 0;
 }
@@ -608,11 +609,12 @@ html, body, #root {
 .wiki-content .wiki-toggle-title h3 {
   color: inherit;
   font-size: 17px;
+  font-weight: 700;
   margin: 0;
   padding: 0;
 }
 .wiki-content .wiki-toggle-body {
-  border-left: 2px solid var(--wa-100, var(--border-light));
+  border-left: 2px solid var(--border-light);
   margin-top: 0.3em;
   padding-left: 14px;
 }
@@ -1030,8 +1032,14 @@ html, body, #root {
   border-radius: var(--radius-sm);
   display: flex;
   gap: 6px;
-  margin: 0 0 12px;
   padding: 6px 8px;
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 60;
+  width: 280px;
+  max-width: calc(100vw - 20px);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.25);
 }
 
 .find-in-page-bar input {
@@ -2233,6 +2241,11 @@ mark.find-match-current {
 /* Badge de tipo de trecho (texto/tabela/imagem) */
 .excerpt-kind-badge { font-size: 12px; opacity: 0.8; }
 
+/* Ancora um popover (buscar-na-página, perguntar ao Claude) ao ícone que o
+   abre — funciona tanto no cabeçalho do desktop quanto no slot portalizado
+   da barra superior do mobile, já que é só posição relativa ao próprio botão. */
+.header-popover-anchor { position: relative; display: inline-flex; }
+
 /* Painel "Perguntar ao Claude" */
 .ask-claude-panel {
   background: var(--bg-hover);
@@ -2241,18 +2254,20 @@ mark.find-match-current {
   margin-bottom: 22px;
   padding: 14px 16px;
 }
+.ask-claude-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 60;
+  width: min(340px, 90vw);
+  margin-bottom: 0;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+}
 .ask-claude-hint { color: var(--fg3); font-size: 12.5px; line-height: 1.6; margin: 0 0 10px; }
 .ask-claude-clear-btn {
-  background: none;
-  border: none;
-  color: var(--fg3);
-  cursor: pointer;
-  display: block;
-  font-size: 11px;
+  display: flex;
   margin: 0 0 8px auto;
-  padding: 2px 4px;
 }
-.ask-claude-clear-btn:hover { color: var(--fg2); text-decoration: underline; }
 .ask-claude-messages {
   display: flex;
   flex-direction: column;
@@ -2987,3 +3002,15 @@ button.text-btn:hover { text-decoration: underline; }
 }
 .trash-item-actions { display: flex; flex-shrink: 0; gap: 4px; }
 .trash-item-purge-btn:hover { border-color: #d33; color: #d33; }
+
+/* ── Ajustes embutido como aba (mobile) em vez de popup ───────────────────── */
+.settings-embedded {
+  height: 100%;
+  min-width: 0;
+  border: none;
+  box-shadow: none;
+  border-radius: 0;
+  overflow-y: auto;
+  padding: calc(env(safe-area-inset-top) + 16px) 16px 24px;
+  box-sizing: border-box;
+}

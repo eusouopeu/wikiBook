@@ -34,7 +34,9 @@ const PathList: React.FC<{ onCreate: () => void }> = ({ onCreate }) => {
     <div className="path-list-screen">
       <div className="path-list-header">
         <h2>Trilhas de aprendizado</h2>
-        <button className="primary" onClick={onCreate}>+ Nova trilha</button>
+        <button type="button" className="icon-btn" title="Nova trilha" aria-label="Nova trilha" onClick={onCreate}>
+          <Icon name="add" />
+        </button>
       </div>
       {paths.length === 0 ? (
         <div className="empty-state">
