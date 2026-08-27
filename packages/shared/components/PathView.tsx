@@ -9,7 +9,7 @@
 import React, { useMemo, useState } from "react";
 import { useStore } from "../store/useStore";
 import { Icon } from "./Icon";
-import type { InterviewAnswer, LearningPath, PathGenerationModel, PathStep } from "../shared/types";
+import type { InterviewAnswer, LearningPath, PathGenerationModel, PathResource, PathStep } from "../shared/types";
 import { INTERVIEW_SCRIPT } from "../lib/interviewScript";
 import { PATH_MODEL_OPTIONS, estimatePathGenerationCostUsd, formatUsd } from "../lib/pathModels";
 import { confirmDialog } from "../lib/confirmDialog";
@@ -82,7 +82,7 @@ const PathList: React.FC<{ onCreate: () => void }> = ({ onCreate }) => {
 type WizardStage = "goal" | "interview" | "model" | "generating";
 
 const CreatePathWizard: React.FC<{ onDone: () => void; onCancel: () => void }> = ({ onDone, onCancel }) => {
-  const { consolidateProfile, generatePathUnits, savePathRecord } = useStore();
+  const { consolidateProfile, generatePathUnits, importPathArticles, savePathRecord } = useStore();
   const [stage, setStage] = useState<WizardStage>("goal");
   const [goal, setGoal] = useState("");
   const [qIndex, setQIndex] = useState(0);
@@ -119,7 +119,11 @@ const CreatePathWizard: React.FC<{ onDone: () => void; onCancel: () => void }> =
     setError("");
     try {
       const units = await generatePathUnits(goal, profileSummary, model);
-      await savePathRecord({ goal, interviewAnswers: answers, profileSummary, model, units });
+      // Importa os artigos da Wikipedia selecionados pela trilha para uma
+      // pasta própria — sem isso, os links dos passos abririam no navegador
+      // do sistema em vez da própria aba de artigos do app.
+      const importedUnits = await importPathArticles(units, goal);
+      await savePathRecord({ goal, interviewAnswers: answers, profileSummary, model, units: importedUnits });
       onDone();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -225,8 +229,24 @@ const CreatePathWizard: React.FC<{ onDone: () => void; onCancel: () => void }> =
 };
 
 // ── Painel de detalhe de um passo ────────────────────────────────────────────
-const StepPanel: React.FC<{ step: PathStep; pathId: string; onClose: () => void }> = ({ step, pathId, onClose }) => {
-  const { completeStep } = useStore();
+const StepPanel: React.FC<{ step: PathStep; pathId: string; onClose: () => void; onOpenArticle?: (id: string) => void }> = ({ step, pathId, onClose, onOpenArticle }) => {
+  const { completeStep, openArticle, setView } = useStore();
+
+  // Recurso com articleId (importado na criação da trilha, ver
+  // importPathArticles) abre o artigo dentro do app; sem articleId (falha de
+  // rede na importação, ou trilha criada antes desta função existir) cai
+  // para o navegador externo, como sempre foi.
+  function openWikipediaResource(r: PathResource) {
+    if (r.articleId) {
+      openArticle(r.articleId);
+      setView("article");
+      onOpenArticle?.(r.articleId);
+      onClose();
+    } else {
+      openResourceLink(r.url!);
+    }
+  }
+
   return (
     <div className="step-panel-overlay" onClick={onClose}>
       <div className="step-panel" onClick={e => e.stopPropagation()}>
@@ -245,7 +265,7 @@ const StepPanel: React.FC<{ step: PathStep; pathId: string; onClose: () => void 
               {step.resources.map(r => (
                 <li key={r.id} className="step-panel-resource">
                   {r.kind === "wikipedia" ? (
-                    <button className="resource-link" onClick={() => openResourceLink(r.url!)}>
+                    <button className="resource-link" onClick={() => openWikipediaResource(r)}>
                       <Icon name="read" /><span>{r.title}</span>
                     </button>
                   ) : (
@@ -278,8 +298,15 @@ const StepPanel: React.FC<{ step: PathStep; pathId: string; onClose: () => void 
   );
 };
 
+function formatMinutes(min: number): string {
+  if (min < 60) return `${min} min`;
+  const h = Math.floor(min / 60);
+  const rest = min % 60;
+  return rest === 0 ? `${h} h` : `${h} h ${rest} min`;
+}
+
 // ── Tela 3: percurso serpentino ──────────────────────────────────────────────
-const PathDetail: React.FC<{ learningPath: LearningPath; onBack: () => void }> = ({ learningPath, onBack }) => {
+const PathDetail: React.FC<{ learningPath: LearningPath; onBack: () => void; onOpenArticle?: (id: string) => void }> = ({ learningPath, onBack, onOpenArticle }) => {
   const [openStep, setOpenStep] = useState<PathStep | null>(null);
   const { total, done } = pathProgress(learningPath);
 
@@ -302,9 +329,12 @@ const PathDetail: React.FC<{ learningPath: LearningPath; onBack: () => void }> =
       </div>
 
       <div className="path-serpentine">
-        {learningPath.units.map((unit, unitIdx) => (
+        {learningPath.units.map((unit, unitIdx) => {
+          const unitMinutes = unit.steps.reduce((acc, s) => acc + (s.estimatedMinutes || 0), 0);
+          return (
           <div className="path-unit" key={unit.id}>
             <div className="path-unit-title">{unit.title}</div>
+            <div className="path-unit-duration">{formatMinutes(unitMinutes)}</div>
             <div className="path-unit-steps">
               {unit.steps.map((step, stepIdx) => {
                 const align = (unitIdx * 100 + stepIdx) % 2 === 0 ? "left" : "right";
@@ -327,12 +357,14 @@ const PathDetail: React.FC<{ learningPath: LearningPath; onBack: () => void }> =
                       {step.status === "done" ? <Icon name="check" /> : isLocked ? <Icon name="locked" /> : "●"}
                     </span>
                     <span className="path-step-label">{step.title}</span>
+                    <span className="path-step-duration">{formatMinutes(step.estimatedMinutes)}</span>
                   </button>
                 );
               })}
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
 
       {hasLockedStep && (
@@ -341,13 +373,23 @@ const PathDetail: React.FC<{ learningPath: LearningPath; onBack: () => void }> =
         </p>
       )}
 
-      {openStep && <StepPanel step={openStep} pathId={learningPath.id} onClose={() => setOpenStep(null)} />}
+      {openStep && (
+        <StepPanel
+          step={openStep}
+          pathId={learningPath.id}
+          onClose={() => setOpenStep(null)}
+          onOpenArticle={onOpenArticle}
+        />
+      )}
     </div>
   );
 };
 
 // ── Componente raiz da aba ───────────────────────────────────────────────────
-export const PathView: React.FC = () => {
+// onOpenArticle: só usado pelo shell mobile (PathScreen), para trocar de tela
+// quando um recurso de passo abre um artigo importado — no desktop, abrir o
+// artigo já basta (setView troca a aba sozinho), como no GraphView.
+export const PathView: React.FC<{ onOpenArticle?: (id: string) => void }> = ({ onOpenArticle }) => {
   const { paths, activePathId, openPath } = useStore();
   const [creating, setCreating] = useState(false);
 
@@ -363,7 +405,7 @@ export const PathView: React.FC = () => {
   }
 
   if (activePath) {
-    return <PathDetail learningPath={activePath} onBack={() => openPath("")} />;
+    return <PathDetail learningPath={activePath} onBack={() => openPath("")} onOpenArticle={onOpenArticle} />;
   }
 
   return <PathList onCreate={() => setCreating(true)} />;

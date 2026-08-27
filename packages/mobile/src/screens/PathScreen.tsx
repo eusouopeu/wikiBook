@@ -9,10 +9,14 @@
 import React from "react";
 import { PathView } from "@lexicon/shared";
 
-export function PathScreen() {
+interface Props {
+  onOpenArticle?: (id: string) => void;
+}
+
+export function PathScreen({ onOpenArticle }: Props) {
   return (
     <div className="mobile-path-screen">
-      <PathView />
+      <PathView onOpenArticle={onOpenArticle} />
     </div>
   );
 }

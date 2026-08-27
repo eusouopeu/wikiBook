@@ -25,6 +25,16 @@ async function ipc<T>(channel: string, payload?: unknown): Promise<T> {
   return res.data as T;
 }
 
+// Nome curto do bloco para a etiqueta "[N]/[nome]" — o título da unidade
+// gerado pelo Claude não tem limite de tamanho, mas a etiqueta é um chip de
+// UI, não um cabeçalho.
+function shortenBlockName(title: string, maxLen = 28): string {
+  if (title.length <= maxLen) return title;
+  const cut = title.slice(0, maxLen);
+  const lastSpace = cut.lastIndexOf(" ");
+  return `${(lastSpace > 10 ? cut.slice(0, lastSpace) : cut).trim()}…`;
+}
+
 // ── Tema ───────────────────────────────────────────────────────────────────
 // "system" não seta o atributo — o CSS já segue prefers-color-scheme por
 // padrão; "light"/"dark" força via :root[data-theme=…], sobrepondo o SO
@@ -133,6 +143,7 @@ interface AppState {
   deletePathRecord: (id: string) => Promise<void>;
   consolidateProfile: (goal: string, answers: InterviewAnswer[]) => Promise<string>;
   generatePathUnits: (goal: string, profileSummary: string, model: PathGenerationModel) => Promise<PathUnit[]>;
+  importPathArticles: (units: PathUnit[], goal: string) => Promise<PathUnit[]>;
   completeStep: (pathId: string, stepId: string) => Promise<void>;
   setSearchQuery: (q: string) => void;
   setSearchOpen: (open: boolean) => void;
@@ -519,6 +530,62 @@ export const useStore = create<AppState>((set, get) => ({
   generatePathUnits: async (goal, profileSummary, model) => {
     const r = await ipc<{ units: PathUnit[] }>("path:generate", { goal, profileSummary, model });
     return r.units;
+  },
+  // Cria uma pasta para a trilha e importa cada recurso "wikipedia" resolvido
+  // (ver resolveWikipediaResource nos handlers — só recursos com URL real de
+  // artigo, "/wiki/…", não a página de busca de fallback) como artigo local
+  // dentro dela. Título "[nº da aula]/[nome do artigo]" (aula = ordem global
+  // do passo no percurso), etiqueta "[nº do bloco]/[nome curto da unidade]".
+  // Guarda o articleId de volta no recurso para o clique abrir no app em vez
+  // do navegador externo (ver StepPanel). Falha em um recurso não derruba os
+  // demais — o app continua funcional com o link externo como fallback.
+  importPathArticles: async (units, goal) => {
+    const token = get().beginPendingTask(`Importando artigos de "${goal}"…`);
+    try {
+      const folder = await get().createFolder(goal);
+      const lang = get().wikipediaLang;
+
+      const importedUnits: PathUnit[] = [];
+      for (let unitIdx = 0; unitIdx < units.length; unitIdx++) {
+        const unit = units[unitIdx];
+        const tag = `${unitIdx + 1}/${shortenBlockName(unit.title)}`;
+        const steps: typeof unit.steps = [];
+        for (const step of unit.steps) {
+          const resources: typeof step.resources = [];
+          for (const resource of step.resources) {
+            if (resource.kind !== "wikipedia" || !resource.url?.includes("/wiki/")) {
+              resources.push(resource);
+              continue;
+            }
+            try {
+              get().updatePendingTask(token, `Importando "${resource.title}"…`);
+              const wiki = await ipc<{ title: string; html: string }>(
+                "wikipedia:fetch", { exactTitle: resource.title, lang }
+              );
+              const article = await get().saveArticle({
+                title: `${step.order + 1}/${wiki.title}`,
+                source: "wikipedia",
+                content: wiki.html,
+                summary: "",
+                links: [],
+                tags: [tag],
+                folderId: folder.id,
+              });
+              resources.push({ ...resource, articleId: article.id });
+            } catch {
+              // Sem internet/artigo removido nesse meio-tempo — o recurso
+              // continua existindo, só sem o link interno.
+              resources.push(resource);
+            }
+          }
+          steps.push({ ...step, resources });
+        }
+        importedUnits.push({ ...unit, steps });
+      }
+      return importedUnits;
+    } finally {
+      get().endPendingTask(token);
+    }
   },
   completeStep: async (pathId, stepId) => {
     const learningPath = get().paths.find(p => p.id === pathId);

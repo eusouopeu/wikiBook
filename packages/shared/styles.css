@@ -3032,7 +3032,10 @@ button.text-btn:hover { text-decoration: underline; }
 .path-locked-legend svg { height: 13px; width: 13px; }
 .path-unit-title {
   color: var(--fg3); font-size: 11px; font-weight: 600; letter-spacing: 0.05em;
-  margin: 26px 0 14px; text-align: center; text-transform: uppercase;
+  margin: 26px 0 2px; text-align: center; text-transform: uppercase;
+}
+.path-unit-duration {
+  color: var(--fg3); font-size: 11px; margin: 0 0 14px; text-align: center;
 }
 .path-unit-steps { display: flex; flex-direction: column; gap: 14px; }
 .path-step-node {
@@ -3044,7 +3047,8 @@ button.text-btn:hover { text-decoration: underline; }
 .path-step-align-left { align-self: flex-start; }
 .path-step-align-right { align-self: flex-end; }
 .path-step-icon { flex-shrink: 0; font-size: 15px; }
-.path-step-label { color: var(--fg); font-size: 13px; text-align: left; }
+.path-step-label { color: var(--fg); flex: 1; font-size: 13px; text-align: left; }
+.path-step-duration { color: var(--fg3); flex-shrink: 0; font-size: 11px; }
 .path-step-available { border-color: var(--accent); }
 .path-step-available .path-step-icon { color: var(--accent); }
 .path-step-done { background: var(--accent-soft); }

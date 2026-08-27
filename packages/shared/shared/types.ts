@@ -184,6 +184,10 @@ export interface PathResource {
   query?: string;
   verified: boolean;
   engines?: VideoSearchEngine[];
+  // wikipedia: id do artigo importado para a pasta da trilha (ver
+  // useStore.importPathArticles) — quando presente, o recurso abre dentro do
+  // app em vez do navegador externo.
+  articleId?: string;
 }
 
 export type PathStepStatus = "locked" | "available" | "done";

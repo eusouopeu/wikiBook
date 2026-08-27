@@ -50,6 +50,13 @@ export function MobileApp() {
     setScreen("article");
   }
 
+  // PathView já chama openArticle(id)/setView("article") internamente ao
+  // clicar num recurso importado (mesmo padrão do GraphView acima) — aqui só
+  // trocamos a tela do shell mobile.
+  function handlePathArticleOpen(_id: string) {
+    setScreen("article");
+  }
+
   // Sem isso, excluir o artigo que está sendo visualizado (activeArticleId
   // vira null) deixava a tela travada em "Carregando…" para sempre — nada
   // muda activeArticleId de volta depois de uma exclusão, e o placeholder de
@@ -67,7 +74,7 @@ export function MobileApp() {
   } else if (screen === "graph") {
     content = <GraphScreen onOpenArticle={handleGraphNodeOpen} />;
   } else if (screen === "path") {
-    content = <PathScreen />;
+    content = <PathScreen onOpenArticle={handlePathArticleOpen} />;
   } else if (screen === "settings") {
     content = <SettingsModal embedded />;
   } else {
