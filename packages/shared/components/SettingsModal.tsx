@@ -45,8 +45,11 @@ export const SettingsModal: React.FC<{ onClose?: () => void; embedded?: boolean 
     });
   }, []);
 
-  async function handleSave() {
-    const res = await window.lexicon.invoke("config:set", { key: "anthropicApiKey", value: apiKey });
+  // Salva ao sair do campo (onBlur), como os demais campos desta tela
+  // (URL/token de sincronização) — sem botão "Salvar" genérico no rodapé,
+  // que era ambíguo sobre quais dos cinco campos ele realmente persistia.
+  async function persistApiKey(value: string) {
+    const res = await window.lexicon.invoke("config:set", { key: "anthropicApiKey", value });
     if (!res.ok) { showToast(res.error ?? "Falha ao salvar a chave.", "error"); return; }
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
@@ -112,11 +115,13 @@ export const SettingsModal: React.FC<{ onClose?: () => void; embedded?: boolean 
             type="password"
             value={apiKey}
             onChange={e => setApiKey(e.target.value)}
+            onBlur={() => persistApiKey(apiKey)}
             placeholder="sk-ant-api03-…"
           />
         </label>
         <p className="settings-hint">
           Salva de forma criptografada no Keychain/Keystore do dispositivo — nunca enviada para terceiros.
+          {saved && <> <Icon name="check" /> Salva.</>}
         </p>
         <label>
           Idioma da Wikipedia
@@ -197,12 +202,11 @@ export const SettingsModal: React.FC<{ onClose?: () => void; embedded?: boolean 
           </button>
         </div>
 
-        <div className="modal-actions">
-          {!embedded && <button onClick={onClose}>Fechar</button>}
-          <button className="primary" onClick={handleSave}>
-            {saved ? <><Icon name="check" /><span>Salvo</span></> : "Salvar"}
-          </button>
-        </div>
+        {!embedded && (
+          <div className="modal-actions">
+            <button onClick={onClose}>Fechar</button>
+          </div>
+        )}
     </>
   );
 

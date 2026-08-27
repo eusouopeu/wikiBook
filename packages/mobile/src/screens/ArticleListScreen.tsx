@@ -11,9 +11,12 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Dialog } from "@capacitor/dialog";
-import { useStore, ReviewModal, FolderPicker, VirtualList, LogoMark, Icon, scoreQueryMatch } from "@lexicon/shared";
+import { useStore, ReviewModal, FolderPicker, VirtualList, LogoMark, Icon, scoreQueryMatch, confirmDialog } from "@lexicon/shared";
 import type { Article, Flashcard, FlashcardGrade } from "@lexicon/shared";
+
+// Pseudo-id local (não existe no backend) usado só para representar o card
+// "Sem pasta" na grade de pastas — artigos com folderId nulo/indefinido.
+const NO_FOLDER_ID = "__no_folder__";
 
 interface Props {
   onOpenArticle: (id: string) => void;
@@ -49,17 +52,13 @@ export function ArticleListScreen({ onOpenArticle, onNewArticle }: Props) {
     if (renamingFolderId && renameDraft.trim()) await renameFolder(renamingFolderId, renameDraft.trim());
     setRenamingFolderId(null);
   }
-  // Dialog.confirm em vez de window.confirm(): dentro da WebView do Capacitor,
-  // o confirm() nativo do browser renderiza com estilo inconsistente com o
-  // resto do app — ruim justo numa confirmação destrutiva.
   async function handleDeleteFolder(id: string, name: string) {
-    const { value } = await Dialog.confirm({
-      title: "Excluir pasta",
-      message: `Excluir a pasta "${name}"?\n\nOs artigos dentro dela voltam para "Sem pasta".`,
-      okButtonTitle: "Excluir",
-      cancelButtonTitle: "Cancelar",
-    });
-    if (!value) return;
+    const ok = await confirmDialog(
+      `Os artigos dentro dela voltam para "Sem pasta".`,
+      `Excluir a pasta "${name}"?`
+    );
+    if (!ok) return;
+    if (selectedFolder === id) setSelectedFolder(null);
     await deleteFolder(id);
   }
 
@@ -128,6 +127,26 @@ export function ArticleListScreen({ onOpenArticle, onNewArticle }: Props) {
     return Array.from(tags).sort();
   }, [articles]);
 
+  // Contagem de artigos por pasta (+ "Sem pasta") para os cards da grade.
+  const folderCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    let noFolder = 0;
+    for (const a of articles) {
+      if (a.folderId) counts.set(a.folderId, (counts.get(a.folderId) ?? 0) + 1);
+      else noFolder++;
+    }
+    return { counts, noFolder };
+  }, [articles]);
+
+  // Grade de pastas (cards, não chips) é a home do modo "folders" — só cede
+  // lugar à lista de artigos quando o usuário entra numa pasta específica ou
+  // busca/filtra por tag (que cruzam todas as pastas, como no modo "flat").
+  const inFolderDetail = libraryView === "folders" && !!selectedFolder;
+  const showFolderGrid = libraryView === "folders" && !selectedFolder && folders.length > 0
+    && !searchQuery.trim() && selectedTags.length === 0;
+
+  const openFolder = folders.find(f => f.id === selectedFolder);
+
   // Filtro por tag/pasta + busca local rankeada por relevância — ver
   // lib/searchRelevance.ts (mesma lógica do App.tsx desktop; antes daqui
   // saía uma chamada de rede por tecla para claude:searchRank).
@@ -136,7 +155,8 @@ export function ArticleListScreen({ onOpenArticle, onNewArticle }: Props) {
     const qTokens = q.split(/\s+/).filter(Boolean);
     let result = articles.filter(a => {
       if (!selectedTags.every(t => (a.tags ?? []).includes(t))) return false;
-      if (libraryView === "folders" && selectedFolder && a.folderId !== selectedFolder) return false;
+      if (libraryView === "folders" && selectedFolder === NO_FOLDER_ID && a.folderId) return false;
+      if (libraryView === "folders" && selectedFolder && selectedFolder !== NO_FOLDER_ID && a.folderId !== selectedFolder) return false;
       if (!q) return true;
       const blob = searchIndex.get(a.id) ?? "";
       return qTokens.some(tok => blob.includes(tok));
@@ -186,38 +206,32 @@ export function ArticleListScreen({ onOpenArticle, onNewArticle }: Props) {
         />
       </div>
 
-      {libraryView === "folders" && folders.length > 0 && (
-        <div className="mobile-folders">
-          {folders.map(f => (
-            <div key={f.id} className={`folder-chip ${selectedFolder === f.id ? "active" : ""}`}>
-              {renamingFolderId === f.id ? (
-                <input
-                  className="folder-chip-rename-input" autoFocus value={renameDraft}
-                  onChange={e => setRenameDraft(e.target.value)}
-                  onBlur={handleRenameFolderCommit}
-                  onKeyDown={e => {
-                    if (e.key === "Enter") handleRenameFolderCommit();
-                    if (e.key === "Escape") setRenamingFolderId(null);
-                  }}
-                />
-              ) : (
-                <>
-                  <button
-                    type="button" className="folder-chip-label"
-                    onClick={() => setSelectedFolder(selectedFolder === f.id ? null : f.id)}
-                  >
-                    <Icon name="folder" /><span>{f.name}</span>
-                  </button>
-                  <span className="folder-chip-actions">
-                    <button type="button" title="Renomear pasta" aria-label="Renomear pasta"
-                            onClick={() => handleRenameFolderStart(f.id, f.name)}><Icon name="edit" /></button>
-                    <button type="button" title="Excluir pasta" aria-label="Excluir pasta"
-                            onClick={() => handleDeleteFolder(f.id, f.name)}><Icon name="trash" /></button>
-                  </span>
-                </>
-              )}
-            </div>
-          ))}
+      {inFolderDetail && (
+        <div className="mobile-folder-detail-header">
+          <button className="mobile-back-btn" onClick={() => setSelectedFolder(null)}>‹ Pastas</button>
+          {openFolder && renamingFolderId === openFolder.id ? (
+            <input
+              className="folder-chip-rename-input" autoFocus value={renameDraft}
+              onChange={e => setRenameDraft(e.target.value)}
+              onBlur={handleRenameFolderCommit}
+              onKeyDown={e => {
+                if (e.key === "Enter") handleRenameFolderCommit();
+                if (e.key === "Escape") setRenamingFolderId(null);
+              }}
+            />
+          ) : (
+            <span className="mobile-folder-detail-title">
+              <Icon name="folder" /><span>{openFolder ? openFolder.name : "Sem pasta"}</span>
+            </span>
+          )}
+          {openFolder && renamingFolderId !== openFolder.id && (
+            <span className="mobile-folder-detail-actions">
+              <button type="button" title="Renomear pasta" aria-label="Renomear pasta"
+                      onClick={() => handleRenameFolderStart(openFolder.id, openFolder.name)}><Icon name="edit" /></button>
+              <button type="button" title="Excluir pasta" aria-label="Excluir pasta"
+                      onClick={() => handleDeleteFolder(openFolder.id, openFolder.name)}><Icon name="trash" /></button>
+            </span>
+          )}
         </div>
       )}
 
@@ -228,6 +242,29 @@ export function ArticleListScreen({ onOpenArticle, onNewArticle }: Props) {
       )}
 
       <button className="mobile-new-article-btn" onClick={onNewArticle}>+ Novo artigo</button>
+
+      {showFolderGrid ? (
+        <div className="mobile-folder-grid">
+          {folders.map(f => {
+            const count = folderCounts.counts.get(f.id) ?? 0;
+            return (
+              <button key={f.id} type="button" className="mobile-folder-card" onClick={() => setSelectedFolder(f.id)}>
+                <Icon name="folder" />
+                <span className="mobile-folder-card-name">{f.name}</span>
+                <span className="mobile-folder-card-count">{count} artigo{count === 1 ? "" : "s"}</span>
+              </button>
+            );
+          })}
+          {folderCounts.noFolder > 0 && (
+            <button type="button" className="mobile-folder-card mobile-folder-card-none" onClick={() => setSelectedFolder(NO_FOLDER_ID)}>
+              <Icon name="file" />
+              <span className="mobile-folder-card-name">Sem pasta</span>
+              <span className="mobile-folder-card-count">{folderCounts.noFolder} artigo{folderCounts.noFolder === 1 ? "" : "s"}</span>
+            </button>
+          )}
+        </div>
+      ) : (
+      <>
 
       {allTags.length > 0 && (
         <div className="mobile-tags">
@@ -283,6 +320,9 @@ export function ArticleListScreen({ onOpenArticle, onNewArticle }: Props) {
             </div>
           )}
         />
+      )}
+
+      </>
       )}
 
       {folderPickerFor && (

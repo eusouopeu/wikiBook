@@ -283,6 +283,16 @@ const PathDetail: React.FC<{ learningPath: LearningPath; onBack: () => void }> =
   const [openStep, setOpenStep] = useState<PathStep | null>(null);
   const { total, done } = pathProgress(learningPath);
 
+  // Desbloqueio é estritamente sequencial (ver pathHandlers.js/platform/claude.ts:
+  // um passo só fica "available" quando o anterior é concluído) — por isso o
+  // passo imediatamente anterior na lista achatada é sempre o motivo real do
+  // bloqueio, não uma suposição.
+  const flatSteps = useMemo(
+    () => learningPath.units.flatMap(u => u.steps),
+    [learningPath]
+  );
+  const hasLockedStep = flatSteps.some(s => s.status === "locked");
+
   return (
     <div className="path-detail-screen">
       <div className="path-detail-header">
@@ -298,16 +308,23 @@ const PathDetail: React.FC<{ learningPath: LearningPath; onBack: () => void }> =
             <div className="path-unit-steps">
               {unit.steps.map((step, stepIdx) => {
                 const align = (unitIdx * 100 + stepIdx) % 2 === 0 ? "left" : "right";
+                const isLocked = step.status === "locked";
+                const flatIdx = flatSteps.indexOf(step);
+                const prevStep = flatIdx > 0 ? flatSteps[flatIdx - 1] : null;
+                const lockedReason = prevStep
+                  ? `Bloqueado até concluir "${prevStep.title}"`
+                  : "Bloqueado";
                 return (
                   <button
                     key={step.id}
                     className={`path-step-node path-step-${step.status} path-step-align-${align}`}
                     onClick={() => step.status !== "locked" && setOpenStep(step)}
-                    disabled={step.status === "locked"}
-                    title={step.title}
+                    disabled={isLocked}
+                    title={isLocked ? lockedReason : step.title}
+                    aria-label={isLocked ? `${step.title} — ${lockedReason}` : step.title}
                   >
                     <span className="path-step-icon">
-                      {step.status === "done" ? <Icon name="check" /> : step.status === "locked" ? <Icon name="locked" /> : "●"}
+                      {step.status === "done" ? <Icon name="check" /> : isLocked ? <Icon name="locked" /> : "●"}
                     </span>
                     <span className="path-step-label">{step.title}</span>
                   </button>
@@ -317,6 +334,12 @@ const PathDetail: React.FC<{ learningPath: LearningPath; onBack: () => void }> =
           </div>
         ))}
       </div>
+
+      {hasLockedStep && (
+        <p className="path-locked-legend">
+          <Icon name="locked" /> Passos bloqueados liberam um de cada vez, ao concluir o anterior.
+        </p>
+      )}
 
       {openStep && <StepPanel step={openStep} pathId={learningPath.id} onClose={() => setOpenStep(null)} />}
     </div>

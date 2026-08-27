@@ -1595,8 +1595,9 @@ export const ArticleView: React.FC<Props> = ({ article, headerActionsSlot }) => 
   // guardamos aqui os links removidos de outros artigos para poder reconstituir
   // tudo se o usuário clicar em "Desfazer" no toast (janela de ~5s).
   const handleDeleteArticle = useCallback(async () => {
-    const ok = window.confirm(
-      `Excluir "${article.title}"?\n\nOs links que apontam para ele também serão removidos.`
+    const ok = await confirmDialog(
+      "Os links que apontam para ele também serão removidos.",
+      `Excluir "${article.title}"?`
     );
     if (!ok) return;
     const removedLinks = articles.flatMap(a =>
@@ -2002,10 +2003,13 @@ export const ArticleView: React.FC<Props> = ({ article, headerActionsSlot }) => 
       {/* ── Corpo ───────────────────────────────────────────────────────── */}
       <div className="article-body">
 
-        {/* Índice de links internos (estilo "Sumário" da Wikipedia) */}
+        {/* Índice de links internos (estilo "Sumário" da Wikipedia) — colapsável
+            para não empurrar o conteúdo do artigo para baixo da dobra em
+            artigos bem conectados; o estado (aberto/fechado) fica só na
+            sessão, não é persistido em disco. */}
         {article.links.length > 0 && !showSummary && (
-          <div className="wiki-toc">
-            <div className="wiki-toc-title">Conceitos vinculados</div>
+          <details className="wiki-toc" open>
+            <summary className="wiki-toc-title">Conceitos vinculados ({article.links.length})</summary>
             <ol className="wiki-toc-list">
               {article.links.map((link, i) => (
                 <li key={link.id}>
@@ -2019,17 +2023,18 @@ export const ArticleView: React.FC<Props> = ({ article, headerActionsSlot }) => 
                 </li>
               ))}
             </ol>
-          </div>
+          </details>
         )}
 
         {/* Sugestões de link automáticas — termos marcados como conceito na
             Wikipedia original, ou o título de outro artigo já existente
-            encontrado no texto de qualquer fonte (Claude/manual incluídos) */}
+            encontrado no texto de qualquer fonte (Claude/manual incluídos).
+            Também colapsável, pelo mesmo motivo do bloco acima. */}
         {visibleSuggestions.length > 0 && !showSummary && (
-          <div className="wiki-toc link-suggestions">
-            <div className="wiki-toc-title link-suggestions-title-row">
+          <details className="wiki-toc link-suggestions" open>
+            <summary className="wiki-toc-title link-suggestions-title-row">
               <span>
-                Links sugeridos
+                Links sugeridos ({visibleSuggestions.length})
                 {visibleSuggestions.length > shownSuggestions.length && (
                   <span className="link-suggestions-count">
                     {" "}— mostrando {shownSuggestions.length} de {visibleSuggestions.length}
@@ -2037,10 +2042,10 @@ export const ArticleView: React.FC<Props> = ({ article, headerActionsSlot }) => 
                 )}
               </span>
               <button type="button" className="link-suggestions-accept-all-btn"
-                      onClick={() => handleAcceptAllSuggestions(shownSuggestions)}>
+                      onClick={e => { e.stopPropagation(); handleAcceptAllSuggestions(shownSuggestions); }}>
                 Vincular todos
               </button>
-            </div>
+            </summary>
             <ol className="wiki-toc-list">
               {shownSuggestions.map(({ term, target }) => (
                 <li key={term}>
@@ -2062,7 +2067,7 @@ export const ArticleView: React.FC<Props> = ({ article, headerActionsSlot }) => 
                 Carregar mais ({visibleSuggestions.length - shownSuggestions.length} restantes)
               </button>
             )}
-          </div>
+          </details>
         )}
 
         {/* Conteúdo principal */}

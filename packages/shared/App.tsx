@@ -16,6 +16,7 @@ import { Icon } from "./components/Icon";
 import { MiniGraphPreview } from "./components/MiniGraphPreview";
 import { VirtualList, type VirtualListHandle } from "./components/VirtualList";
 import { scoreQueryMatch } from "./lib/searchRelevance";
+import { confirmDialog } from "./lib/confirmDialog";
 
 // ── Controles de zoom do grafo ────────────────────────────────────────────────
 // Chama os métodos D3 expostos no SVGElement pelo GraphView
@@ -407,7 +408,11 @@ export default function App() {
     setRenamingFolderId(null);
   }
   async function handleDeleteFolder(id: string, name: string) {
-    if (!window.confirm(`Excluir a pasta "${name}"?\n\nOs artigos dentro dela voltam para "Sem pasta".`)) return;
+    const ok = await confirmDialog(
+      `Os artigos dentro dela voltam para "Sem pasta".`,
+      `Excluir a pasta "${name}"?`
+    );
+    if (!ok) return;
     await deleteFolder(id);
   }
 

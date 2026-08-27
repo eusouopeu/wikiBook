@@ -49,6 +49,32 @@
 
   --radius-sm:     2px;
   --radius:        4px;
+
+  /* Cores de destaque de texto (marca-texto, cloze, categorias de trecho) —
+     centralizadas em tokens para que o par claro/escuro de cada uma viva num
+     só lugar (ver bloco de modo escuro abaixo), em vez de repetir o mesmo
+     par de hex ao lado de cada seletor que os usa. */
+  --hl-default-bg: #ffe680;
+  --hl-default-fg: #202122;
+  --hl-def-bg:     #cfe3ff;
+  --hl-def-fg:     #17324d;
+  --hl-enum-bg:    #c8f0d0;
+  --hl-enum-fg:    #1b4324;
+  --hl-num-bg:     #e4d4f7;
+  --hl-num-fg:     #3d2260;
+  --hl-orange-bg:  #ffd9b0;
+  --hl-orange-fg:  #5c3400;
+
+  --excerpt-cat-concept-bg:     #eaf2fd;
+  --excerpt-cat-concept-border: #3b7dd8;
+  --excerpt-cat-list-bg:        #e9f7ec;
+  --excerpt-cat-list-border:    #2e9e51;
+  --excerpt-cat-numeric-bg:     #f2ebfb;
+  --excerpt-cat-numeric-border: #8b5cc7;
+
+  --modal-error-bg:     #fee7e6;
+  --modal-error-border: #d33;
+  --modal-error-fg:     #d33;
 }
 
 /* ── Modo escuro ────────────────────────────────────────────────────────── */
@@ -81,6 +107,28 @@
     --accent-soft:  #1a2636;
     --tab-active-bg:#1e1e1e;
     --tab-border:   #3a3a3a;
+
+    --hl-default-bg: #7a6a1f;
+    --hl-default-fg: #f0e6c0;
+    --hl-def-bg:     #274a73;
+    --hl-def-fg:     #cfe3ff;
+    --hl-enum-bg:    #2b5e38;
+    --hl-enum-fg:    #c8f0d0;
+    --hl-num-bg:     #4d3570;
+    --hl-num-fg:     #e4d4f7;
+    --hl-orange-bg:  #7a4a1a;
+    --hl-orange-fg:  #ffd9b0;
+
+    --excerpt-cat-concept-bg:     #16283f;
+    --excerpt-cat-concept-border: #4f86c6;
+    --excerpt-cat-list-bg:        #14301d;
+    --excerpt-cat-list-border:    #3c9159;
+    --excerpt-cat-numeric-bg:     #241834;
+    --excerpt-cat-numeric-border: #8b5cc7;
+
+    --modal-error-bg:     #2c1010;
+    --modal-error-border: #a33;
+    --modal-error-fg:     #f88;
   }
 }
 :root[data-theme="dark"] {
@@ -107,6 +155,28 @@
   --accent-soft:  #1a2636;
   --tab-active-bg:#1e1e1e;
   --tab-border:   #3a3a3a;
+
+  --hl-default-bg: #7a6a1f;
+  --hl-default-fg: #f0e6c0;
+  --hl-def-bg:     #274a73;
+  --hl-def-fg:     #cfe3ff;
+  --hl-enum-bg:    #2b5e38;
+  --hl-enum-fg:    #c8f0d0;
+  --hl-num-bg:     #4d3570;
+  --hl-num-fg:     #e4d4f7;
+  --hl-orange-bg:  #7a4a1a;
+  --hl-orange-fg:  #ffd9b0;
+
+  --excerpt-cat-concept-bg:     #16283f;
+  --excerpt-cat-concept-border: #4f86c6;
+  --excerpt-cat-list-bg:        #14301d;
+  --excerpt-cat-list-border:    #3c9159;
+  --excerpt-cat-numeric-bg:     #241834;
+  --excerpt-cat-numeric-border: #8b5cc7;
+
+  --modal-error-bg:     #2c1010;
+  --modal-error-border: #a33;
+  --modal-error-fg:     #f88;
 }
 
 /* ── Reset ─────────────────────────────────────────────────────────────── */
@@ -764,15 +834,34 @@ html, body, #root {
   padding: 10px 14px 12px;
 }
 
+/* Título dos painéis de "Conceitos vinculados"/"Links sugeridos" — agora
+   <summary> de um <details>, para poderem ser colapsados sem perder o
+   estilo anterior (era um <div> estático). */
 .wiki-toc-title {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-family: var(--font-ui);
   font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.04em;
+  list-style: none;
   margin-bottom: 6px;
   text-transform: uppercase;
+  user-select: none;
   color: var(--fg2);
 }
+.wiki-toc-title::-webkit-details-marker { display: none; }
+.wiki-toc-title::before {
+  content: '▸';
+  display: inline-block;
+  font-size: 0.85em;
+  transition: transform 0.15s;
+}
+.wiki-toc[open] > .wiki-toc-title::before { transform: rotate(90deg); }
+.wiki-toc-title.link-suggestions-title-row { justify-content: flex-start; }
+.wiki-toc-title.link-suggestions-title-row > span:first-child { flex: 1; }
 
 .wiki-toc-list {
   list-style: none;
@@ -1277,18 +1366,14 @@ mark.find-match-current {
 }
 
 .modal-error {
-  background: #fee7e6;
-  border: 1px solid #d33;
+  background: var(--modal-error-bg);
+  border: 1px solid var(--modal-error-border);
   border-radius: var(--radius);
-  color: #d33;
+  color: var(--modal-error-fg);
   font-size: 12px;
   margin-bottom: 12px;
   padding: 7px 12px;
 }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .modal-error { background: #2c1010; border-color: #a33; color: #f88; }
-}
-:root[data-theme="dark"] .modal-error { background: #2c1010; border-color: #a33; color: #f88; }
 
 .modal-actions {
   border-top: 1px solid var(--border-light);
@@ -1822,7 +1907,74 @@ mark.find-match-current {
   color: #fff;
 }
 
-/* Chips de pasta na sidebar (desktop e mobile) */
+/* Grade de pastas do mobile (cards, não chips) — ArticleListScreen.tsx */
+.mobile-folder-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+
+.mobile-folder-card {
+  align-items: flex-start;
+  background: var(--bg-hover, #eaf3fb);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 72px;
+  padding: 12px;
+  text-align: left;
+}
+.mobile-folder-card svg { color: var(--fg3); height: 20px; width: 20px; }
+
+.mobile-folder-card-name {
+  color: var(--fg);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  width: 100%;
+}
+
+.mobile-folder-card-count { color: var(--fg3); font-size: 0.78rem; }
+
+.mobile-folder-card-none { background: none; border-style: dashed; }
+
+/* Cabeçalho da pasta aberta (view de página inteira) */
+.mobile-folder-detail-header {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+}
+
+.mobile-folder-detail-title {
+  align-items: center;
+  color: var(--fg);
+  display: flex;
+  flex: 1;
+  font-weight: 600;
+  gap: 6px;
+  min-width: 0;
+}
+.mobile-folder-detail-title span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mobile-folder-detail-actions { display: flex; flex-shrink: 0; gap: 2px; }
+.mobile-folder-detail-actions button {
+  background: none;
+  border: none;
+  color: var(--fg3);
+  min-height: 36px;
+  min-width: 36px;
+  padding: 6px;
+}
+.mobile-folder-detail-actions button:hover { color: var(--accent); }
+
+/* Chips de pasta na sidebar (desktop) */
 .sidebar-folders, .mobile-folders {
   display: flex;
   flex-wrap: wrap;
@@ -2336,11 +2488,7 @@ mark.find-match-current {
 /* ─── Adições: edição de trechos, headings, arraste, flashcards, revisão ──── */
 
 /* Destaque padrão (==texto==) */
-mark.hl-default { background: #ffe680; color: #202122; padding: 0 2px; border-radius: 2px; }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) mark.hl-default { background: #7a6a1f; color: #f0e6c0; }
-}
-:root[data-theme="dark"] mark.hl-default { background: #7a6a1f; color: #f0e6c0; }
+mark.hl-default { background: var(--hl-default-bg); color: var(--hl-default-fg); padding: 0 2px; border-radius: 2px; }
 
 /* Cabeçalho comum de painéis (trechos / flashcards) */
 .excerpts-panel-header {
@@ -2614,11 +2762,7 @@ mark.hl-default { background: #ffe680; color: #202122; padding: 0 2px; border-ra
   color: var(--fg3);
   padding: 0 6px;
 }
-mark.cloze-revealed { background: #ffe680; color: #202122; padding: 0 3px; border-radius: 2px; }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) mark.cloze-revealed { background: #7a6a1f; color: #f0e6c0; }
-}
-:root[data-theme="dark"] mark.cloze-revealed { background: #7a6a1f; color: #f0e6c0; }
+mark.cloze-revealed { background: var(--hl-default-bg); color: var(--hl-default-fg); padding: 0 3px; border-radius: 2px; }
 
 .review-actions { display: flex; gap: 8px; margin-top: 16px; }
 .review-actions button.primary { flex: 1; }
@@ -2651,35 +2795,25 @@ mark.cloze-revealed { background: #ffe680; color: #202122; padding: 0 3px; borde
 /* ─── Adições: marca-textos semânticos (azul/verde/roxo) e laranja ─────────── */
 
 /* Azul — definições de conceitos ([texto]{.def}) */
-mark.hl-def    { background: #cfe3ff; color: #17324d; padding: 0 2px; border-radius: 2px; }
+mark.hl-def    { background: var(--hl-def-bg); color: var(--hl-def-fg); padding: 0 2px; border-radius: 2px; }
 /* Verde — divisões de estruturas / enumerações ([texto]{.enum}) */
-mark.hl-enum   { background: #c8f0d0; color: #1b4324; padding: 0 2px; border-radius: 2px; }
+mark.hl-enum   { background: var(--hl-enum-bg); color: var(--hl-enum-fg); padding: 0 2px; border-radius: 2px; }
 /* Roxo — dados numéricos importantes ([texto]{.num}) */
-mark.hl-num    { background: #e4d4f7; color: #3d2260; padding: 0 2px; border-radius: 2px; }
+mark.hl-num    { background: var(--hl-num-bg); color: var(--hl-num-fg); padding: 0 2px; border-radius: 2px; }
 /* Laranja (++texto++) */
-mark.hl-orange { background: #ffd9b0; color: #5c3400; padding: 0 2px; border-radius: 2px; }
+mark.hl-orange { background: var(--hl-orange-bg); color: var(--hl-orange-fg); padding: 0 2px; border-radius: 2px; }
 
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) mark.hl-def    { background: #274a73; color: #cfe3ff; }
-  :root:not([data-theme="light"]) mark.hl-enum   { background: #2b5e38; color: #c8f0d0; }
-  :root:not([data-theme="light"]) mark.hl-num    { background: #4d3570; color: #e4d4f7; }
-  :root:not([data-theme="light"]) mark.hl-orange { background: #7a4a1a; color: #ffd9b0; }
-}
-:root[data-theme="dark"] mark.hl-def    { background: #274a73; color: #cfe3ff; }
-:root[data-theme="dark"] mark.hl-enum   { background: #2b5e38; color: #c8f0d0; }
-:root[data-theme="dark"] mark.hl-num    { background: #4d3570; color: #e4d4f7; }
-:root[data-theme="dark"] mark.hl-orange { background: #7a4a1a; color: #ffd9b0; }
-
-/* Botões-amostra na toolbar do editor de trechos */
+/* Botões-amostra na toolbar do editor de trechos — mesmos tokens das marcas
+   acima, para a prévia do botão bater com o destaque real em qualquer tema. */
 .hl-swatch {
   border-radius: var(--radius-sm) !important;
   font-weight: 600;
 }
-.hl-swatch-yellow { background: #ffe680 !important; color: #202122 !important; }
-.hl-swatch-def    { background: #cfe3ff !important; color: #17324d !important; }
-.hl-swatch-enum   { background: #c8f0d0 !important; color: #1b4324 !important; }
-.hl-swatch-num    { background: #e4d4f7 !important; color: #3d2260 !important; }
-.hl-swatch-orange { background: #ffd9b0 !important; color: #5c3400 !important; }
+.hl-swatch-yellow { background: var(--hl-default-bg) !important; color: var(--hl-default-fg) !important; }
+.hl-swatch-def    { background: var(--hl-def-bg) !important; color: var(--hl-def-fg) !important; }
+.hl-swatch-enum   { background: var(--hl-enum-bg) !important; color: var(--hl-enum-fg) !important; }
+.hl-swatch-num    { background: var(--hl-num-bg) !important; color: var(--hl-num-fg) !important; }
+.hl-swatch-orange { background: var(--hl-orange-bg) !important; color: var(--hl-orange-fg) !important; }
 .hl-swatch:hover  { filter: brightness(0.92); }
 
 /* ─── Adições: categorias de cor de trecho + editor de tabela ──────────────── */
@@ -2687,38 +2821,22 @@ mark.hl-orange { background: #ffd9b0; color: #5c3400; padding: 0 2px; border-rad
 /* Categorias de cor de fundo do trecho salvo (default = creme herdado).
    Fundo do bloco inteiro + faixa lateral colorida. */
 .excerpt-item.excerpt-cat-concept {
-  background: #eaf2fd;
-  border-left-color: #3b7dd8;
+  background: var(--excerpt-cat-concept-bg);
+  border-left-color: var(--excerpt-cat-concept-border);
 }
 .excerpt-item.excerpt-cat-list {
-  background: #e9f7ec;
-  border-left-color: #2e9e51;
+  background: var(--excerpt-cat-list-bg);
+  border-left-color: var(--excerpt-cat-list-border);
 }
 .excerpt-item.excerpt-cat-numeric {
-  background: #f2ebfb;
-  border-left-color: #8b5cc7;
+  background: var(--excerpt-cat-numeric-bg);
+  border-left-color: var(--excerpt-cat-numeric-border);
 }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .excerpt-item.excerpt-cat-concept { background: #16283f; border-left-color: #4f86c6; }
-  :root:not([data-theme="light"]) .excerpt-item.excerpt-cat-list    { background: #14301d; border-left-color: #3c9159; }
-  :root:not([data-theme="light"]) .excerpt-item.excerpt-cat-numeric { background: #241834; border-left-color: #8b5cc7; }
-}
-:root[data-theme="dark"] .excerpt-item.excerpt-cat-concept { background: #16283f; border-left-color: #4f86c6; }
-:root[data-theme="dark"] .excerpt-item.excerpt-cat-list    { background: #14301d; border-left-color: #3c9159; }
-:root[data-theme="dark"] .excerpt-item.excerpt-cat-numeric { background: #241834; border-left-color: #8b5cc7; }
 
 /* Mesma cor de fundo na prévia do modal de salvar */
-.excerpt-preview.excerpt-cat-concept { background: #eaf2fd; }
-.excerpt-preview.excerpt-cat-list    { background: #e9f7ec; }
-.excerpt-preview.excerpt-cat-numeric { background: #f2ebfb; }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .excerpt-preview.excerpt-cat-concept { background: #16283f; }
-  :root:not([data-theme="light"]) .excerpt-preview.excerpt-cat-list    { background: #14301d; }
-  :root:not([data-theme="light"]) .excerpt-preview.excerpt-cat-numeric { background: #241834; }
-}
-:root[data-theme="dark"] .excerpt-preview.excerpt-cat-concept { background: #16283f; }
-:root[data-theme="dark"] .excerpt-preview.excerpt-cat-list    { background: #14301d; }
-:root[data-theme="dark"] .excerpt-preview.excerpt-cat-numeric { background: #241834; }
+.excerpt-preview.excerpt-cat-concept { background: var(--excerpt-cat-concept-bg); }
+.excerpt-preview.excerpt-cat-list    { background: var(--excerpt-cat-list-bg); }
+.excerpt-preview.excerpt-cat-numeric { background: var(--excerpt-cat-numeric-bg); }
 
 /* Bolinhas de cor nas opções do menu de contexto */
 .ctx-cat-swatch {
@@ -2729,9 +2847,9 @@ mark.hl-orange { background: #ffd9b0; color: #5c3400; padding: 0 2px; border-rad
   vertical-align: middle;
   width: 9px;
 }
-.ctx-cat-concept { background: #3b7dd8; }
-.ctx-cat-list    { background: #2e9e51; }
-.ctx-cat-numeric { background: #8b5cc7; }
+.ctx-cat-concept { background: var(--excerpt-cat-concept-border); }
+.ctx-cat-list    { background: var(--excerpt-cat-list-border); }
+.ctx-cat-numeric { background: var(--excerpt-cat-numeric-border); }
 
 /* Editor de tabela (grade de células) */
 .table-editor-grid-wrap { max-width: 100%; overflow-x: auto; }
@@ -2902,6 +3020,16 @@ button.text-btn:hover { text-decoration: underline; }
 .path-detail-progress-label { color: var(--fg3); font-size: 12px; }
 
 .path-serpentine { margin: 0 auto; max-width: 480px; padding: 10px 20px 20px; }
+.path-locked-legend {
+  align-items: center;
+  color: var(--fg3);
+  display: flex;
+  font-size: 12px;
+  gap: 6px;
+  justify-content: center;
+  margin: 0 0 20px;
+}
+.path-locked-legend svg { height: 13px; width: 13px; }
 .path-unit-title {
   color: var(--fg3); font-size: 11px; font-weight: 600; letter-spacing: 0.05em;
   margin: 26px 0 14px; text-align: center; text-transform: uppercase;
