@@ -1,5 +1,150 @@
 # Ideias de melhoria — Lexicon (wikiBook)
 
+## Rodada 2026-08-29
+
+HEAD `d749fa3`. Desde a rodada anterior entraram três commits: `d951aae`
+(implementa 5 das 12 recomendações de UI/UX), `9c43733` (trilha importa
+artigos da Wikipedia para pasta própria) e `d749fa3` (status bar mobile,
+recursos de imagem na trilha, extração de prompts para `claudePrompts.js`).
+Continuam abertas da rodada anterior: menu "⋯" para ações raras (item 2), TOC
+como painel lateral (5), "expandir tudo" nos accordions (7), busca de nó no
+grafo (9), reabrir onboarding (10), badge de contagem na lixeira (11) e FAB de
+novo artigo no mobile (12). Esta rodada olha sobretudo para o que a feature de
+**trilhas** trouxe de novo e para a divergência crescente entre os dois shells.
+12 recomendações, nenhuma repetindo as acima.
+
+### Simplificação e exclusão
+
+**1. O catálogo de modelos de geração de trilha existe duas vezes, com os
+mesmos números escritos à mão em cada uma.** `PATH_MODELS` em
+`claudePrompts.js` (linhas 130-134) guarda `apiModel`/`thinking`/`maxTokens`;
+`PATH_MODEL_OPTIONS` em `pathModels.ts` guarda os mesmos três modelos de novo,
+com `apiModel`, `thinking`, `thinkingBudgetTokens`, `maxOutputTokens` e preços.
+Os valores coincidem hoje (8000/10000/8000, budget 6000) só porque foram
+copiados; qualquer troca de modelo ou de teto de tokens precisa ser feita nos
+dois arquivos, e se divergirem o usuário vê um custo estimado que não
+corresponde à chamada de verdade. Como `claudePrompts.js` já é importado pelos
+dois shells, o catálogo deveria ser único ali (rótulo, descrição e preço
+incluídos) e `pathModels.ts` ficar só com a aritmética de estimativa de custo.
+
+**2. O parser de flashcards e o SM-2 estão duplicados byte a byte entre
+desktop e mobile.** `flashcardHandlers.js` (linhas 68-312) e `flashcards.ts`
+(linhas 120-310) reimplementam o mesmo `LIST_MARKER`, `ENUM_LINE_RE`,
+`buildEnumCloze`, `parseLineForCard` e `gradeCard` — ~250 linhas de lógica
+pura, sem nada de plataforma (não tocam `fs` nem `Filesystem`). Isso significa
+que corrigir um falso positivo do parser ou ajustar o intervalo do SM-2 exige
+duas edições sincronizadas, e um cartão gerado no celular pode ficar diferente
+do mesmo trecho no desktop. É exatamente o caso que `claudePrompts.js` já
+resolveu para os prompts: extrair para `shared/lib/flashcardParser.ts` +
+`shared/lib/sm2.ts` e deixar em cada shell só o I/O de arquivo.
+
+**3. `materializeResources`/`materializeUnits` também estão duplicados nos dois
+shells.** `pathHandlers.js` (linhas 79-140) e `claude.ts` (linhas 211-290)
+repetem a mesma montagem de unidades, o mesmo encadeamento de pré-requisitos e
+o mesmo fallback de página de busca da Wikipédia. O comentário do
+`claudePrompts.js` justifica a duplicação por dependerem de `searchWikipedia`,
+que é específica de plataforma — mas isso se resolve injetando a função: uma
+`materializeUnits(rawUnits, lang, { searchWikipedia })` em `shared/lib` seria
+compartilhável sem que o código puro precise saber se por baixo é `https` do
+Node ou `CapacitorHttp`.
+
+**4. `PathView.tsx` acumula três telas independentes em um arquivo só.** As 414
+linhas cobrem lista de trilhas, assistente de criação de 4 estágios
+(`goal`/`interview`/`model`/`generating`, com estado de entrevista, perfil,
+modelo e erro) e a serpentina com painel de detalhe — que não compartilham
+estado nenhum entre si, só o `activePathId` que já vive no store. É o mesmo
+padrão que tornou `ArticleView.tsx` (2411 linhas) difícil de mexer. Separar em
+`PathList`, `CreatePathWizard` e `PathDetail` como arquivos próprios agora,
+enquanto são pequenos, evita repetir a trajetória do `ArticleView`.
+
+**5. A barra de navegação inferior do mobile define rótulos que nunca aparecem
+na tela.** `BottomNav.tsx` (linhas 16-21) declara `label` para cada uma das 4
+abas, mas o `<button>` renderiza só o `<Icon>` — o texto vai apenas para
+`title`/`aria-label`, e `title` não existe no toque. O resultado é que
+"Trilha" e "Grafo" ficam distinguíveis só pelo desenho do ícone, num app cujo
+público de fato usa as duas coisas para propósitos diferentes. Como o dado já
+está lá e a barra tem só 4 itens, mostrar o rótulo abaixo do ícone (padrão de
+tab bar do iOS/Android) é uma mudança de CSS mais do que de código.
+
+### Alteração de fundamento
+
+**6. Excluir uma trilha deixa para trás a pasta e os artigos que ela criou.**
+`importPathArticles` (`useStore.ts`, linhas 542-589) cria uma pasta com o nome
+do objetivo e importa dentro dela um artigo por recurso da Wikipédia; mas
+`deletePathRecord` (linhas 519-525) e o `path:delete` do handler só apagam o
+JSON da trilha. Quem cria uma trilha, não gosta do resultado e exclui fica com
+uma pasta órfã cheia de artigos numerados ("1/Escala maior", "2/Acordes") sem
+nada que os ligue de volta a uma trilha que não existe mais — e a sidebar de
+pastas acumula essas sobras a cada tentativa. O diálogo de exclusão deveria
+perguntar o que fazer com a pasta (manter ou excluir junto, com os artigos indo
+para a lixeira já existente), como faz qualquer app que gera conteúdo derivado.
+
+**7. A importação dos artigos da trilha é estritamente sequencial.** Ainda em
+`importPathArticles`: três laços aninhados com `await` dentro, um
+`wikipedia:fetch` + `saveArticle` de cada vez. Uma trilha típica gerada pelo
+prompt atual (~6 unidades × ~5 passos, com recurso de Wikipédia em boa parte
+deles) são dezenas de round-trips em série logo depois de o usuário já ter
+esperado até um minuto pela geração — no mobile, em rede móvel, é a diferença
+entre segundos e minutos. Um `Promise.all` com limite de concorrência (4-6 em
+voo) sobre a lista achatada de recursos resolveria sem mudar a modelagem, já
+que os artigos são independentes entre si.
+
+**8. Concluir um passo da trilha é irreversível pela interface.** `completeStep`
+(`useStore.ts`, linhas 590-608) só caminha para frente: marca `done` e
+desbloqueia o seguinte. Não existe "desmarcar" — um toque errado na serpentina
+(alvos grandes, lado a lado, no celular) grava progresso falso permanentemente,
+e a única saída é excluir a trilha inteira e refazer a entrevista. Como o
+desbloqueio é derivado dos `prerequisiteIds`, um `uncompleteStep` que reverta o
+passo para `available` e re-tranque os posteriores é simétrico ao que já existe,
+não uma exceção ao modelo.
+
+**9. A sincronização cobre só artigos e pastas — flashcards e trilhas não
+sincronizam.** `syncHandlers.js` envia `listAllArticles()` + a config `folders`,
+e o servidor (`server.js`) tem tabelas só para essas duas coisas. Na prática,
+quem usa desktop e celular tem a biblioteca sincronizada mas o agendamento
+SM-2 de cada cartão isolado por dispositivo (revisar no celular não adianta o
+`due` no desktop, e vice-versa) e as trilhas invisíveis do outro lado — sendo
+que revisar no celular e ler no desktop é justamente o uso natural das duas
+features. Como flashcards já são um JSON por artigo com `updatedAt` implícito,
+a mesma estratégia LWW por id se estende diretamente; trilhas idem.
+
+**10. Cada sincronização empurra a biblioteca inteira, sem delta.** Ainda em
+`syncHandlers.js`: `listAllArticles()` monta todos os artigos com conteúdo
+completo e faz um POST único (o servidor aceita corpo de até 50 MB), e a
+resposta devolve o estado completo de volta. Com poucas dezenas de artigos isso
+é irrelevante; com centenas de artigos da Wikipédia (HTML inteiro cada) é um
+upload de vários MB a cada toque em "Sincronizar", o que no celular é
+custo de dados real. Enviar só o que mudou desde `syncLastRunAt` (que a config
+já grava) e pedir ao servidor só os ids mais novos que essa marca resolveria
+sem mudar o modelo de merge.
+
+### Novas funcionalidades
+
+**11. A trilha não tem como ser ajustada depois de gerada.** Hoje a única
+operação sobre uma trilha existente é concluir passos ou excluí-la inteira: não
+dá para renomear o objetivo, reordenar, remover um passo que não interessa,
+acrescentar um passo próprio, nem regenerar uma única unidade que ficou ruim.
+Isso obriga a refazer a entrevista de 6 perguntas e pagar outra geração
+completa (US$ 0,08 a US$ 0,38 pela estimativa do próprio
+`estimatePathGenerationCostUsd`) por causa de um bloco ruim entre seis bons.
+Edição local de passos (título, objetivo, prática, duração) é puro CRUD sobre
+o JSON que já está em disco; "regenerar esta unidade" reaproveita o
+`path:generate` com o escopo reduzido.
+
+**12. Não existe nenhum teste automatizado no repositório — e agora há lógica
+pura o bastante para justificar os primeiros.** O `package.json` da raiz não
+tem script `test` nem dependência de runner, e não há um só arquivo de teste
+nos quatro pacotes. As rodadas anteriores já apontavam isso de forma genérica;
+o que mudou é que as recomendações 1-3 desta rodada extraem justamente os
+candidatos ideais para uma primeira bateria: o parser de flashcards (dezenas de
+padrões de Markdown, o tipo de código que quebra em silêncio ao ganhar um caso
+novo), o `gradeCard` do SM-2, o `scoreQueryMatch` da busca, o
+`estimatePathGenerationCostUsd` e o merge LWW do servidor de sync. Todos são
+funções puras, sem Electron nem Capacitor — dá para rodar com o
+`node --test` nativo, sem adicionar framework nenhum ao projeto.
+
+---
+
 ## Rodada 2026-08-27
 
 Dois commits novos desde a última rodada: `4286aff` (refaz UI mobile/desktop,
