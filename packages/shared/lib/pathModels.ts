@@ -1,13 +1,17 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // packages/shared/lib/pathModels.ts
-// Catálogo dos 3 modos de geração de trilha oferecidos na tab-pill do wizard,
-// e a estimativa de custo por solicitação mostrada abaixo de cada um.
-// Preços por milhão de tokens (USD) — tabela pública da Anthropic, ago/2026.
-// Puramente client-side: não faz chamada nenhuma, só aritmética, para o
-// usuário comparar as opções ANTES de gastar a chamada de verdade.
+// Estimativa de custo por geração de trilha, para a tab-pill do wizard
+// (ver PathView.tsx). O catálogo de modelos (label/description/preços) mora
+// em claudePrompts.js/PATH_MODELS — fonte única também consumida por
+// pathHandlers.js (desktop) e claude.ts (mobile) para a chamada de verdade;
+// antes esse catálogo era duplicado aqui à mão, com risco de a estimativa de
+// custo mostrada na UI divergir do modelo realmente chamado.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import type { PathGenerationModel } from "../shared/types";
+// @ts-ignore — claudePrompts.js é CommonJS plano (ver comentário no topo do
+// arquivo), sem .d.ts; consumido via interop do esbuild, igual ao mobile.
+import { PATH_MODELS } from "./claudePrompts.js";
 
 export interface PathModelOption {
   id: PathGenerationModel;
@@ -28,39 +32,20 @@ export interface PathModelOption {
 const ESTIMATED_INPUT_TOKENS = 1400;
 const ESTIMATED_OUTPUT_TOKENS = 5000;
 
-export const PATH_MODEL_OPTIONS: PathModelOption[] = [
-  {
-    id: "sonnet-standard",
-    label: "Sonnet 5",
-    description: "Padrão — rápido e barato, sem raciocínio estendido.",
-    apiModel: "claude-sonnet-5",
-    thinking: false,
-    maxOutputTokens: 8000,
-    pricePerMTokIn: 3,
-    pricePerMTokOut: 15,
-  },
-  {
-    id: "sonnet-thinking",
-    label: "Sonnet 5 + pensamento",
-    description: "Mesmo modelo, com raciocínio estendido — trilhas mais bem sequenciadas.",
-    apiModel: "claude-sonnet-5",
-    thinking: true,
-    thinkingBudgetTokens: 6000,
-    maxOutputTokens: 10000,
-    pricePerMTokIn: 3,
-    pricePerMTokOut: 15,
-  },
-  {
-    id: "opus-standard",
-    label: "Opus 5",
-    description: "Modelo mais forte, sem raciocínio estendido — melhor senso pedagógico.",
-    apiModel: "claude-opus-5",
-    thinking: false,
-    maxOutputTokens: 8000,
-    pricePerMTokIn: 15,
-    pricePerMTokOut: 75,
-  },
-];
+export const PATH_MODEL_OPTIONS: PathModelOption[] = (Object.keys(PATH_MODELS) as PathGenerationModel[]).map(id => {
+  const m = PATH_MODELS[id];
+  return {
+    id,
+    label: m.label,
+    description: m.description,
+    apiModel: m.apiModel,
+    thinking: m.thinking,
+    thinkingBudgetTokens: m.thinkingBudgetTokens,
+    maxOutputTokens: m.maxTokens,
+    pricePerMTokIn: m.pricePerMTokIn,
+    pricePerMTokOut: m.pricePerMTokOut,
+  };
+});
 
 export function getPathModelOption(id: PathGenerationModel): PathModelOption {
   return PATH_MODEL_OPTIONS.find(m => m.id === id) ?? PATH_MODEL_OPTIONS[0];

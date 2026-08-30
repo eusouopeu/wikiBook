@@ -42,10 +42,15 @@ const {
   PATH_MODELS: MODEL_CATALOG,
   SYSTEM_GENERATE_PATH,
   GENERATE_PATH_TOOL,
-  videoSearchEngines,
-  imageSearchEngines,
 } = require("../../../../shared/lib/claudePrompts");
 function resolveModel(id) { return MODEL_CATALOG[id] ?? MODEL_CATALOG["sonnet-standard"]; }
+
+// materializeUnits/materializeResources (monta unidades/passos/recursos a
+// partir da resposta bruta do Claude) são compartilhados com
+// packages/mobile/src/platform/claude.ts — só a busca na Wikipédia e a
+// geração de id variam por plataforma, injetadas abaixo em MATERIALIZE_DEPS.
+const { materializeUnits } = require("../../../../shared/lib/pathMaterialize");
+const MATERIALIZE_DEPS = { searchWikipedia, makeId: () => crypto.randomUUID() };
 
 // ── path:consolidateProfile ─────────────────────────────────────────────────
 const SYSTEM_CONSOLIDATE = `
@@ -60,100 +65,9 @@ Responda APENAS com o perfil, sem título, sem introdução.
 `.trim();
 
 // ── path:generate ───────────────────────────────────────────────────────────
-// SYSTEM_GENERATE_PATH/GENERATE_PATH_TOOL/videoSearchEngines/
-// imageSearchEngines vêm de packages/shared/lib/claudePrompts.js (ver import
-// no topo do arquivo) — compartilhados com packages/mobile/src/platform/claude.ts.
-
-// Resolve um recurso "wikipedia" contra a API de busca de verdade — nunca
-// aceita um título/URL inventado pelo Claude. Se não achar nada, cai para a
-// própria página de busca (sempre existe, não afirma um artigo específico).
-async function resolveWikipediaResource(query, lang) {
-  try {
-    const results = await searchWikipedia(query, lang, 1);
-    if (results.length > 0) {
-      const title = results[0].title;
-      return {
-        title,
-        url: `https://${lang}.wikipedia.org/wiki/${encodeURIComponent(title.replace(/ /g, "_"))}`,
-        verified: true,
-      };
-    }
-  } catch {
-    // segue para o fallback de busca
-  }
-  return {
-    title: `Buscar "${query}" na Wikipédia`,
-    url: `https://${lang}.wikipedia.org/w/index.php?search=${encodeURIComponent(query)}`,
-    verified: true,
-  };
-}
-
-async function materializeResources(rawResources, lang) {
-  const out = [];
-  for (const r of rawResources ?? []) {
-    if (r.kind === "wikipedia") {
-      const resolved = await resolveWikipediaResource(r.query, lang);
-      out.push({
-        id: crypto.randomUUID(),
-        kind: "wikipedia",
-        title: resolved.title,
-        url: resolved.url,
-        query: r.query,
-        verified: resolved.verified,
-      });
-    } else if (r.kind === "image-search") {
-      out.push({
-        id: crypto.randomUUID(),
-        kind: "image-search",
-        title: r.title,
-        query: r.query,
-        verified: true,
-        engines: imageSearchEngines(r.query),
-      });
-    } else {
-      out.push({
-        id: crypto.randomUUID(),
-        kind: "video-search",
-        title: r.title,
-        query: r.query,
-        verified: true,
-        engines: videoSearchEngines(r.query),
-      });
-    }
-  }
-  return out;
-}
-
-// Deriva pré-requisitos automaticamente (linear dentro da unidade, encadeando
-// entre unidades) em vez de pedir ao Claude para apontar índices — mais
-// robusto, sem risco de referência inválida/circular na resposta do modelo.
-async function materializeUnits(rawUnits, lang) {
-  const units = [];
-  let previousStepId = null;
-  for (const rawUnit of rawUnits) {
-    const unitId = crypto.randomUUID();
-    const steps = [];
-    let order = units.reduce((acc, u) => acc + u.steps.length, 0);
-    for (const rawStep of rawUnit.steps ?? []) {
-      const stepId = crypto.randomUUID();
-      const resources = await materializeResources(rawStep.resources, lang);
-      steps.push({
-        id: stepId,
-        order: order++,
-        title: rawStep.title,
-        objective: rawStep.objective,
-        estimatedMinutes: Number(rawStep.estimatedMinutes) || 15,
-        practice: rawStep.practice,
-        prerequisiteIds: previousStepId ? [previousStepId] : [],
-        resources,
-        status: previousStepId ? "locked" : "available",
-      });
-      previousStepId = stepId;
-    }
-    units.push({ id: unitId, title: rawUnit.title, steps });
-  }
-  return units;
-}
+// SYSTEM_GENERATE_PATH/GENERATE_PATH_TOOL vêm de
+// packages/shared/lib/claudePrompts.js — compartilhados com
+// packages/mobile/src/platform/claude.ts.
 
 function createPathHandlers(ipcMain) {
 
@@ -226,7 +140,7 @@ function createPathHandlers(ipcMain) {
         toolChoice: { type: "tool", name: "emit_learning_path" },
       });
 
-      const units = await materializeUnits(result.units ?? [], lang);
+      const units = await materializeUnits(result.units ?? [], lang, MATERIALIZE_DEPS);
       return { ok: true, data: { units } };
     } catch (e) {
       return { ok: false, error: e.message };

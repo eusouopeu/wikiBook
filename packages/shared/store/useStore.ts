@@ -145,6 +145,7 @@ interface AppState {
   generatePathUnits: (goal: string, profileSummary: string, model: PathGenerationModel) => Promise<PathUnit[]>;
   importPathArticles: (units: PathUnit[], goal: string) => Promise<PathUnit[]>;
   completeStep: (pathId: string, stepId: string) => Promise<void>;
+  uncompleteStep: (pathId: string, stepId: string) => Promise<void>;
   setSearchQuery: (q: string) => void;
   setSearchOpen: (open: boolean) => void;
   setWikipediaLang: (lang: string) => Promise<void>;
@@ -604,6 +605,36 @@ export const useStore = create<AppState>((set, get) => ({
         if (step.status === "done") return step;
         const unlocked = step.prerequisiteIds.every(id => doneIds.has(id));
         return unlocked ? { ...step, status: "available" as const } : step;
+      }),
+    }));
+    await get().savePathRecord({ ...learningPath, units });
+  },
+  // Reverte um passo concluído por engano — como o desbloqueio é estritamente
+  // sequencial (prerequisiteIds de um passo é sempre só o anterior no
+  // percurso achatado, ver materializeUnits em pathMaterialize.js), desfazer
+  // um passo também tranca de volta tudo que vem depois dele: a conclusão
+  // desses dependia da cadeia passar por este passo, e deixá-los "done" sem
+  // ele deixaria a serpentina num estado que a UI não sabe representar
+  // (passo concluído com pré-requisito bloqueado).
+  uncompleteStep: async (pathId, stepId) => {
+    const learningPath = get().paths.find(p => p.id === pathId);
+    if (!learningPath) return;
+    const flatSteps = learningPath.units.flatMap(u => u.steps);
+    const idx = flatSteps.findIndex(s => s.id === stepId);
+    if (idx === -1) return;
+    const invalidatedIds = new Set(flatSteps.slice(idx + 1).map(s => s.id));
+    const units = learningPath.units.map(unit => ({
+      ...unit,
+      steps: unit.steps.map(step => {
+        if (step.id === stepId) {
+          const { completedAt, ...rest } = step;
+          return { ...rest, status: "available" as const };
+        }
+        if (invalidatedIds.has(step.id)) {
+          const { completedAt, ...rest } = step;
+          return { ...rest, status: "locked" as const };
+        }
+        return step;
       }),
     }));
     await get().savePathRecord({ ...learningPath, units });

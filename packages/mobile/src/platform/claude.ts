@@ -18,14 +18,19 @@ import { CapacitorHttp } from "@capacitor/core";
 import { getConfigValue } from "./config";
 import { searchWikipedia } from "./wikipedia";
 import type {
-  InterviewAnswer, PathGenerationModel, PathResource, PathStep, PathUnit,
+  InterviewAnswer, PathGenerationModel, PathUnit,
 } from "@lexicon/shared";
 // Prompts/templates: fonte única em packages/shared/lib/claudePrompts.js —
 // ver o comentário daquele arquivo para o porquê de ser .js/CommonJS.
 import {
   SYSTEM_SUMMARIZE, SYSTEM_ASK, GENERATE_TEMPLATES, resolveGenerateTemplate, PATH_MODELS,
-  SYSTEM_GENERATE_PATH, GENERATE_PATH_TOOL, videoSearchEngines, imageSearchEngines,
+  SYSTEM_GENERATE_PATH, GENERATE_PATH_TOOL,
 } from "@lexicon/shared/lib/claudePrompts.js";
+// materializeUnits (monta unidades/passos/recursos a partir da resposta bruta
+// do Claude) é compartilhado com packages/desktop/src/main/handlers/
+// pathHandlers.js — só a busca na Wikipédia e a geração de id variam por
+// plataforma, injetadas em MATERIALIZE_DEPS abaixo.
+import { materializeUnits } from "@lexicon/shared/lib/pathMaterialize.js";
 
 // Retry com backoff exponencial só para falhas transitórias (rate limit, erro
 // 5xx do servidor, erro de rede) — erros de request malformado ou credencial
@@ -189,10 +194,9 @@ trilha de estudo estruturada.
 Responda APENAS com o perfil, sem título, sem introdução.
 `.trim();
 
-// SYSTEM_GENERATE_PATH/GENERATE_PATH_TOOL/videoSearchEngines/
-// imageSearchEngines vêm de packages/shared/lib/claudePrompts.js (import no
-// topo do arquivo) — compartilhados com
-// packages/desktop/src/main/handlers/pathHandlers.js.
+// SYSTEM_GENERATE_PATH/GENERATE_PATH_TOOL vêm de
+// packages/shared/lib/claudePrompts.js (import no topo do arquivo) —
+// compartilhados com packages/desktop/src/main/handlers/pathHandlers.js.
 
 // Fonte única em packages/shared/lib/claudePrompts.js (PATH_MODELS) —
 // compartilhada com packages/desktop/src/main/handlers/pathHandlers.js.
@@ -208,72 +212,10 @@ export async function consolidateProfile(goal: string, answers: InterviewAnswer[
   return callClaude(apiKey, SYSTEM_CONSOLIDATE, userMsg, 500);
 }
 
-async function resolveWikipediaResource(query: string, lang: string) {
-  try {
-    const results = await searchWikipedia(query, lang, 1);
-    if (results.length > 0) {
-      const title = results[0].title;
-      return {
-        title,
-        url: `https://${lang}.wikipedia.org/wiki/${encodeURIComponent(title.replace(/ /g, "_"))}`,
-        verified: true,
-      };
-    }
-  } catch {
-    // segue para o fallback de busca
-  }
-  return {
-    title: `Buscar "${query}" na Wikipédia`,
-    url: `https://${lang}.wikipedia.org/w/index.php?search=${encodeURIComponent(query)}`,
-    verified: true,
-  };
-}
-
-async function materializeResources(rawResources: any[], lang: string): Promise<PathResource[]> {
-  const out: PathResource[] = [];
-  for (const r of rawResources ?? []) {
-    if (r.kind === "wikipedia") {
-      const resolved = await resolveWikipediaResource(r.query, lang);
-      out.push({
-        id: crypto.randomUUID(), kind: "wikipedia",
-        title: resolved.title, url: resolved.url, query: r.query, verified: resolved.verified,
-      });
-    } else if (r.kind === "image-search") {
-      out.push({
-        id: crypto.randomUUID(), kind: "image-search",
-        title: r.title, query: r.query, verified: true, engines: imageSearchEngines(r.query),
-      });
-    } else {
-      out.push({
-        id: crypto.randomUUID(), kind: "video-search",
-        title: r.title, query: r.query, verified: true, engines: videoSearchEngines(r.query),
-      });
-    }
-  }
-  return out;
-}
-
-async function materializeUnits(rawUnits: any[], lang: string): Promise<PathUnit[]> {
-  const units: PathUnit[] = [];
-  let previousStepId: string | null = null;
-  for (const rawUnit of rawUnits) {
-    const steps: PathStep[] = [];
-    let order = units.reduce((acc, u) => acc + u.steps.length, 0);
-    for (const rawStep of rawUnit.steps ?? []) {
-      const stepId = crypto.randomUUID();
-      const resources = await materializeResources(rawStep.resources, lang);
-      steps.push({
-        id: stepId, order: order++, title: rawStep.title, objective: rawStep.objective,
-        estimatedMinutes: Number(rawStep.estimatedMinutes) || 15, practice: rawStep.practice,
-        prerequisiteIds: previousStepId ? [previousStepId] : [],
-        resources, status: previousStepId ? "locked" : "available",
-      });
-      previousStepId = stepId;
-    }
-    units.push({ id: crypto.randomUUID(), title: rawUnit.title, steps });
-  }
-  return units;
-}
+// searchWikipedia e a geração de id variam por plataforma (Node https vs.
+// CapacitorHttp; crypto.randomUUID do Node vs. o Web Crypto global do
+// WebView) — injetados em materializeUnits, ver pathMaterialize.js.
+const MATERIALIZE_DEPS = { searchWikipedia, makeId: () => crypto.randomUUID() };
 
 export async function generatePath(
   goal: string, profileSummary: string, model: PathGenerationModel, lang = "pt"
@@ -287,5 +229,5 @@ export async function generatePath(
     thinkingBudgetTokens: m.thinkingBudgetTokens,
     tools: [GENERATE_PATH_TOOL], toolChoice: { type: "tool", name: "emit_learning_path" },
   });
-  return materializeUnits(result.units ?? [], lang);
+  return materializeUnits(result.units ?? [], lang, MATERIALIZE_DEPS);
 }

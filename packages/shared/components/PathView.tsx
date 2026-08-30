@@ -230,7 +230,25 @@ const CreatePathWizard: React.FC<{ onDone: () => void; onCancel: () => void }> =
 
 // ── Painel de detalhe de um passo ────────────────────────────────────────────
 const StepPanel: React.FC<{ step: PathStep; pathId: string; onClose: () => void; onOpenArticle?: (id: string) => void }> = ({ step, pathId, onClose, onOpenArticle }) => {
-  const { completeStep, openArticle, setView } = useStore();
+  const { paths, completeStep, uncompleteStep, openArticle, setView } = useStore();
+
+  // Desfazer é sequencial (ver uncompleteStep no store): também tranca de
+  // volta qualquer passo posterior já concluído. Avisa antes só quando isso
+  // de fato vai acontecer — a maioria das vezes é "desfiz o último passo",
+  // sem nada posterior para perder.
+  async function handleUncomplete() {
+    const learningPath = paths.find(p => p.id === pathId);
+    const flatSteps = learningPath?.units.flatMap(u => u.steps) ?? [];
+    const idx = flatSteps.findIndex(s => s.id === step.id);
+    const hasDownstreamDone = idx >= 0 && flatSteps.slice(idx + 1).some(s => s.status === "done");
+    const message = hasDownstreamDone
+      ? "Desfazer este passo também tranca de volta os passos concluídos depois dele nesta trilha. Continuar?"
+      : "Desfazer a conclusão deste passo?";
+    if (await confirmDialog(message, "Desfazer passo")) {
+      await uncompleteStep(pathId, step.id);
+      onClose();
+    }
+  }
 
   // Recurso com articleId (importado na criação da trilha, ver
   // importPathArticles) abre o artigo dentro do app; sem articleId (falha de
@@ -293,7 +311,10 @@ const StepPanel: React.FC<{ step: PathStep; pathId: string; onClose: () => void;
             <Icon name="check" /><span>Marcar como concluído</span>
           </button>
         ) : (
-          <div className="step-panel-done-badge"><Icon name="check" /><span>Concluído</span></div>
+          <div className="step-panel-done-row">
+            <div className="step-panel-done-badge"><Icon name="check" /><span>Concluído</span></div>
+            <button className="text-btn step-panel-uncomplete" onClick={handleUncomplete}>Desfazer</button>
+          </div>
         )}
       </div>
     </div>

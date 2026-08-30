@@ -127,10 +127,32 @@ function resolveGenerateTemplate(templateId) {
 }
 
 // ── Modelos de geração de trilha (ver path:generate / PathGenerationModel) ──
+// Fonte única (antes duplicada em packages/shared/lib/pathModels.ts, que
+// mantinha uma segunda cópia manual de apiModel/thinking/maxTokens só para
+// alimentar a estimativa de custo da tab-pill do wizard — bastava importar
+// daqui). label/description/pricePerMTokIn/pricePerMTokOut são usados só
+// pela UI (pathModels.ts); apiModel/thinking/thinkingBudgetTokens/maxTokens
+// são usados só pela chamada de verdade (pathHandlers.js/claude.ts). Preços
+// por milhão de tokens (USD) — tabela pública da Anthropic, ago/2026.
 const PATH_MODELS = {
-  "sonnet-standard": { apiModel: "claude-sonnet-5", thinking: false, maxTokens: 8000 },
-  "sonnet-thinking": { apiModel: "claude-sonnet-5", thinking: true, thinkingBudgetTokens: 6000, maxTokens: 10000 },
-  "opus-standard": { apiModel: "claude-opus-5", thinking: false, maxTokens: 8000 },
+  "sonnet-standard": {
+    apiModel: "claude-sonnet-5", thinking: false, maxTokens: 8000,
+    label: "Sonnet 5",
+    description: "Padrão — rápido e barato, sem raciocínio estendido.",
+    pricePerMTokIn: 3, pricePerMTokOut: 15,
+  },
+  "sonnet-thinking": {
+    apiModel: "claude-sonnet-5", thinking: true, thinkingBudgetTokens: 6000, maxTokens: 10000,
+    label: "Sonnet 5 + pensamento",
+    description: "Mesmo modelo, com raciocínio estendido — trilhas mais bem sequenciadas.",
+    pricePerMTokIn: 3, pricePerMTokOut: 15,
+  },
+  "opus-standard": {
+    apiModel: "claude-opus-5", thinking: false, maxTokens: 8000,
+    label: "Opus 5",
+    description: "Modelo mais forte, sem raciocínio estendido — melhor senso pedagógico.",
+    pricePerMTokIn: 15, pricePerMTokOut: 75,
+  },
 };
 
 // ── Geração de trilha (ver path:generate / PathGenerationModel) ────────────

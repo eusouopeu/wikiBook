@@ -3091,9 +3091,14 @@ button.text-btn:hover { text-decoration: underline; }
 }
 .resource-engine-btn:hover { border-color: var(--accent); color: var(--fg); }
 .step-panel-complete { margin-top: 20px; width: 100%; }
-.step-panel-done-badge {
-  color: var(--accent); font-size: 13px; font-weight: 600; margin-top: 20px; text-align: center;
+.step-panel-done-row {
+  align-items: center; display: flex; justify-content: center; gap: 12px; margin-top: 20px;
 }
+.step-panel-done-badge {
+  color: var(--accent); font-size: 13px; font-weight: 600; text-align: center;
+  display: flex; align-items: center; gap: 6px;
+}
+.step-panel-uncomplete { font-size: 12.5px; }
 
 /* ── Lixeira (TrashModal) ─────────────────────────────────────────────────── */
 .trash-modal { min-width: 420px; max-width: 480px; }
