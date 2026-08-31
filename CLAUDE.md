@@ -19,7 +19,12 @@ SEMPRE usar a skill `/caveman` (modo de comunicação ultra-comprimido) em toda 
   (`@heroicons/react/24/outline`, mapeados em `components/Icon.tsx`) — não Lucide. Seguir o
   padrão já existente em vez de introduzir Tailwind/Lucide no meio do código atual.
 - Toda tela/aba (desktop e mobile) usa a `TopBar` compartilhada (`components/TopBar.tsx`):
-  nome da aba + ícones específicos da aba + pesquisar (global) + alternar tema, nessa ordem.
+  nome da aba + ícones específicos da aba + pesquisar (global) + central de erros (só aparece
+  se houver erro na sessão) + alternar tema, nessa ordem. Todas as abas devem passar `onSearch`
+  (no mobile, abas que não são "Artigos" usam `requestSearchFocus()` do store, que leva de volta
+  pra lá com a busca já aberta).
+- Desktop: navegação entre Artigo/Grafo/Trilha/Configurações é a `NavRail` (App.tsx) — coluna
+  flutuante de ícones à esquerda da sidebar de artigos, não mais tabs dentro do TopBar.
 - Artigos são sincronizados automaticamente em `.md` (Obsidian) para uma pasta — não existe mais
   exportação manual de Markdown. Ver `mdSyncHandlers.js` (desktop, pasta escolhida pelo usuário)
   e `platform/mdSync.ts` (mobile, pasta fixa `Documents/Wikibook` — sem SAF/bookmark, não dá pra
