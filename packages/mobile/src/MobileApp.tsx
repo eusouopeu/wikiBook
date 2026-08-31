@@ -26,8 +26,16 @@ export function MobileApp() {
   const {
     articles, activeArticleId, loadingArticle, openArticle,
     loadArticles, onboardingSeen, dismissOnboarding,
+    searchFocusToken, requestSearchFocus,
   } = useStore();
   const activeArticle = articles.find(a => a.id === activeArticleId) ?? null;
+
+  // Ícone de pesquisar de qualquer aba (Grafo/Trilha/Ajustes) leva para
+  // Artigos com a busca já aberta — ver requestSearchFocus em useStore.ts e
+  // o efeito equivalente em ArticleListScreen.tsx (que abre/foca o campo).
+  useEffect(() => {
+    if (searchFocusToken > 0) setScreen("list");
+  }, [searchFocusToken]);
 
   // bootstrapped: só true depois que loadArticles() resolve (inclui a leitura
   // de onboardingSeen do config) — evita o wizard piscar para quem já passou
@@ -92,7 +100,7 @@ export function MobileApp() {
   } else if (screen === "settings") {
     content = (
       <div className="mobile-settings-screen">
-        <TopBar title="Ajustes" />
+        <TopBar title="Ajustes" onSearch={requestSearchFocus} />
         <SettingsModal embedded />
       </div>
     );

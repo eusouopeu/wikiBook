@@ -623,10 +623,12 @@ const BacklinksPanel: React.FC<{
   backlinks: Backlink[];
   onOpen: (id: string) => void;
 }> = ({ backlinks, onOpen }) => {
-  if (backlinks.length === 0) return null;
   return (
     <div className="backlinks-panel">
       <h2 className="section-heading">Referenciado por</h2>
+      {backlinks.length === 0 ? (
+        <p className="backlinks-empty">Nenhum artigo referencia este ainda.</p>
+      ) : (
       <ul className="backlinks-list">
         {backlinks.map((b, i) => (
           <li key={`${b.sourceId}-${i}`} className="backlink-item">
@@ -637,6 +639,7 @@ const BacklinksPanel: React.FC<{
           </li>
         ))}
       </ul>
+      )}
     </div>
   );
 };

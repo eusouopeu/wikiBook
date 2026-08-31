@@ -6,10 +6,10 @@
 // dos passos com painel de detalhe.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useStore } from "../store/useStore";
 import { Icon } from "./Icon";
-import type { InterviewAnswer, LearningPath, PathGenerationModel, PathResource, PathStep } from "../shared/types";
+import type { Flashcard, InterviewAnswer, LearningPath, PathGenerationModel, PathResource, PathStep } from "../shared/types";
 import { INTERVIEW_SCRIPT } from "../lib/interviewScript";
 import { PATH_MODEL_OPTIONS, estimatePathGenerationCostUsd, formatUsd } from "../lib/pathModels";
 import { confirmDialog } from "../lib/confirmDialog";
@@ -26,9 +26,72 @@ function pathProgress(p: LearningPath) {
   return { total, done };
 }
 
+function isoDate(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+
+// ── Estatísticas de estudo (streak, ritmo semanal, revisão pendente) ────────
+// Sem tabela própria de eventos — deriva tudo de completedAt nos passos das
+// trilhas já carregadas (ver completeStep em useStore.ts) e de flashcards
+// vencidos (mesma chamada que o badge "Revisar flashcards" já usa).
+function computePathStats(paths: LearningPath[]) {
+  const completions = paths
+    .flatMap(p => p.units.flatMap(u => u.steps))
+    .filter(s => s.status === "done" && s.completedAt)
+    .map(s => new Date(s.completedAt as string));
+
+  const totalDone = completions.length;
+
+  const weekAgo = Date.now() - 7 * 86_400_000;
+  const doneThisWeek = completions.filter(d => d.getTime() >= weekAgo).length;
+
+  // Streak: dias consecutivos com pelo menos 1 passo concluído, terminando
+  // hoje ou ontem (ontem ainda conta — evita zerar o streak só porque a
+  // pessoa ainda não estudou hoje).
+  const doneDays = new Set(completions.map(isoDate));
+  let streak = 0;
+  const cursor = new Date();
+  if (!doneDays.has(isoDate(cursor))) cursor.setDate(cursor.getDate() - 1);
+  while (doneDays.has(isoDate(cursor))) {
+    streak++;
+    cursor.setDate(cursor.getDate() - 1);
+  }
+
+  return { totalDone, doneThisWeek, streak };
+}
+
+const PathStats: React.FC<{ paths: LearningPath[]; dueCount: number }> = ({ paths, dueCount }) => {
+  const { totalDone, doneThisWeek, streak } = useMemo(() => computePathStats(paths), [paths]);
+  if (totalDone === 0 && dueCount === 0) return null;
+  return (
+    <div className="path-stats">
+      <div className="path-stat">
+        <Icon name="streak" /><span className="path-stat-value">{streak}</span><span className="path-stat-label">dia{streak === 1 ? "" : "s"} seguidos</span>
+      </div>
+      <div className="path-stat">
+        <Icon name="check" /><span className="path-stat-value">{doneThisWeek}</span><span className="path-stat-label">passos esta semana</span>
+      </div>
+      <div className="path-stat">
+        <Icon name="stats" /><span className="path-stat-value">{totalDone}</span><span className="path-stat-label">passos concluídos</span>
+      </div>
+      {dueCount > 0 && (
+        <div className="path-stat path-stat-due">
+          <Icon name="flashcards" /><span className="path-stat-value">{dueCount}</span><span className="path-stat-label">flashcard{dueCount === 1 ? "" : "s"} vencido{dueCount === 1 ? "" : "s"}</span>
+        </div>
+      )}
+    </div>
+  );
+};
+
 // ── Tela 1: lista de trilhas ─────────────────────────────────────────────────
 const PathList: React.FC<{ onCreate: () => void }> = ({ onCreate }) => {
   const { paths, openPath, deletePathRecord } = useStore();
+  const [dueCount, setDueCount] = useState(0);
+  useEffect(() => {
+    window.lexicon.invoke("flashcards:listDue").then(res => {
+      if (res.ok) setDueCount((res.data as Flashcard[]).length);
+    });
+  }, []);
 
   return (
     <div className="path-list-screen">
@@ -38,6 +101,7 @@ const PathList: React.FC<{ onCreate: () => void }> = ({ onCreate }) => {
           <Icon name="add" />
         </button>
       </div>
+      <PathStats paths={paths} dueCount={dueCount} />
       {paths.length === 0 ? (
         <div className="empty-state">
           <p>Diga o que você quer aprender — o app faz algumas perguntas e monta um

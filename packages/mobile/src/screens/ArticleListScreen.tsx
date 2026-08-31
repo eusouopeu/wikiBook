@@ -11,7 +11,10 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useStore, ReviewModal, FolderPicker, VirtualList, TopBar, Icon, scoreQueryMatch, confirmDialog } from "@lexicon/shared";
+import {
+  useStore, ReviewModal, FolderPicker, VirtualList, TopBar, Icon, scoreQueryMatch, confirmDialog,
+  highlightMatch, extractSnippet, pickWeightedRandomArticle,
+} from "@lexicon/shared";
 import type { Article, Flashcard, FlashcardGrade } from "@lexicon/shared";
 
 // Pseudo-id local (não existe no backend) usado só para representar o card
@@ -91,8 +94,32 @@ export function ArticleListScreen({ onOpenArticle }: Props) {
     folders, selectedFolder, setSelectedFolder,
     createFolder, renameFolder, deleteFolder, setArticleFolder,
     listDensity, setListDensity,
+    graphEdges, searchFocusToken,
   } = useStore();
   const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // Busca colapsável — mesmo ícone/posição do TopBar das outras abas (ver
+  // recomendação de padronização); abre ao tocar o ícone de pesquisar aqui
+  // ou ao chegar de outra aba via requestSearchFocus() (ver MobileApp.tsx).
+  const [searchOpen, setSearchOpen] = useState(!!searchQuery.trim());
+  useEffect(() => {
+    if (searchFocusToken === 0) return;
+    setSearchOpen(true);
+    setTimeout(() => searchInputRef.current?.focus(), 0);
+  }, [searchFocusToken]);
+
+  // Só artigos sem nenhuma conexão (nem links, nem backlinks)
+  const [showOrphansOnly, setShowOrphansOnly] = useState(false);
+  const orphanIds = useMemo(() => {
+    const connected = new Set<string>();
+    for (const e of graphEdges) { connected.add(e.source); connected.add(e.target); }
+    return new Set(articles.filter(a => !connected.has(a.id)).map(a => a.id));
+  }, [articles, graphEdges]);
+
+  function handleRandomArticle() {
+    const pick = pickWeightedRandomArticle(articles, activeArticleId);
+    if (pick) onOpenArticle(pick.id);
+  }
 
   // Alterna entre ver artigos agrupados por pasta (chips de pasta visíveis,
   // renomear/excluir pasta) e ver tudo solto, sem organização por pasta.
@@ -190,6 +217,7 @@ export function ArticleListScreen({ onOpenArticle }: Props) {
       if (!selectedTags.every(t => (a.tags ?? []).includes(t))) return false;
       if (libraryView === "folders" && selectedFolder === NO_FOLDER_ID && a.folderId) return false;
       if (libraryView === "folders" && selectedFolder && selectedFolder !== NO_FOLDER_ID && a.folderId !== selectedFolder) return false;
+      if (showOrphansOnly && !orphanIds.has(a.id)) return false;
       if (!q) return true;
       const blob = searchIndex.get(a.id) ?? "";
       return qTokens.some(tok => blob.includes(tok));
@@ -201,15 +229,30 @@ export function ArticleListScreen({ onOpenArticle }: Props) {
         .map(x => x.a);
     }
     return result;
-  }, [articles, searchQuery, selectedTags, selectedFolder, searchIndex, libraryView]);
+  }, [articles, searchQuery, selectedTags, selectedFolder, searchIndex, libraryView, showOrphansOnly, orphanIds]);
 
   return (
     <div className="mobile-screen">
       <TopBar
         title="Artigos"
-        onSearch={() => searchInputRef.current?.focus()}
+        onSearch={() => { setSearchOpen(v => !v); setTimeout(() => searchInputRef.current?.focus(), 0); }}
         actions={
           <>
+            <button
+              className="icon-btn" title="Artigo aleatório — sorteia com peso para os mais antigos/esquecidos"
+              aria-label="Abrir artigo aleatório" disabled={articles.length === 0}
+              onClick={handleRandomArticle}
+            >
+              <Icon name="random" />
+            </button>
+            <button
+              className={`icon-btn ${showOrphansOnly ? "icon-btn-active" : ""}`}
+              title="Mostrar só artigos sem nenhuma conexão (órfãos)"
+              aria-label="Mostrar só artigos sem nenhuma conexão" aria-pressed={showOrphansOnly}
+              onClick={() => setShowOrphansOnly(v => !v)}
+            >
+              <Icon name="orphan" />
+            </button>
             <button
               className="icon-btn"
               title={libraryView === "folders" ? "Ver arquivos soltos (sem pastas)" : "Ver por pastas"}
@@ -230,16 +273,24 @@ export function ArticleListScreen({ onOpenArticle }: Props) {
         }
       />
 
-      <div className="mobile-search-row">
-        <input
-          ref={searchInputRef}
-          className="mobile-search"
-          type="search"
-          placeholder="Buscar em títulos e conteúdo…"
-          value={searchQuery}
-          onChange={e => setSearchQuery(e.target.value)}
-        />
-      </div>
+      {searchOpen && (
+        <div className="mobile-search-row">
+          <input
+            ref={searchInputRef}
+            className="mobile-search"
+            type="search"
+            placeholder="Buscar em títulos e conteúdo…"
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+          />
+          <button
+            type="button" className="icon-btn" title="Fechar busca" aria-label="Fechar busca"
+            onClick={() => { setSearchQuery(""); setSearchOpen(false); }}
+          >
+            <Icon name="close" />
+          </button>
+        </div>
+      )}
 
       {inFolderDetail && (
         <div className="mobile-folder-detail-header">
@@ -316,7 +367,8 @@ export function ArticleListScreen({ onOpenArticle }: Props) {
       {filteredArticles.length === 0 ? (
         <ul className="mobile-article-list">
           <li className="mobile-empty">
-            {searchQuery || selectedTags.length > 0 || selectedFolder ? "Nenhum resultado." : "Nenhum artigo ainda."}
+            {showOrphansOnly ? "Nenhum artigo órfão — tudo conectado ao grafo."
+              : searchQuery || selectedTags.length > 0 || selectedFolder ? "Nenhum resultado." : "Nenhum artigo ainda."}
           </li>
         </ul>
       ) : (
@@ -325,7 +377,14 @@ export function ArticleListScreen({ onOpenArticle }: Props) {
           items={filteredArticles}
           itemHeight={listDensity === "compact" ? 48 : 68}
           itemKey={(a: Article) => a.id}
-          renderItem={(a: Article) => (
+          renderItem={(a: Article) => {
+            const q = searchQuery.trim();
+            const titleMatches = q.length > 0 && a.title.toLowerCase().includes(q.toLowerCase());
+            const bodyText = (a.summary || "").replace(/^•\s*/, "") || "Sem resumo.";
+            const snippet = q && !titleMatches
+              ? extractSnippet(searchIndex.get(a.id)?.slice(0, 4000) ?? "", q)
+              : null;
+            return (
             <SwipeableRow
               onReveal={rect => setFolderPickerFor({ articleId: a.id, x: rect.left, y: rect.bottom + 4 })}
             >
@@ -334,17 +393,20 @@ export function ArticleListScreen({ onOpenArticle }: Props) {
                 onClick={() => onOpenArticle(a.id)}
               >
                 <div className="mobile-article-main">
-                  <span className="mobile-article-title">{a.title}</span>
+                  <span className="mobile-article-title">{q ? highlightMatch(a.title, q) : a.title}</span>
                   {listDensity === "comfortable" && (
                     <span className="mobile-article-snippet">
-                      {(a.summary || "").replace(/^•\s*/, "").slice(0, 70) || "Sem resumo."}
+                      {snippet
+                        ? <>{snippet.before}<mark className="search-highlight">{snippet.match}</mark>{snippet.after}</>
+                        : q ? highlightMatch(bodyText.slice(0, 70), q) : bodyText.slice(0, 70)}
                     </span>
                   )}
                 </div>
                 {a.links.length > 0 && <span className="mobile-link-count">{a.links.length}</span>}
               </div>
             </SwipeableRow>
-          )}
+            );
+          }}
         />
       )}
 

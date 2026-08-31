@@ -18,6 +18,8 @@ import { MiniGraphPreview } from "./components/MiniGraphPreview";
 import { VirtualList, type VirtualListHandle } from "./components/VirtualList";
 import { scoreQueryMatch } from "./lib/searchRelevance";
 import { confirmDialog } from "./lib/confirmDialog";
+import { highlightMatch, extractSnippet } from "./lib/searchHighlight";
+import { pickWeightedRandomArticle } from "./lib/randomArticle";
 
 // ── Controles de zoom do grafo ────────────────────────────────────────────────
 // Chama os métodos D3 expostos no SVGElement pelo GraphView
@@ -27,6 +29,48 @@ const GraphControls: React.FC<{ canvasRef: React.RefObject<HTMLCanvasElement | n
     <button className="icon-btn" title="Afastar" aria-label="Afastar"   onClick={() => (canvasRef.current as any)?.__zoomOut()}><Icon name="zoomOut" /></button>
     <button className="icon-btn" title="Resetar" aria-label="Resetar"   onClick={() => (canvasRef.current as any)?.__zoomReset()}><Icon name="zoomReset" /></button>
   </div>
+);
+
+// ── Navegação principal: sidebar flutuante de ícones (substitui as tabs de
+// visualização que antes viviam no centro do TopBar) — mesmo papel do
+// BottomNav do mobile, adaptado a uma coluna à esquerda no desktop.
+const NavRail: React.FC<{
+  view: "article" | "graph" | "path";
+  setView: (v: "article" | "graph" | "path") => void;
+  hasActiveArticle: boolean;
+  onSettings: () => void;
+}> = ({ view, setView, hasActiveArticle, onSettings }) => (
+  <nav className="nav-rail" aria-label="Navegação principal">
+    <button
+      type="button"
+      className={`icon-btn nav-rail-item ${view === "article" ? "icon-btn-active" : ""}`}
+      title="Artigo" aria-label="Artigo" aria-pressed={view === "article"}
+      disabled={!hasActiveArticle}
+      onClick={() => setView("article")}
+    >
+      <Icon name="read" />
+    </button>
+    <button
+      type="button"
+      className={`icon-btn nav-rail-item ${view === "graph" ? "icon-btn-active" : ""}`}
+      title="Grafo" aria-label="Grafo" aria-pressed={view === "graph"}
+      onClick={() => setView("graph")}
+    >
+      <Icon name="graph" />
+    </button>
+    <button
+      type="button"
+      className={`icon-btn nav-rail-item ${view === "path" ? "icon-btn-active" : ""}`}
+      title="Trilha" aria-label="Trilha" aria-pressed={view === "path"}
+      onClick={() => setView("path")}
+    >
+      <Icon name="path" />
+    </button>
+    <span className="nav-rail-spacer" />
+    <button type="button" className="icon-btn nav-rail-item" title="Configurações" aria-label="Configurações" onClick={onSettings}>
+      <Icon name="settings" />
+    </button>
+  </nav>
 );
 
 // ── Atalhos de teclado ────────────────────────────────────────────────────────
@@ -397,13 +441,39 @@ const StatusOverlay: React.FC = () => {
   );
 };
 
+// Mesma paleta determinística de components/GraphView.tsx — duplicada aqui de
+// propósito (import cruzado do módulo D3 traria d3 pro bundle só pra isso).
+const TAG_PALETTE = ["#E05561", "#B58CF6", "#4EC9B0", "#E5C07B", "#61AFEF", "#D19A66", "#C678DD", "#98C379"];
+function tagColor(tag: string): string {
+  let hash = 0;
+  for (let i = 0; i < tag.length; i++) hash = (hash * 31 + tag.charCodeAt(i)) | 0;
+  return TAG_PALETTE[Math.abs(hash) % TAG_PALETTE.length];
+}
+
 // ── Legenda de cores do grafo ─────────────────────────────────────────────────
-const GraphLegend: React.FC = () => (
+// Tags viram chips clicáveis: clicar esmaece no GraphView todo nó sem aquela
+// tag, sem escondê-los — assim dá pra achar um grupo temático sem perder o
+// contexto das conexões ao redor.
+export const GraphLegend: React.FC<{ tags: string[]; activeTag: string | null; onToggleTag: (t: string) => void }> = ({ tags, activeTag, onToggleTag }) => (
   <div className="graph-legend">
     <span><i className="legend-dot" style={{ background: "#378ADD" }} /> Wikipédia</span>
     <span><i className="legend-dot" style={{ background: "#BA7517" }} /> Claude</span>
     <span><i className="legend-dot" style={{ background: "#1D9E75" }} /> Manual</span>
-    <span><i className="legend-dot legend-ring" /> Anel = tag</span>
+    {tags.length > 0 && (
+      <div className="graph-legend-tags">
+        {tags.map(t => (
+          <button
+            key={t}
+            type="button"
+            className={`graph-legend-tag ${activeTag === t ? "active" : ""}`}
+            style={{ "--tag-color": tagColor(t) } as React.CSSProperties}
+            onClick={() => onToggleTag(t)}
+          >
+            <i className="legend-dot" style={{ background: tagColor(t) }} />#{t}
+          </button>
+        ))}
+      </div>
+    )}
   </div>
 );
 
@@ -497,6 +567,26 @@ export default function App() {
   // ── Tags: colapsa em 8 + "mais N", com filtro por digitação ──────────────
   const [tagFilter, setTagFilter] = useState("");
   const [showAllTags, setShowAllTags] = useState(false);
+
+  // ── Legenda do grafo: tag em destaque (esmaece o resto, não filtra) ──────
+  const [graphTagFilter, setGraphTagFilter] = useState<string | null>(null);
+  const toggleGraphTagFilter = useCallback((tag: string) => {
+    setGraphTagFilter(prev => (prev === tag ? null : tag));
+  }, []);
+
+  // ── Biblioteca: só artigos sem nenhuma conexão (nem links, nem backlinks) ──
+  const [showOrphansOnly, setShowOrphansOnly] = useState(false);
+  const orphanIds = useMemo(() => {
+    const connected = new Set<string>();
+    for (const e of graphEdges) { connected.add(e.source); connected.add(e.target); }
+    return new Set(articles.filter(a => !connected.has(a.id)).map(a => a.id));
+  }, [articles, graphEdges]);
+
+  // ── "Artigo aleatório" — pondera por artigos mais antigos/esquecidos ─────
+  function handleRandomArticle() {
+    const pick = pickWeightedRandomArticle(articles, activeArticleId);
+    if (pick) handleOpenArticle(pick.id);
+  }
 
   // ── Painel de grafo local ao lado do artigo aberto ────────────────────────
   const [showLocalGraphPanel, setShowLocalGraphPanel] = useState(false);
@@ -660,6 +750,7 @@ export default function App() {
     let result = articles.filter(a => {
       if (!selectedTags.every(t => (a.tags ?? []).includes(t))) return false;
       if (selectedFolder && a.folderId !== selectedFolder) return false;
+      if (showOrphansOnly && !orphanIds.has(a.id)) return false;
       if (!q) return true;
       const blob = searchIndex.get(a.id) ?? "";
       return qTokens.some(tok => blob.includes(tok));
@@ -671,7 +762,7 @@ export default function App() {
         .map(x => x.a);
     }
     return result;
-  }, [articles, searchQuery, selectedTags, selectedFolder, searchIndex]);
+  }, [articles, searchQuery, selectedTags, selectedFolder, searchIndex, showOrphansOnly, orphanIds]);
 
   // Grafo local: artigo ativo + vizinhos até N saltos. Cai para global se não
   // houver artigo ativo (ex.: usuário abriu o grafo sem antes abrir um artigo).
@@ -679,6 +770,16 @@ export default function App() {
     if (graphScope !== "local" || !activeArticleId) return { nodes: graphNodes, edges: graphEdges };
     return computeLocalSubgraph(graphNodes, graphEdges, activeArticleId, localDepth);
   }, [graphScope, activeArticleId, localDepth, graphNodes, graphEdges]);
+
+  // Tags presentes no grafo exibido no momento (para os chips da legenda)
+  const displayedGraphTags = useMemo(() => {
+    const tags = new Set<string>();
+    for (const n of displayedGraph.nodes) for (const t of n.tags ?? []) tags.add(t);
+    return Array.from(tags).sort();
+  }, [displayedGraph]);
+  useEffect(() => {
+    if (graphTagFilter && !displayedGraphTags.includes(graphTagFilter)) setGraphTagFilter(null);
+  }, [displayedGraphTags, graphTagFilter]);
 
   // Painel de grafo local (ao lado do artigo aberto) — mesmo cálculo do modo
   // "Local" da aba Grafo, sempre relativo ao artigo ativo (não ao graphScope).
@@ -690,6 +791,14 @@ export default function App() {
   return (
     <div className="app-shell">
 
+      {/* ── Navegação principal (Artigo/Grafo/Trilha/Configurações) ──────── */}
+      <NavRail
+        view={view}
+        setView={setView}
+        hasActiveArticle={!!activeArticle}
+        onSettings={() => setShowSettings(true)}
+      />
+
       {/* ── Sidebar flutuante (⌘B alterna) ─────────────────────────────── */}
       {!sidebarCollapsed && (
         <aside className="sidebar" ref={sidebarRef} style={{ width: currentSidebarWidth }}>
@@ -699,6 +808,21 @@ export default function App() {
             <span className="app-logo"><LogoMark size={20} /> Wikibook</span>
             <div className="sidebar-top-actions">
               <button
+                className="icon-btn" title="Artigo aleatório — sorteia com peso para os mais antigos/esquecidos"
+                aria-label="Abrir artigo aleatório" disabled={articles.length === 0}
+                onClick={handleRandomArticle}
+              >
+                <Icon name="random" />
+              </button>
+              <button
+                className={`icon-btn ${showOrphansOnly ? "icon-btn-active" : ""}`}
+                title="Mostrar só artigos sem nenhuma conexão (órfãos)"
+                aria-label="Mostrar só artigos sem nenhuma conexão" aria-pressed={showOrphansOnly}
+                onClick={() => setShowOrphansOnly(v => !v)}
+              >
+                <Icon name="orphan" />
+              </button>
+              <button
                 className="icon-btn"
                 title={listDensity === "compact" ? "Lista compacta — clique para expandir" : "Lista expandida — clique para compactar"}
                 aria-label={listDensity === "compact" ? "Alternar para lista expandida" : "Alternar para lista compacta"}
@@ -706,7 +830,6 @@ export default function App() {
               >
                 <Icon name={listDensity === "compact" ? "densityCompact" : "densityComfortable"} />
               </button>
-              <button className="icon-btn" title="Configurações" aria-label="Configurações" onClick={() => setShowSettings(true)}><Icon name="settings" /></button>
             </div>
           </div>
 
@@ -837,7 +960,8 @@ export default function App() {
           {filteredArticles.length === 0 ? (
             <ul className="article-list">
               <li className="empty-list">
-                {searchQuery || selectedTags.length > 0 || selectedFolder ? "Nenhum resultado." : "Nenhum artigo ainda."}
+                {showOrphansOnly ? "Nenhum artigo órfão — tudo conectado ao grafo."
+                  : searchQuery || selectedTags.length > 0 || selectedFolder ? "Nenhum resultado." : "Nenhum artigo ainda."}
               </li>
             </ul>
           ) : (
@@ -847,7 +971,14 @@ export default function App() {
               items={filteredArticles}
               itemHeight={listDensity === "compact" ? 30 : 56}
               itemKey={(a: Article) => a.id}
-              renderItem={(a: Article, i: number) => (
+              renderItem={(a: Article, i: number) => {
+                const q = searchQuery.trim();
+                const titleMatches = q.length > 0 && a.title.toLowerCase().includes(q.toLowerCase());
+                const bodyText = (a.summary || "").replace(/^•\s*/, "") || "Sem resumo.";
+                const snippet = q && !titleMatches
+                  ? extractSnippet(searchIndex.get(a.id)?.slice(0, 4000) ?? "", q)
+                  : null;
+                return (
                 <div
                   className={`article-item ${a.id === activeArticleId ? "active" : ""} ${i === highlightedIndex ? "highlighted" : ""}`}
                   onClick={() => handleOpenArticle(a.id)}
@@ -856,10 +987,12 @@ export default function App() {
                 >
                   <span className={`dot dot-${a.source}`} />
                   <div className="article-item-main">
-                    <span className="article-item-title">{a.title}</span>
+                    <span className="article-item-title">{q ? highlightMatch(a.title, q) : a.title}</span>
                     {listDensity === "comfortable" && (
                       <span className="article-item-snippet">
-                        {(a.summary || "").replace(/^•\s*/, "").slice(0, 90) || "Sem resumo."}
+                        {snippet
+                          ? <>{snippet.before}<mark className="search-highlight">{snippet.match}</mark>{snippet.after}</>
+                          : q ? highlightMatch(bodyText.slice(0, 90), q) : bodyText.slice(0, 90)}
                         {folders.find(f => f.id === a.folderId) && (
                           <span className="article-item-folder-label"> · <Icon name="folder" />{folders.find(f => f.id === a.folderId)!.name}</span>
                         )}
@@ -881,7 +1014,8 @@ export default function App() {
                     <Icon name="folder" />
                   </button>
                 </div>
-              )}
+                );
+              }}
             />
           )}
 
@@ -929,19 +1063,6 @@ export default function App() {
           title={view === "article" ? "Artigo" : view === "graph" ? "Grafo" : "Trilha"}
           onSearch={() => { setSidebarCollapsed(false); setTimeout(() => searchInputRef.current?.focus(), 0); }}
           searchTitle="Pesquisar artigos (⌘F)"
-          center={
-            <div className="view-tabs">
-              <button className={view === "article" ? "tab active" : "tab"} onClick={() => setView("article")} disabled={!activeArticle}>
-                Artigo
-              </button>
-              <button className={view === "graph" ? "tab active" : "tab"} onClick={() => setView("graph")}>
-                Grafo
-              </button>
-              <button className={view === "path" ? "tab active" : "tab"} onClick={() => setView("path")}>
-                Trilha
-              </button>
-            </div>
-          }
           actions={
             <>
               {view === "article" && activeArticle && (
@@ -1028,8 +1149,13 @@ export default function App() {
                     edges={displayedGraph.edges}
                     onCanvasReady={setGraphCanvasEl}
                     onNodeOpen={pushHistory}
+                    highlightTag={graphTagFilter}
                   />
-                  <GraphLegend />
+                  <GraphLegend
+                    tags={displayedGraphTags}
+                    activeTag={graphTagFilter}
+                    onToggleTag={toggleGraphTagFilter}
+                  />
                 </>
               ) : (
                 <div className="empty-state">

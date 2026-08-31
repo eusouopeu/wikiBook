@@ -33,6 +33,10 @@ interface Props {
   // padrão via store — usado pelo shell mobile, que navega por estado local
   // em vez do campo "view" do store (lido só pelo App.tsx do desktop)
   onNodeOpen?: (id: string) => void;
+  // Tag selecionada na legenda (ver GraphLegend em App.tsx) — nós sem essa
+  // tag ficam esmaecidos em vez de escondidos, para não perder o contexto
+  // das conexões ao redor do que está em destaque.
+  highlightTag?: string | null;
 }
 
 type SimNode = GraphNode & d3.SimulationNodeDatum;
@@ -69,7 +73,7 @@ function distToSegment(px: number, py: number, x1: number, y1: number, x2: numbe
   return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy));
 }
 
-export const GraphView: React.FC<Props> = ({ nodes, edges, onCanvasReady, onNodeOpen }) => {
+export const GraphView: React.FC<Props> = ({ nodes, edges, onCanvasReady, onNodeOpen, highlightTag }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const simulationRef = useRef<d3.Simulation<SimNode, SimEdge> | null>(null);
   const simNodesRef = useRef<SimNode[]>([]);
@@ -170,13 +174,15 @@ export const GraphView: React.FC<Props> = ({ nodes, edges, onCanvasReady, onNode
       const x = n.x ?? 0, y = n.y ?? 0;
       const color = SOURCE_COLOR[n.source] ?? "#888";
       const isHovered = n.id === hoveredNodeId;
+      const isDimmed = !!highlightTag && !(n.tags ?? []).includes(highlightTag);
+      const dimFactor = isDimmed ? 0.15 : 1;
 
       if ((n.tags?.length ?? 0) > 0) {
         ctx.beginPath();
         ctx.arc(x, y, n.radius + 6, 0, Math.PI * 2);
         ctx.strokeStyle = tagColor(n.tags[0]);
         ctx.lineWidth = 1.8;
-        ctx.globalAlpha = 0.75;
+        ctx.globalAlpha = 0.75 * dimFactor;
         ctx.setLineDash([4, 3]);
         ctx.stroke();
         ctx.setLineDash([]);
@@ -187,7 +193,7 @@ export const GraphView: React.FC<Props> = ({ nodes, edges, onCanvasReady, onNode
       ctx.beginPath();
       ctx.arc(x, y, n.radius + 3, 0, Math.PI * 2);
       ctx.strokeStyle = color;
-      ctx.globalAlpha = 0.25;
+      ctx.globalAlpha = 0.25 * dimFactor;
       ctx.lineWidth = 0.5;
       ctx.stroke();
       ctx.globalAlpha = 1;
@@ -196,21 +202,23 @@ export const GraphView: React.FC<Props> = ({ nodes, edges, onCanvasReady, onNode
       ctx.beginPath();
       ctx.arc(x, y, n.radius, 0, Math.PI * 2);
       ctx.fillStyle = color;
-      ctx.globalAlpha = isHovered ? 0.38 : 0.18;
+      ctx.globalAlpha = (isHovered ? 0.38 : 0.18) * dimFactor;
       ctx.fill();
       ctx.globalAlpha = 1;
       ctx.strokeStyle = color;
       ctx.lineWidth = n.depth === 0 ? 2.2 : 1.4;
+      ctx.globalAlpha = dimFactor;
       ctx.stroke();
+      ctx.globalAlpha = 1;
 
       // Badge de profundidade (raízes)
       if (n.depth === 0) {
         ctx.beginPath();
         ctx.arc(x + n.radius * 0.7, y - n.radius * 0.7, 5, 0, Math.PI * 2);
         ctx.fillStyle = "#fff";
-        ctx.globalAlpha = 0.12;
+        ctx.globalAlpha = 0.12 * dimFactor;
         ctx.fill();
-        ctx.globalAlpha = 0.4;
+        ctx.globalAlpha = 0.4 * dimFactor;
         ctx.strokeStyle = "#fff";
         ctx.lineWidth = 0.8;
         ctx.stroke();
@@ -233,13 +241,13 @@ export const GraphView: React.FC<Props> = ({ nodes, edges, onCanvasReady, onNode
       ctx.font = "11px sans-serif";
       ctx.textAlign = "center";
       ctx.fillStyle = fg;
-      ctx.globalAlpha = 0.85;
+      ctx.globalAlpha = 0.85 * dimFactor;
       ctx.fillText(label, x, y + n.radius + 14);
       ctx.globalAlpha = 1;
     }
 
     ctx.restore();
-  }, [hoveredNodeId, focusedIndex, canvasFocused]);
+  }, [hoveredNodeId, focusedIndex, canvasFocused, highlightTag]);
 
   useEffect(() => { drawRef.current = draw; }, [draw]);
   useEffect(() => { draw(); }, [draw]);

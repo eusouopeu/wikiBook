@@ -29,6 +29,11 @@
 .top-bar .icon-btn { min-width: 44px; min-height: 44px; }
 
 .mobile-search-row { display: flex; gap: 6px; }
+.mobile-search-row .icon-btn { min-width: 44px; min-height: 44px; }
+
+/* Painel da central de erros (ver components/TopBar.tsx) — não pode passar
+   da largura da tela em aparelhos pequenos. */
+.error-center-panel { max-width: calc(100vw - 32px); width: 280px; }
 
 .mobile-search {
   flex: 1;

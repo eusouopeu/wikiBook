@@ -16,7 +16,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useState } from "react";
-import { ArticleView, TopBar } from "@lexicon/shared";
+import { ArticleView, TopBar, useStore } from "@lexicon/shared";
 import type { Article } from "@lexicon/shared";
 
 interface Props {
@@ -30,14 +30,15 @@ export function ArticleScreen({ article, onBack }: Props) {
   // (senão os 4 ícones "primários" apareceriam inline por um instante antes
   // de migrar para a barra de navegação).
   const [actionsSlot, setActionsSlot] = useState<HTMLDivElement | null>(null);
+  const requestSearchFocus = useStore(s => s.requestSearchFocus);
 
   return (
     <div className="mobile-article-screen">
       <TopBar
         title={article.title}
         onBack={onBack}
-        onSearch={onBack}
-        searchTitle="Buscar artigos (volta pra Artigos)"
+        onSearch={() => { onBack(); requestSearchFocus(); }}
+        searchTitle="Buscar artigos"
         actions={<div className="mobile-article-screen-actions" ref={setActionsSlot} />}
       />
       <div className="mobile-article-screen-body">

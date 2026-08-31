@@ -7,16 +7,17 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React from "react";
-import { PathView, TopBar } from "@lexicon/shared";
+import { PathView, TopBar, useStore } from "@lexicon/shared";
 
 interface Props {
   onOpenArticle?: (id: string) => void;
 }
 
 export function PathScreen({ onOpenArticle }: Props) {
+  const requestSearchFocus = useStore(s => s.requestSearchFocus);
   return (
     <div className="mobile-path-screen">
-      <TopBar title="Trilha" />
+      <TopBar title="Trilha" onSearch={requestSearchFocus} />
       <PathView onOpenArticle={onOpenArticle} />
     </div>
   );

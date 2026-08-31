@@ -112,6 +112,15 @@ interface AppState {
   // consecutivos, e um slot único faz o segundo sobrescrever o primeiro
   // antes de o usuário lê-lo.
   toasts: Array<{ id: string; message: string; type: "info" | "error"; action?: { label: string; onClick: () => void } }>;
+  // Histórico de erros da sessão (não persistido) — os toasts de erro somem
+  // sozinhos em alguns segundos; isso guarda os últimos N para quem não leu a
+  // tempo. Alimentado automaticamente por showToast(type: "error").
+  errorHistory: Array<{ id: string; message: string; time: string }>;
+  // Incrementado por requestSearchFocus() — sinal para o shell mobile trocar
+  // para a aba Artigos e focar a busca a partir do ícone de pesquisar de
+  // qualquer outra aba (desktop já resolve isso localmente em App.tsx, sem
+  // precisar de estado global, pois a busca vive na mesma tela que as views).
+  searchFocusToken: number;
   // Contexto do menu de clique direito no artigo — tableHtml/imageSrc/imageAlt
   // ficam presentes só quando o clique foi sobre uma tabela ou imagem
   contextMenu: {
@@ -177,6 +186,8 @@ interface AppState {
     opts?: { action?: { label: string; onClick: () => void }; durationMs?: number }
   ) => void;
   dismissToast: (id: string) => void;
+  clearErrorHistory: () => void;
+  requestSearchFocus: () => void;
   showContextMenu: (x: number, y: number, parentId: string, opts?: {
     selectedText?: string; tableHtml?: string; imageSrc?: string; imageAlt?: string;
   }) => void;
@@ -324,6 +335,8 @@ export const useStore = create<AppState>((set, get) => ({
   pendingTask: null,
   pendingTaskToken: 0,
   toasts: [],
+  errorHistory: [],
+  searchFocusToken: 0,
   contextMenu: {
     visible: false, x: 0, y: 0,
     selectedText: "", parentArticleId: null,
@@ -763,11 +776,18 @@ export const useStore = create<AppState>((set, get) => ({
       // Mantém no máximo 3 empilhados — descarta o mais antigo em vez de
       // deixar a pilha crescer sem limite.
       const toasts = [...s.toasts, { id, message, type, action: opts?.action }];
-      return { toasts: toasts.length > 3 ? toasts.slice(toasts.length - 3) : toasts };
+      // Erros também vão para o histórico persistente da sessão — o toast
+      // some sozinho em segundos, o histórico fica até o usuário limpar.
+      const errorHistory = type === "error"
+        ? [...s.errorHistory, { id, message, time: new Date().toISOString() }].slice(-20)
+        : s.errorHistory;
+      return { toasts: toasts.length > 3 ? toasts.slice(toasts.length - 3) : toasts, errorHistory };
     });
     setTimeout(() => get().dismissToast(id), opts?.durationMs ?? 3500);
   },
   dismissToast: (id) => set(s => ({ toasts: s.toasts.filter(t => t.id !== id) })),
+  clearErrorHistory: () => set({ errorHistory: [] }),
+  requestSearchFocus: () => set(s => ({ searchFocusToken: s.searchFocusToken + 1 })),
   showContextMenu: (x, y, parentId, opts = {}) =>
     set({ contextMenu: {
       visible: true, x, y, parentArticleId: parentId,

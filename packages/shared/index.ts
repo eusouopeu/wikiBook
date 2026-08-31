@@ -5,7 +5,7 @@
 // destas peças; só o host (Electron IPC vs. Capacitor plugins) muda.
 // ─────────────────────────────────────────────────────────────────────────────
 
-export { default as App } from "./App";
+export { default as App, GraphLegend } from "./App";
 export { useStore, computeLocalSubgraph } from "./store/useStore";
 export { ArticleView, ReviewModal } from "./components/ArticleView";
 export { GraphView } from "./components/GraphView";
@@ -22,3 +22,5 @@ export type { VirtualListHandle } from "./components/VirtualList";
 export * from "./shared/types";
 export { confirmDialog } from "./lib/confirmDialog";
 export { scoreQueryMatch } from "./lib/searchRelevance";
+export { highlightMatch, extractSnippet } from "./lib/searchHighlight";
+export { pickWeightedRandomArticle } from "./lib/randomArticle";

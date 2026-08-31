@@ -13,8 +13,8 @@
 // "actions" da TopBar padronizada (ver components/TopBar.tsx).
 // ─────────────────────────────────────────────────────────────────────────────
 
-import React, { useMemo, useState } from "react";
-import { useStore, computeLocalSubgraph, GraphView, TopBar, Icon } from "@lexicon/shared";
+import React, { useEffect, useMemo, useState } from "react";
+import { useStore, computeLocalSubgraph, GraphView, GraphLegend, TopBar, Icon } from "@lexicon/shared";
 
 interface Props {
   onOpenArticle: (id: string) => void;
@@ -32,18 +32,30 @@ export function GraphScreen({ onOpenArticle }: Props) {
   const {
     graphNodes, graphEdges, activeArticleId,
     graphScope, setGraphScope, localDepth, setLocalDepth,
+    requestSearchFocus,
   } = useStore();
   const [graphCanvasEl, setGraphCanvasEl] = useState<HTMLCanvasElement | null>(null);
+  const [tagFilter, setTagFilter] = useState<string | null>(null);
 
   const displayedGraph = useMemo(() => {
     if (graphScope !== "local" || !activeArticleId) return { nodes: graphNodes, edges: graphEdges };
     return computeLocalSubgraph(graphNodes, graphEdges, activeArticleId, localDepth);
   }, [graphScope, activeArticleId, localDepth, graphNodes, graphEdges]);
 
+  const displayedGraphTags = useMemo(() => {
+    const tags = new Set<string>();
+    for (const n of displayedGraph.nodes) for (const t of n.tags ?? []) tags.add(t);
+    return Array.from(tags).sort();
+  }, [displayedGraph]);
+  useEffect(() => {
+    if (tagFilter && !displayedGraphTags.includes(tagFilter)) setTagFilter(null);
+  }, [displayedGraphTags, tagFilter]);
+
   return (
     <div className="mobile-graph-screen">
       <TopBar
         title="Grafo"
+        onSearch={requestSearchFocus}
         actions={
           <>
             <div className="graph-scope-toggle">
@@ -72,12 +84,20 @@ export function GraphScreen({ onOpenArticle }: Props) {
 
       <div className="graph-container">
         {displayedGraph.nodes.length > 0 ? (
-          <GraphView
-            nodes={displayedGraph.nodes}
-            edges={displayedGraph.edges}
-            onCanvasReady={setGraphCanvasEl}
-            onNodeOpen={onOpenArticle}
-          />
+          <>
+            <GraphView
+              nodes={displayedGraph.nodes}
+              edges={displayedGraph.edges}
+              onCanvasReady={setGraphCanvasEl}
+              onNodeOpen={onOpenArticle}
+              highlightTag={tagFilter}
+            />
+            <GraphLegend
+              tags={displayedGraphTags}
+              activeTag={tagFilter}
+              onToggleTag={t => setTagFilter(prev => (prev === t ? null : t))}
+            />
+          </>
         ) : (
           <div className="mobile-empty">
             {graphScope === "local"

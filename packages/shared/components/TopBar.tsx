@@ -6,9 +6,10 @@
 // nesta ordem, para que a posição dos dois últimos nunca mude entre telas.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import React from "react";
+import React, { useState } from "react";
 import { useStore, type ThemeMode } from "../store/useStore";
 import { Icon, type IconName } from "./Icon";
+import { useEscToClose } from "../lib/useEscToClose";
 
 const THEME_CYCLE: ThemeMode[] = ["system", "light", "dark"];
 const THEME_ICON: Record<ThemeMode, IconName> = {
@@ -34,6 +35,56 @@ export const ThemeToggleButton: React.FC<{ className?: string }> = ({ className 
     >
       <Icon name={THEME_ICON[theme]} />
     </button>
+  );
+};
+
+function formatErrorTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+}
+
+// Mini central de erros — os toasts de erro somem sozinhos em segundos; isso
+// guarda os últimos da sessão (ver errorHistory em useStore.ts) num painel
+// que fica disponível em qualquer aba, já que o TopBar é compartilhado.
+const ErrorCenterButton: React.FC = () => {
+  const errorHistory = useStore(s => s.errorHistory);
+  const clearErrorHistory = useStore(s => s.clearErrorHistory);
+  const [open, setOpen] = useState(false);
+  useEscToClose(() => setOpen(false));
+  if (errorHistory.length === 0) return null;
+  return (
+    <div className="error-center">
+      <button
+        type="button"
+        className="icon-btn error-center-btn"
+        title="Erros recentes desta sessão"
+        aria-label={`Erros recentes desta sessão (${errorHistory.length})`}
+        onClick={() => setOpen(v => !v)}
+      >
+        <Icon name="errors" />
+        <span className="error-center-badge">{errorHistory.length}</span>
+      </button>
+      {open && (
+        <>
+          <div className="error-center-scrim" onClick={() => setOpen(false)} />
+          <div className="error-center-panel">
+            <div className="error-center-panel-header">
+              <span>Erros recentes</span>
+              <button type="button" className="text-btn" onClick={() => { clearErrorHistory(); setOpen(false); }}>
+                Limpar
+              </button>
+            </div>
+            <ul className="error-center-list">
+              {[...errorHistory].reverse().map(e => (
+                <li key={e.id} className="error-center-item">
+                  <span className="error-center-item-time">{formatErrorTime(e.time)}</span>
+                  <span className="error-center-item-message">{e.message}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </>
+      )}
+    </div>
   );
 };
 
@@ -70,6 +121,7 @@ export const TopBar: React.FC<TopBarProps> = ({
           <Icon name="search" />
         </button>
       )}
+      <ErrorCenterButton />
       <ThemeToggleButton />
     </div>
   </div>
