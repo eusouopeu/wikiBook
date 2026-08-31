@@ -9,7 +9,7 @@
 // SecureStoragePlugin) — invisível aqui, ambos respondem a config:get/set.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { useStore } from "../store/useStore";
 import { Icon, type IconName } from "./Icon";
 import { useEscToClose } from "../lib/useEscToClose";
@@ -53,6 +53,62 @@ export const SettingsModal: React.FC<{ onClose?: () => void; embedded?: boolean 
     if (!res.ok) { showToast(res.error ?? "Falha ao salvar a chave.", "error"); return; }
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
+  }
+
+  // ── Sincronização Markdown automática (pasta local/Documents) ─────────────
+  // Substitui o antigo "Exportar Markdown" manual: toda escrita em artigo já
+  // atualiza a pasta sozinha (ver mdSyncHandlers.js no desktop e
+  // platform/mdSync.ts no mobile). Aqui só mostra status e permite trocar/
+  // desligar/forçar ressincronização.
+  const [mdFolder, setMdFolder] = useState<string | null>(null);
+  const [mdCount, setMdCount] = useState(0);
+  const [mdBusy, setMdBusy] = useState(false);
+  const isMobile = typeof window !== "undefined" && !!(window as any).Capacitor;
+
+  const refreshMdStatus = useCallback(async () => {
+    const res = await window.lexicon.invoke("mdsync:getStatus");
+    if (res.ok) {
+      const { folder, count } = res.data as { folder: string | null; count: number };
+      setMdFolder(folder);
+      setMdCount(count);
+    }
+  }, []);
+  useEffect(() => { refreshMdStatus(); }, [refreshMdStatus]);
+
+  async function handleSelectMdFolder() {
+    setMdBusy(true);
+    try {
+      const res = await window.lexicon.invoke("mdsync:selectFolder");
+      if (!res.ok) { showToast(res.error ?? "Falha ao configurar a pasta.", "error"); return; }
+      if (res.data === null) return; // cancelado
+      const { folder, count } = res.data as { folder: string; count: number };
+      setMdFolder(folder);
+      setMdCount(count);
+      showToast(`Sincronização ativada — ${count} artigo${count === 1 ? "" : "s"} em ${folder}.`);
+    } finally {
+      setMdBusy(false);
+    }
+  }
+  async function handleResync() {
+    setMdBusy(true);
+    try {
+      const res = await window.lexicon.invoke("mdsync:resync");
+      if (!res.ok) { showToast(res.error ?? "Falha ao ressincronizar.", "error"); return; }
+      const { count } = res.data as { count: number };
+      setMdCount(count);
+      showToast(`Ressincronizado — ${count} artigo${count === 1 ? "" : "s"}.`);
+    } finally {
+      setMdBusy(false);
+    }
+  }
+  async function handleDisableMdSync() {
+    await window.lexicon.invoke("mdsync:disable");
+    setMdFolder(null);
+    showToast("Sincronização desligada. Os arquivos já gravados continuam onde estão.");
+  }
+  async function handleOpenMdFolder() {
+    const res = await window.lexicon.invoke("mdsync:openFolder");
+    if (!res.ok) showToast(res.error ?? "Não foi possível abrir a pasta.", "error");
   }
 
   // ── Sincronização (servidor self-hosted, ver packages/sync-server) ────────
@@ -150,6 +206,56 @@ export const SettingsModal: React.FC<{ onClose?: () => void; embedded?: boolean 
             ))}
           </div>
         </label>
+        <h3 className="settings-section-title">Sincronização Markdown</h3>
+        <p className="settings-hint">
+          {isMobile
+            ? "Toda nota é salva automaticamente em .md na pasta Documentos do app — sem exportar manualmente."
+            : "Escolha uma pasta e toda nota fica salva automaticamente em .md nela — sem exportar manualmente."}
+        </p>
+        {mdFolder ? (
+          <>
+            <p className="settings-hint">
+              <Icon name="check" /> Sincronizando com <strong>{mdFolder}</strong> — {mdCount} artigo{mdCount === 1 ? "" : "s"}.
+            </p>
+            <div className="modal-actions">
+              {!isMobile && (
+                <button type="button" onClick={handleSelectMdFolder} disabled={mdBusy}>Trocar pasta</button>
+              )}
+              <button type="button" className="icon-btn" title="Ressincronizar tudo" aria-label="Ressincronizar tudo"
+                      onClick={handleResync} disabled={mdBusy}><Icon name="refresh" /></button>
+              <button type="button" className="icon-btn"
+                      title={isMobile ? "Compartilhar cópia dos artigos" : "Abrir pasta"}
+                      aria-label={isMobile ? "Compartilhar cópia dos artigos" : "Abrir pasta"}
+                      onClick={handleOpenMdFolder} disabled={mdBusy}>
+                <Icon name={isMobile ? "share" : "folderOpen"} />
+              </button>
+              <button type="button" onClick={handleDisableMdSync} disabled={mdBusy}>Desligar</button>
+            </div>
+          </>
+        ) : (
+          <div className="modal-actions">
+            <button type="button" className="primary" onClick={handleSelectMdFolder} disabled={mdBusy}>
+              {mdBusy ? "Configurando…" : isMobile ? "Ativar sincronização" : "Escolher pasta"}
+            </button>
+          </div>
+        )}
+
+        <h3 className="settings-section-title">Flashcards</h3>
+        <p className="settings-hint">Exporta os trechos de texto salvos como flashcards num CSV importável pelo Anki.</p>
+        <div className="modal-actions">
+          <button type="button" className="icon-btn" title="Exportar flashcards (CSV/Anki)" aria-label="Exportar flashcards (CSV/Anki)"
+                  onClick={async () => {
+                    const res = await window.lexicon.invoke("article:exportFlashcardsCsv");
+                    if (!res.ok) { showToast(res.error ?? "Falha ao exportar flashcards.", "error"); return; }
+                    if (res.data === null) return;
+                    const { count } = res.data as { count: number };
+                    if (count === 0) { showToast("Nenhum trecho de texto salvo para exportar."); return; }
+                    showToast(`${count} flashcard${count > 1 ? "s" : ""} exportado${count > 1 ? "s" : ""}.`);
+                  }}>
+            <Icon name="flashcardsExport" />
+          </button>
+        </div>
+
         <h3 className="settings-section-title">Sincronização entre dispositivos</h3>
         <p className="settings-hint">
           Requer um servidor próprio rodando (ver packages/sync-server). Sob demanda — use

@@ -108,6 +108,11 @@ function writeArticle(article) {
   fs.writeFileSync(tmp, JSON.stringify(article, null, 2), "utf8");
   fs.renameSync(tmp, p);
   invalidateArticlesCache();
+  // Require tardio: mdSyncHandlers.js importa articleToMarkdown/safeFilename/
+  // etc. deste módulo, então um require no topo do arquivo criaria dependência
+  // circular. writeArticle é o único choque de escrita (save, links, trechos,
+  // anexos, reversão de versão) — logo o único ponto que precisa do hook.
+  try { require("./mdSyncHandlers").syncArticleFile(article); } catch { /* pasta de sync não configurada ou indisponível */ }
 }
 
 // Cache em memória da listagem completa — evita reler e reparsear TODOS os
@@ -463,6 +468,7 @@ function createArticleHandlers(ipcMain) {
       // Require tardio (não no topo do arquivo) para evitar dependência
       // circular — flashcardHandlers.js já requer articleHandlers.js.
       require("./flashcardHandlers").invalidateFlashcardsCache(id);
+      try { require("./mdSyncHandlers").removeArticleFile(id); } catch { /* pasta de sync não configurada */ }
       return { ok: true };
     } catch (e) { return { ok: false, error: e.message }; }
   });
@@ -487,7 +493,9 @@ function createArticleHandlers(ipcMain) {
         fs.renameSync(flashcardsTrashPath, path.join(FLASHCARDS_DIR, `${id}.json`));
       }
       require("./flashcardHandlers").invalidateFlashcardsCache(id);
-      return { ok: true, data: readArticle(id) };
+      const restored = readArticle(id);
+      try { require("./mdSyncHandlers").syncArticleFile(restored); } catch { /* pasta de sync não configurada */ }
+      return { ok: true, data: restored };
     } catch (e) { return { ok: false, error: e.message }; }
   });
 
@@ -653,58 +661,10 @@ function createArticleHandlers(ipcMain) {
     } catch (e) { return { ok: false, error: e.message }; }
   });
 
-  // ── article:exportMarkdown ──────────────────────────────────────────────────
-  // Exporta todos os artigos como arquivos .md (formato Obsidian) para uma
-  // pasta escolhida pelo usuário. Imagens salvas viram arquivos em assets/ e
-  // são referenciadas por caminho relativo. Retorna data:null se cancelado.
-  ipcMain.handle("article:exportMarkdown", async () => {
-    try {
-      const result = await dialog.showOpenDialog({
-        title: "Escolha a pasta de destino da exportação",
-        properties: ["openDirectory", "createDirectory"],
-      });
-      if (result.canceled || result.filePaths.length === 0) {
-        return { ok: true, data: null };
-      }
-      const dir = result.filePaths[0];
-      const articles = listAllArticles();
-
-      let assetsDirEnsured = false;
-      let count = 0;
-      // Escreve em chunks, cedendo o loop de eventos entre eles — sem isso,
-      // uma biblioteca grande (centenas de artigos, alguns com imagens
-      // embutidas em base64) trava o processo principal por segundos e a UI
-      // some até o fim da exportação inteira.
-      const CHUNK_SIZE = 15;
-      for (let i = 0; i < articles.length; i += CHUNK_SIZE) {
-        const chunk = articles.slice(i, i + CHUNK_SIZE);
-        for (const article of chunk) {
-          const imageAssetPaths = new Map();
-          for (const ex of article.excerpts ?? []) {
-            if ((ex.kind ?? "text") !== "image") continue;
-            const match = ex.html.match(/src="(data:[^"]+)"/);
-            if (!match) continue;
-            const decoded = dataUriToBuffer(match[1]);
-            if (!decoded) continue;
-            if (!assetsDirEnsured) {
-              fs.mkdirSync(path.join(dir, "assets"), { recursive: true });
-              assetsDirEnsured = true;
-            }
-            const filename = `${safeFilename(article.title)}-${ex.id.slice(0, 8)}.${extFromMime(decoded.mime)}`;
-            fs.writeFileSync(path.join(dir, "assets", filename), decoded.buffer);
-            imageAssetPaths.set(ex.id, `assets/${filename}`);
-          }
-          const filePath = path.join(dir, `${safeFilename(article.title)}.md`);
-          fs.writeFileSync(filePath, articleToMarkdown(article, imageAssetPaths), "utf8");
-          count++;
-        }
-        if (i + CHUNK_SIZE < articles.length) {
-          await new Promise(resolve => setImmediate(resolve));
-        }
-      }
-      return { ok: true, data: { count, dir } };
-    } catch (e) { return { ok: false, error: e.message }; }
-  });
+  // article:exportMarkdown foi substituído pela sincronização automática em
+  // mdSyncHandlers.js (ver createMdSyncHandlers) — toda escrita em
+  // writeArticle() já mantém a pasta escolhida pelo usuário atualizada, sem
+  // exportação manual.
 
   // ── article:exportFlashcardsCsv ─────────────────────────────────────────────
   // Exporta trechos de texto salvos como flashcards (Frente/Verso) num CSV
@@ -872,4 +832,7 @@ function createArticleHandlers(ipcMain) {
   });
 }
 
-module.exports = { createArticleHandlers, readArticle, writeArticle, listAllArticles, htmlToMarkdown };
+module.exports = {
+  createArticleHandlers, readArticle, writeArticle, listAllArticles, htmlToMarkdown,
+  articleToMarkdown, safeFilename, extFromMime, dataUriToBuffer,
+};

@@ -11,26 +11,88 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useStore, ReviewModal, FolderPicker, VirtualList, LogoMark, Icon, scoreQueryMatch, confirmDialog } from "@lexicon/shared";
+import { useStore, ReviewModal, FolderPicker, VirtualList, TopBar, Icon, scoreQueryMatch, confirmDialog } from "@lexicon/shared";
 import type { Article, Flashcard, FlashcardGrade } from "@lexicon/shared";
 
 // Pseudo-id local (não existe no backend) usado só para representar o card
 // "Sem pasta" na grade de pastas — artigos com folderId nulo/indefinido.
 const NO_FOLDER_ID = "__no_folder__";
 
+// Alvo de toque mínimo de 48px (ver App.tsx desktop = 44/64 — no mobile
+// compacto virava 46, arredondado pra cima) + o botão "mover para pasta" some
+// da linha e só aparece arrastando (libera espaço pro título/resumo, ver
+// recomendação de UX: alvos pequenos demais no modo compacto).
+const SWIPE_REVEAL = 60;
+
+const SwipeableRow: React.FC<{
+  children: React.ReactNode;
+  onReveal: (rect: DOMRect) => void;
+}> = ({ children, onReveal }) => {
+  const rowRef = useRef<HTMLDivElement>(null);
+  const [dx, setDx] = useState(0);
+  const drag = useRef({ active: false, startX: 0, moved: false });
+
+  function onPointerDown(e: React.PointerEvent) {
+    drag.current = { active: true, startX: e.clientX, moved: false };
+  }
+  function onPointerMove(e: React.PointerEvent) {
+    if (!drag.current.active) return;
+    const delta = e.clientX - drag.current.startX;
+    if (Math.abs(delta) > 4) drag.current.moved = true;
+    setDx(Math.min(0, Math.max(-SWIPE_REVEAL, delta)));
+  }
+  function onPointerUp() {
+    if (!drag.current.active) return;
+    drag.current.active = false;
+    setDx(d => (d < -SWIPE_REVEAL / 2 ? -SWIPE_REVEAL : 0));
+  }
+  // Um arraste real não deve também abrir o artigo (onClick da linha) —
+  // suprime o clique sintético só quando houve movimento de fato.
+  function onClickCapture(e: React.MouseEvent) {
+    if (drag.current.moved) { e.preventDefault(); e.stopPropagation(); drag.current.moved = false; }
+  }
+
+  return (
+    <div className="swipe-row">
+      <button
+        type="button" className="swipe-row-action" title="Mover para pasta" aria-label="Mover para pasta"
+        onClick={() => {
+          const rect = rowRef.current?.getBoundingClientRect();
+          if (rect) onReveal(rect);
+          setDx(0);
+        }}
+      >
+        <Icon name="folder" />
+      </button>
+      <div
+        ref={rowRef}
+        className="swipe-row-content"
+        style={{ transform: `translateX(${dx}px)` }}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
+        onClickCapture={onClickCapture}
+      >
+        {children}
+      </div>
+    </div>
+  );
+};
+
 interface Props {
   onOpenArticle: (id: string) => void;
-  onNewArticle: () => void;
 }
 
-export function ArticleListScreen({ onOpenArticle, onNewArticle }: Props) {
+export function ArticleListScreen({ onOpenArticle }: Props) {
   const {
     articles, activeArticleId, loadArticles,
-    searchQuery, setSearchQuery, selectedTags, toggleSelectedTag, showToast,
+    searchQuery, setSearchQuery, selectedTags, toggleSelectedTag,
     folders, selectedFolder, setSelectedFolder,
     createFolder, renameFolder, deleteFolder, setArticleFolder,
-    listDensity, setListDensity, beginPendingTask, endPendingTask,
+    listDensity, setListDensity,
   } = useStore();
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   // Alterna entre ver artigos agrupados por pasta (chips de pasta visíveis,
   // renomear/excluir pasta) e ver tudo solto, sem organização por pasta.
@@ -74,35 +136,6 @@ export function ArticleListScreen({ onOpenArticle, onNewArticle }: Props) {
 
   async function handleGlobalGrade(articleId: string, cardId: string, grade: FlashcardGrade) {
     await window.lexicon.invoke("flashcards:grade", { articleId, cardId, grade });
-  }
-
-  // Escreve os arquivos e abre o share sheet nativo — não existe "escolher
-  // pasta" no mobile, quem decide o destino final é o usuário no share sheet
-  // (Arquivos, iCloud Drive, Google Drive, AirDrop…).
-  async function handleExportMarkdown() {
-    const token = beginPendingTask("Exportando artigos…");
-    try {
-      const res = await window.lexicon.invoke("article:exportMarkdown");
-      if (!res.ok) { showToast(res.error ?? "Falha na exportação.", "error"); return; }
-      const { count } = res.data as { count: number };
-      if (count === 0) { showToast("Nenhum artigo para exportar."); return; }
-      showToast(`${count} artigo${count > 1 ? "s" : ""} pronto${count > 1 ? "s" : ""} — escolha o destino.`);
-    } finally {
-      endPendingTask(token);
-    }
-  }
-
-  async function handleExportFlashcardsCsv() {
-    const token = beginPendingTask("Exportando flashcards…");
-    try {
-      const res = await window.lexicon.invoke("article:exportFlashcardsCsv");
-      if (!res.ok) { showToast(res.error ?? "Falha ao exportar flashcards.", "error"); return; }
-      const { count } = res.data as { count: number };
-      if (count === 0) { showToast("Nenhum trecho de texto salvo para exportar."); return; }
-      showToast(`${count} flashcard${count > 1 ? "s" : ""} pronto${count > 1 ? "s" : ""} — escolha o destino.`);
-    } finally {
-      endPendingTask(token);
-    }
   }
 
   useEffect(() => { loadArticles(); refreshDueCount(); }, [loadArticles, refreshDueCount]);
@@ -172,32 +205,34 @@ export function ArticleListScreen({ onOpenArticle, onNewArticle }: Props) {
 
   return (
     <div className="mobile-screen">
-      <header className="mobile-header">
-        <h1 className="mobile-header-logo"><LogoMark size={22} /> Wikibook</h1>
-        <div className="mobile-header-actions">
-          <button
-            className="mobile-icon-btn"
-            title={libraryView === "folders" ? "Ver arquivos soltos (sem pastas)" : "Ver por pastas"}
-            aria-label={libraryView === "folders" ? "Ver arquivos soltos (sem pastas)" : "Ver por pastas"}
-            onClick={() => setLibraryView(v => v === "folders" ? "flat" : "folders")}
-          >
-            <Icon name={libraryView === "folders" ? "file" : "folder"} />
-          </button>
-          <button className="mobile-icon-btn" title="Exportar Markdown" aria-label="Exportar Markdown" onClick={handleExportMarkdown}><Icon name="save" /></button>
-          <button className="mobile-icon-btn" title="Exportar flashcards (CSV)" aria-label="Exportar flashcards (CSV)" onClick={handleExportFlashcardsCsv}><Icon name="flashcardsExport" /></button>
-          <button
-            className="mobile-icon-btn"
-            title={listDensity === "compact" ? "Lista compacta — toque para expandir" : "Lista expandida — toque para compactar"}
-            aria-label={listDensity === "compact" ? "Alternar para lista expandida" : "Alternar para lista compacta"}
-            onClick={() => setListDensity(listDensity === "compact" ? "comfortable" : "compact")}
-          >
-            <Icon name={listDensity === "compact" ? "densityCompact" : "densityComfortable"} />
-          </button>
-        </div>
-      </header>
+      <TopBar
+        title="Artigos"
+        onSearch={() => searchInputRef.current?.focus()}
+        actions={
+          <>
+            <button
+              className="icon-btn"
+              title={libraryView === "folders" ? "Ver arquivos soltos (sem pastas)" : "Ver por pastas"}
+              aria-label={libraryView === "folders" ? "Ver arquivos soltos (sem pastas)" : "Ver por pastas"}
+              onClick={() => setLibraryView(v => v === "folders" ? "flat" : "folders")}
+            >
+              <Icon name={libraryView === "folders" ? "file" : "folder"} />
+            </button>
+            <button
+              className="icon-btn"
+              title={listDensity === "compact" ? "Lista compacta — toque para expandir" : "Lista expandida — toque para compactar"}
+              aria-label={listDensity === "compact" ? "Alternar para lista expandida" : "Alternar para lista compacta"}
+              onClick={() => setListDensity(listDensity === "compact" ? "comfortable" : "compact")}
+            >
+              <Icon name={listDensity === "compact" ? "densityCompact" : "densityComfortable"} />
+            </button>
+          </>
+        }
+      />
 
       <div className="mobile-search-row">
         <input
+          ref={searchInputRef}
           className="mobile-search"
           type="search"
           placeholder="Buscar em títulos e conteúdo…"
@@ -240,8 +275,6 @@ export function ArticleListScreen({ onOpenArticle, onNewArticle }: Props) {
           <Icon name="flashcards" /><span>Revisar flashcards ({dueCount})</span>
         </button>
       )}
-
-      <button className="mobile-new-article-btn" onClick={onNewArticle}>+ Novo artigo</button>
 
       {showFolderGrid ? (
         <div className="mobile-folder-grid">
@@ -290,34 +323,27 @@ export function ArticleListScreen({ onOpenArticle, onNewArticle }: Props) {
         <VirtualList
           className={`mobile-article-list mobile-article-list-${listDensity}`}
           items={filteredArticles}
-          itemHeight={listDensity === "compact" ? 46 : 64}
+          itemHeight={listDensity === "compact" ? 48 : 68}
           itemKey={(a: Article) => a.id}
           renderItem={(a: Article) => (
-            <div
-              className={`mobile-article-item ${a.id === activeArticleId ? "active" : ""}`}
-              onClick={() => onOpenArticle(a.id)}
+            <SwipeableRow
+              onReveal={rect => setFolderPickerFor({ articleId: a.id, x: rect.left, y: rect.bottom + 4 })}
             >
-              <div className="mobile-article-main">
-                <span className="mobile-article-title">{a.title}</span>
-                {listDensity === "comfortable" && (
-                  <span className="mobile-article-snippet">
-                    {(a.summary || "").replace(/^•\s*/, "").slice(0, 70) || "Sem resumo."}
-                  </span>
-                )}
-              </div>
-              {a.links.length > 0 && <span className="mobile-link-count">{a.links.length}</span>}
-              <button
-                type="button" className="article-item-folder-btn" title="Mover para pasta"
-                aria-label={`Mover "${a.title}" para pasta`}
-                onClick={e => {
-                  e.stopPropagation();
-                  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                  setFolderPickerFor({ articleId: a.id, x: rect.left, y: rect.bottom + 4 });
-                }}
+              <div
+                className={`mobile-article-item ${a.id === activeArticleId ? "active" : ""}`}
+                onClick={() => onOpenArticle(a.id)}
               >
-                <Icon name="folder" />
-              </button>
-            </div>
+                <div className="mobile-article-main">
+                  <span className="mobile-article-title">{a.title}</span>
+                  {listDensity === "comfortable" && (
+                    <span className="mobile-article-snippet">
+                      {(a.summary || "").replace(/^•\s*/, "").slice(0, 70) || "Sem resumo."}
+                    </span>
+                  )}
+                </div>
+                {a.links.length > 0 && <span className="mobile-link-count">{a.links.length}</span>}
+              </div>
+            </SwipeableRow>
           )}
         />
       )}

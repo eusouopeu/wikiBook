@@ -8,7 +8,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useEffect, useState } from "react";
-import { useStore, SettingsModal } from "@lexicon/shared";
+import { App as CapacitorApp } from "@capacitor/app";
+import { useStore, SettingsModal, Icon, TopBar } from "@lexicon/shared";
 import { ArticleListScreen } from "./screens/ArticleListScreen";
 import { ArticleScreen } from "./screens/ArticleScreen";
 import { GraphScreen } from "./screens/GraphScreen";
@@ -66,6 +67,19 @@ export function MobileApp() {
     if (screen === "article" && !activeArticleId && !loadingArticle) setScreen("list");
   }, [screen, activeArticleId, loadingArticle]);
 
+  // Botão físico "voltar" do Android — sem isso, ele saía do app de dentro
+  // de um artigo/aba em vez de recuar um passo (a navegação do shell só
+  // vivia em cliques na BottomNav). Prioridade: fecha o modal de novo
+  // artigo → volta pra aba Artigos → sai do app (raiz, sem mais o que voltar).
+  useEffect(() => {
+    const handle = CapacitorApp.addListener("backButton", () => {
+      if (showNewModal) { setShowNewModal(false); return; }
+      if (screen !== "list") { setScreen("list"); return; }
+      CapacitorApp.exitApp();
+    });
+    return () => { handle.then(h => h.remove()); };
+  }, [showNewModal, screen]);
+
   let content: React.ReactNode;
   if (screen === "article") {
     content = activeArticle
@@ -76,14 +90,14 @@ export function MobileApp() {
   } else if (screen === "path") {
     content = <PathScreen onOpenArticle={handlePathArticleOpen} />;
   } else if (screen === "settings") {
-    content = <SettingsModal embedded />;
-  } else {
     content = (
-      <ArticleListScreen
-        onOpenArticle={handleOpenArticle}
-        onNewArticle={() => setShowNewModal(true)}
-      />
+      <div className="mobile-settings-screen">
+        <TopBar title="Ajustes" />
+        <SettingsModal embedded />
+      </div>
     );
+  } else {
+    content = <ArticleListScreen onOpenArticle={handleOpenArticle} />;
   }
 
   // A aba ativa é uma das cinco views da barra inferior — o artigo aberto é
@@ -97,6 +111,12 @@ export function MobileApp() {
   return (
     <>
       <div className="mobile-app-content">{content}</div>
+      {screen === "list" && (
+        <button type="button" className="mobile-fab" title="Novo artigo" aria-label="Novo artigo"
+                onClick={() => setShowNewModal(true)}>
+          <Icon name="add" />
+        </button>
+      )}
       <BottomNav active={activeTab} onSelect={handleSelectTab} />
       {showNewModal && <NewArticleModal onClose={() => setShowNewModal(false)} />}
       {bootstrapped && !onboardingSeen && (

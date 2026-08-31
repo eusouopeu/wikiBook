@@ -12,33 +12,21 @@
   overflow-y: auto;
 }
 
-.mobile-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+/* Barra superior padronizada (ver components/TopBar.tsx) — alvos de toque
+   maiores que no desktop, e sticky com respiro de status bar em toda tela
+   que a usa como primeiro elemento (grafo/trilha/artigo/ajustes; a de
+   Artigos fica dentro de .mobile-screen, que já tem o padding-top). */
+.mobile-article-screen .top-bar,
+.mobile-graph-screen .top-bar,
+.mobile-path-screen .top-bar,
+.mobile-settings-screen .top-bar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  padding-top: calc(env(safe-area-inset-top) + 8px);
+  background: var(--bg-body, #f8f9fa);
 }
-
-.mobile-header h1 {
-  margin: 8px 0 0;
-  font-family: var(--font-title, serif);
-  font-size: 1.5rem;
-}
-
-.mobile-header-logo {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.mobile-icon-btn {
-  border: none;
-  background: transparent;
-  color: var(--fg2);
-  font-size: 1.3rem;
-  padding: 8px;
-  min-width: 44px;
-  min-height: 44px;
-}
+.top-bar .icon-btn { min-width: 44px; min-height: 44px; }
 
 .mobile-search-row { display: flex; gap: 6px; }
 
@@ -76,15 +64,26 @@
   color: var(--accent, #3366cc);
 }
 
-.mobile-new-article-btn {
-  padding: 12px 14px;
-  border-radius: 8px;
-  border: none;
+/* Botão flutuante "+ novo artigo" (ver MobileApp.tsx) — substitui o botão
+   inline que existia no topo da lista, fixo acima da barra inferior. */
+.mobile-fab {
+  align-items: center;
   background: var(--accent, #3366cc);
+  border: none;
+  border-radius: 50%;
+  bottom: calc(env(safe-area-inset-bottom) + 68px);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.25);
   color: #fff;
-  font-size: 0.95rem;
-  min-height: 44px;
+  display: flex;
+  font-size: 1.5rem;
+  height: 52px;
+  justify-content: center;
+  position: fixed;
+  right: 18px;
+  width: 52px;
+  z-index: 15;
 }
+.mobile-fab:active { transform: scale(0.95); }
 
 .mobile-article-list {
   list-style: none;
@@ -104,7 +103,26 @@
   gap: 10px;
   padding: 14px 10px;
   border-radius: 8px;
-  min-height: 44px; /* alvo de toque mínimo */
+  min-height: 48px; /* alvo de toque mínimo (ver ArticleListScreen.tsx) */
+}
+
+/* Linha da lista com ação "mover para pasta" revelada por arraste — libera a
+   linha inteira pro título/resumo em vez de um botão sempre visível
+   competindo por espaço (ver SwipeableRow em ArticleListScreen.tsx). */
+.swipe-row { overflow: hidden; position: relative; touch-action: pan-y; }
+.swipe-row-content { background: var(--bg-body, #fff); position: relative; transition: transform 0.15s ease-out; z-index: 1; }
+.swipe-row-action {
+  align-items: center;
+  background: var(--accent-soft, #eaf3fb);
+  border: none;
+  bottom: 0;
+  color: var(--accent, #3366cc);
+  display: flex;
+  justify-content: center;
+  position: absolute;
+  right: 0;
+  top: 0;
+  width: 60px;
 }
 
 .mobile-article-item.active {
@@ -158,17 +176,6 @@
   box-sizing: border-box;
 }
 
-.mobile-article-screen-nav {
-  align-items: center;
-  display: flex;
-  gap: 8px;
-  position: sticky;
-  top: 0;
-  z-index: 10;
-  padding: env(safe-area-inset-top) 16px 8px;
-  background: var(--bg-body, #f8f9fa);
-}
-
 .mobile-back-btn {
   border: none;
   background: transparent;
@@ -218,13 +225,7 @@
   flex-direction: column;
 }
 
-.mobile-graph-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: calc(env(safe-area-inset-top) + 12px) 16px 8px;
-  flex-wrap: wrap;
-}
+.mobile-graph-screen .top-bar { flex-wrap: wrap; }
 
 /* Alvos de toque do desktop (App.tsx) são pequenos para dedo — só aqui,
    dentro da tela de grafo mobile, sem tocar no componente compartilhado. */
@@ -258,7 +259,7 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding-top: calc(env(safe-area-inset-top) + 12px);
+  padding-top: 12px; /* safe-area já fica por conta da TopBar acima */
 }
 
 /* Alvos de toque maiores para dedo — mesma ideia do grafo mobile acima. */
@@ -318,7 +319,7 @@ html, body, #root { height: 100%; }
 .mobile-article-screen-actions .find-in-page-bar,
 .mobile-article-screen-actions .ask-claude-popover {
   position: fixed;
-  top: calc(env(safe-area-inset-top) + 52px);
+  top: calc(env(safe-area-inset-top) + 60px);
   left: 12px;
   right: 12px;
   width: auto;

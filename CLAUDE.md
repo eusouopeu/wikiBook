@@ -12,9 +12,20 @@ SEMPRE usar a skill `/caveman` (modo de comunicação ultra-comprimido) em toda 
 
 ## Padrões técnicos e visuais obrigatórios
 
-- Sempre usar **TypeScript**, **Tailwind CSS**, ícones **Lucide** e fonte **Montserrat** com
-  espaçamento entrelinhas (line-height) de 1.5.
+- Sempre usar **TypeScript** e fonte **Montserrat** com espaçamento entrelinhas (line-height) de 1.5.
 - Dar preferência a **botões-ícone** em vez de botões com texto.
+- Estado real do projeto (diferente do que pedimos em app novo): CSS puro em
+  `packages/shared/styles.css`/`mobile.css` (sem Tailwind) e ícones **Heroicons**
+  (`@heroicons/react/24/outline`, mapeados em `components/Icon.tsx`) — não Lucide. Seguir o
+  padrão já existente em vez de introduzir Tailwind/Lucide no meio do código atual.
+- Toda tela/aba (desktop e mobile) usa a `TopBar` compartilhada (`components/TopBar.tsx`):
+  nome da aba + ícones específicos da aba + pesquisar (global) + alternar tema, nessa ordem.
+- Artigos são sincronizados automaticamente em `.md` (Obsidian) para uma pasta — não existe mais
+  exportação manual de Markdown. Ver `mdSyncHandlers.js` (desktop, pasta escolhida pelo usuário)
+  e `platform/mdSync.ts` (mobile, pasta fixa `Documents/Wikibook` — sem SAF/bookmark, não dá pra
+  escolher pasta arbitrária ainda).
+- Build do Android (`assembleDebug`) exige **JDK 21** (`brew install openjdk@21` já feito nesta
+  máquina) — `JAVA_HOME=/opt/homebrew/opt/openjdk@21`. JDK 17 (padrão do `java_home`) não compila.
 
 ## Testes
 

@@ -1,18 +1,15 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // packages/mobile/src/platform/export.ts
-// Porta de article:exportMarkdown/article:exportFlashcardsCsv em
-// articleHandlers.js. A formatação (Markdown Obsidian, CSV) é pura e copiada
-// sem alteração; o que muda é a saída: o desktop deixa escolher uma pasta
-// (dialog.showOpenDialog/showSaveDialog) e grava lá — não existe "escolher
-// pasta" no mobile. Aqui os arquivos vão para Directory.Cache (área de
-// rascunho do app) e o destino final é decidido pelo usuário no share sheet
-// nativo (Arquivos, iCloud Drive, Google Drive, AirDrop, e-mail…).
+// Porta de article:exportFlashcardsCsv em articleHandlers.js (o CSV do Anki
+// continua exportação manual, sob demanda). A exportação de artigos em
+// Markdown deixou de ser manual — ver platform/mdSync.ts, que reaproveita
+// articleToMarkdown/safeFilename exportados abaixo.
 //
-// Ressalva: @capacitor/share só suporta a opção `files` (múltiplos arquivos)
-// nativamente — o fallback web usa a Web Share API do navegador, que não
-// aceita `files`. Ou seja, dá pra verificar a GERAÇÃO dos arquivos (conteúdo
-// Markdown/CSV correto) no preview de browser, mas não o passo de share em
-// si — só confirmável num device/simulador de verdade.
+// Ressalva do CSV: @capacitor/share só suporta a opção `files` (múltiplos
+// arquivos) nativamente — o fallback web usa a Web Share API do navegador,
+// que não aceita `files`. Dá pra verificar a GERAÇÃO do arquivo (conteúdo CSV
+// correto) no preview de browser, mas não o passo de share em si — só
+// confirmável num device/simulador de verdade.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { Filesystem, Directory, Encoding } from "@capacitor/filesystem";
@@ -22,24 +19,23 @@ import { listArticles, htmlToMarkdown } from "./articles";
 import { parseFlashcardsFromText, flattenDraftsForExport } from "./flashcards";
 
 const EXPORT_DIR = "lexicon-export";
-const ASSETS_DIR = `${EXPORT_DIR}/assets`;
 
 const MIME_EXT: Record<string, string> = {
   "image/png": "png", "image/jpeg": "jpg", "image/gif": "gif",
   "image/webp": "webp", "image/svg+xml": "svg",
 };
-function extFromMime(mime: string): string {
+export function extFromMime(mime: string): string {
   return MIME_EXT[mime] ?? "png";
 }
 
-function dataUriToBase64(dataUri: string): { mime: string; base64: string } | null {
+export function dataUriToBase64(dataUri: string): { mime: string; base64: string } | null {
   const match = dataUri.match(/^data:([^;]+);base64,(.+)$/);
   if (!match) return null;
   return { mime: match[1], base64: match[2] };
 }
 
 // Nome de arquivo seguro a partir do título (mantém espaços — padrão Obsidian)
-function safeFilename(title: string): string {
+export function safeFilename(title: string): string {
   return title.replace(/[/\\:*?"<>|#^[\]]/g, "-").trim().slice(0, 120) || "sem-titulo";
 }
 
@@ -51,7 +47,8 @@ function csvEscape(field: unknown): string {
 
 // Monta o .md de um artigo no formato Obsidian (frontmatter + wikilinks) —
 // idêntico ao desktop, incluindo o mapa de caminhos de imagem já gravadas.
-function articleToMarkdown(article: Article, imageAssetPaths: Map<string, string>): string {
+// Reaproveitado por platform/mdSync.ts (sincronização automática).
+export function articleToMarkdown(article: Article, imageAssetPaths: Map<string, string>): string {
   const lines: string[] = [];
   lines.push("---");
   lines.push(`title: "${article.title.replace(/"/g, '\\"')}"`);
@@ -115,56 +112,9 @@ async function writeExportFile(relativePath: string, data: string, encoding?: En
   });
 }
 
-async function ensureAssetsDir() {
-  try {
-    await Filesystem.mkdir({ path: ASSETS_DIR, directory: Directory.Cache, recursive: true });
-  } catch {
-    // já existe
-  }
-}
-
-async function extractImageAssets(article: Article): Promise<Map<string, string>> {
-  const imageAssetPaths = new Map<string, string>();
-  let dirEnsured = false;
-  for (const ex of article.excerpts ?? []) {
-    if ((ex.kind ?? "text") !== "image") continue;
-    const match = ex.html.match(/src="(data:[^"]+)"/);
-    if (!match) continue;
-    const decoded = dataUriToBase64(match[1]);
-    if (!decoded) continue;
-    if (!dirEnsured) { await ensureAssetsDir(); dirEnsured = true; }
-    const filename = `${safeFilename(article.title)}-${ex.id.slice(0, 8)}.${extFromMime(decoded.mime)}`;
-    await Filesystem.writeFile({
-      path: `${ASSETS_DIR}/${filename}`, data: decoded.base64, directory: Directory.Cache,
-    });
-    imageAssetPaths.set(ex.id, `assets/${filename}`);
-  }
-  return imageAssetPaths;
-}
-
-// ── article:exportMarkdown ──────────────────────────────────────────────────
-export async function exportMarkdown(): Promise<{ count: number }> {
-  const articles = await listArticles();
-  const fileUris: string[] = [];
-
-  for (const article of articles) {
-    const imageAssetPaths = await extractImageAssets(article);
-    const filePath = `${safeFilename(article.title)}.md`;
-    await writeExportFile(filePath, articleToMarkdown(article, imageAssetPaths), Encoding.UTF8);
-    const { uri } = await Filesystem.getUri({ path: `${EXPORT_DIR}/${filePath}`, directory: Directory.Cache });
-    fileUris.push(uri);
-  }
-
-  if (fileUris.length === 0) return { count: 0 };
-
-  await Share.share({
-    title: "Exportar artigos (Markdown)",
-    dialogTitle: "Exportar artigos",
-    files: fileUris,
-  });
-
-  return { count: articles.length };
-}
+// article:exportMarkdown foi substituído pela sincronização automática em
+// platform/mdSync.ts — toda escrita em writeArticle() já mantém a pasta
+// Documents/Wikibook atualizada, sem exportação manual.
 
 // ── article:exportFlashcardsCsv ─────────────────────────────────────────────
 // Exporta trechos de texto salvos como flashcards num CSV importável pelo

@@ -16,7 +16,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useState } from "react";
-import { ArticleView } from "@lexicon/shared";
+import { ArticleView, TopBar } from "@lexicon/shared";
 import type { Article } from "@lexicon/shared";
 
 interface Props {
@@ -33,10 +33,13 @@ export function ArticleScreen({ article, onBack }: Props) {
 
   return (
     <div className="mobile-article-screen">
-      <div className="mobile-article-screen-nav">
-        <button className="mobile-back-btn" onClick={onBack}>‹ Artigos</button>
-        <div className="mobile-article-screen-actions" ref={setActionsSlot} />
-      </div>
+      <TopBar
+        title={article.title}
+        onBack={onBack}
+        onSearch={onBack}
+        searchTitle="Buscar artigos (volta pra Artigos)"
+        actions={<div className="mobile-article-screen-actions" ref={setActionsSlot} />}
+      />
       <div className="mobile-article-screen-body">
         <ArticleView article={article} headerActionsSlot={actionsSlot} />
       </div>

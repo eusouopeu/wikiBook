@@ -13,6 +13,7 @@ const { createConfigHandlers, getConfig } = require("./handlers/configHandlers")
 const { createFlashcardHandlers } = require("./handlers/flashcardHandlers");
 const { createSyncHandlers } = require("./handlers/syncHandlers");
 const { createPathHandlers } = require("./handlers/pathHandlers");
+const { createMdSyncHandlers } = require("./handlers/mdSyncHandlers");
 
 let mainWindow = null;
 
@@ -73,6 +74,7 @@ app.whenReady().then(() => {
   createFlashcardHandlers(ipcMain);
   createSyncHandlers(ipcMain);
   createPathHandlers(ipcMain);
+  createMdSyncHandlers(ipcMain);
 
   // browser:open { url, internal? } — usado pelos recursos de vídeo da
   // trilha de aprendizado (não há API do YouTube integrada ainda: são links

@@ -137,6 +137,13 @@ async function writeArticle(article: Article) {
     encoding: Encoding.UTF8,
   });
   invalidateArticlesCache();
+  // Import tardio: mdSync.ts importa listArticles deste módulo (ciclo).
+  // writeArticle é o único ponto de escrita (save, links, trechos, anexos,
+  // reversão de versão) — logo o único ponto que precisa do hook.
+  try {
+    const { syncArticleFile } = await import("./mdSync");
+    await syncArticleFile(article);
+  } catch { /* sync desligado ou indisponível */ }
 }
 
 // Cache em memória da listagem completa — evita reler e reparsear TODOS os
@@ -333,6 +340,10 @@ export async function deleteArticle(id: string): Promise<void> {
   } catch {
     // já não existia
   }
+  try {
+    const { removeArticleFile } = await import("./mdSync");
+    await removeArticleFile(id);
+  } catch { /* sync desligado ou indisponível */ }
   // Remove referências ao artigo excluído nos artigos-pai
   for (const art of await listAllArticles()) {
     const before = art.links.length;
@@ -352,7 +363,12 @@ export async function restoreArticle(id: string): Promise<Article> {
   } catch {
     throw new Error("Artigo não encontrado na lixeira (pode já ter sido limpo).");
   }
-  return getArticle(id);
+  const restored = await getArticle(id);
+  try {
+    const { syncArticleFile } = await import("./mdSync");
+    await syncArticleFile(restored);
+  } catch { /* sync desligado ou indisponível */ }
+  return restored;
 }
 
 // Metadados leves dos artigos na lixeira — mesma ideia do desktop

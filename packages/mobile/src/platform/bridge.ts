@@ -16,6 +16,7 @@ import * as flashcards from "./flashcards";
 import * as exporter from "./export";
 import * as sync from "./sync";
 import * as paths from "./paths";
+import * as mdSync from "./mdSync";
 
 interface IpcResponse<T = unknown> { ok: boolean; data?: T; error?: string; }
 
@@ -142,10 +143,25 @@ async function invoke(channel: string, payload?: any): Promise<IpcResponse> {
       case "flashcards:grade":
         return { ok: true, data: await flashcards.grade(payload.articleId, payload.cardId, payload.grade) };
 
-      case "article:exportMarkdown":
-        return { ok: true, data: await exporter.exportMarkdown() };
       case "article:exportFlashcardsCsv":
         return { ok: true, data: await exporter.exportFlashcardsCsv() };
+
+      case "mdsync:getStatus":
+        return { ok: true, data: await mdSync.getStatus() };
+      case "mdsync:selectFolder": {
+        // Sem escolha de pasta arbitrária no mobile — este canal apenas
+        // (re)liga a sincronização automática na pasta fixa Documents/Wikibook.
+        await mdSync.setEnabled(true);
+        const status = await mdSync.resyncAll();
+        return { ok: true, data: { folder: (await mdSync.getStatus()).folder, count: status.count } };
+      }
+      case "mdsync:disable":
+        await mdSync.setEnabled(false);
+        return { ok: true };
+      case "mdsync:resync":
+        return { ok: true, data: await mdSync.resyncAll() };
+      case "mdsync:openFolder":
+        return { ok: true, data: await mdSync.shareAll() };
 
       case "path:list":
         return { ok: true, data: await paths.listPaths() };

@@ -14,6 +14,7 @@ export { FolderPicker } from "./components/FolderPicker";
 export { SettingsModal } from "./components/SettingsModal";
 export { TrashModal } from "./components/TrashModal";
 export { LogoMark } from "./components/LogoMark";
+export { TopBar, ThemeToggleButton } from "./components/TopBar";
 export { Icon } from "./components/Icon";
 export type { IconName } from "./components/Icon";
 export { VirtualList } from "./components/VirtualList";

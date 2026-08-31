@@ -76,6 +76,10 @@ interface AppState {
   theme: ThemeMode;
   // Densidade da lista de artigos na sidebar — persistida em config.json
   listDensity: "compact" | "comfortable";
+  // Sidebar flutuante do desktop — largura (arrastável) e visibilidade,
+  // persistidas em config.json. Sem efeito no shell mobile (sem sidebar).
+  sidebarWidth: number;
+  sidebarCollapsed: boolean;
   // Se o usuário já viu a dica de "selecione texto → botão direito" — depois
   // da primeira vez (ou do primeiro uso real do menu de contexto), nunca
   // mais é mostrada. Persistida em config.json.
@@ -151,6 +155,8 @@ interface AppState {
   setWikipediaLang: (lang: string) => Promise<void>;
   setTheme: (theme: ThemeMode) => Promise<void>;
   setListDensity: (density: "compact" | "comfortable") => Promise<void>;
+  setSidebarWidth: (width: number) => Promise<void>;
+  setSidebarCollapsed: (collapsed: boolean) => Promise<void>;
   dismissSelectionHint: () => Promise<void>;
   dismissOnboarding: () => Promise<void>;
   toggleSelectedTag: (tag: string) => void;
@@ -306,6 +312,8 @@ export const useStore = create<AppState>((set, get) => ({
   wikipediaLang: "pt",
   theme: "system",
   listDensity: "comfortable",
+  sidebarWidth: 260,
+  sidebarCollapsed: false,
   selectionHintSeen: false,
   onboardingSeen: false,
   selectedTags: [],
@@ -342,6 +350,15 @@ export const useStore = create<AppState>((set, get) => ({
       const density = await ipc<string | undefined>("config:get", { key: "listDensity" });
       if (density === "compact" || density === "comfortable") set({ listDensity: density });
     } catch { /* mantém o padrão "comfortable" */ }
+    try {
+      const width = await ipc<string | undefined>("config:get", { key: "sidebarWidth" });
+      const parsed = width ? Number(width) : NaN;
+      if (!Number.isNaN(parsed) && parsed >= 200 && parsed <= 480) set({ sidebarWidth: parsed });
+    } catch { /* mantém o padrão 260 */ }
+    try {
+      const collapsed = await ipc<string | undefined>("config:get", { key: "sidebarCollapsed" });
+      if (collapsed === "true") set({ sidebarCollapsed: true });
+    } catch { /* mantém o padrão false */ }
     try {
       const seen = await ipc<string | undefined>("config:get", { key: "selectionHintSeen" });
       if (seen === "true") set({ selectionHintSeen: true });
@@ -656,6 +673,15 @@ export const useStore = create<AppState>((set, get) => ({
   setListDensity: async (density) => {
     set({ listDensity: density });
     await ipc("config:set", { key: "listDensity", value: density });
+  },
+  setSidebarWidth: async (width) => {
+    const clamped = Math.min(480, Math.max(200, Math.round(width)));
+    set({ sidebarWidth: clamped });
+    await ipc("config:set", { key: "sidebarWidth", value: String(clamped) });
+  },
+  setSidebarCollapsed: async (collapsed) => {
+    set({ sidebarCollapsed: collapsed });
+    await ipc("config:set", { key: "sidebarCollapsed", value: String(collapsed) });
   },
   dismissSelectionHint: async () => {
     set({ selectionHintSeen: true });
