@@ -97,7 +97,7 @@ async function ensureAttachmentDir(articleId: string) {
   }
 }
 
-async function snapshotBeforeSave(oldArticle: Article) {
+export async function snapshotBeforeSave(oldArticle: Article) {
   const entries = await readHistory(oldArticle.id);
   entries.unshift({
     title: oldArticle.title, content: oldArticle.content,

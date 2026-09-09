@@ -1,0 +1,736 @@
+/* ─── Adições: correções e melhorias visuais ──────────────────────────────── */
+
+/* Cabeçalho do artigo: título + botão de excluir */
+.article-title-row {
+  align-items: flex-start;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+}
+.article-delete-btn {
+  flex-shrink: 0;
+  font-size: 14px;
+  opacity: 0.45;
+  transition: opacity 0.15s;
+}
+.article-delete-btn:hover { opacity: 1; }
+
+/* Botão de remover link na lista de conceitos vinculados */
+.toc-remove-btn {
+  background: none;
+  border: none;
+  color: var(--fg3);
+  cursor: pointer;
+  font-size: 10px;
+  margin-left: 6px;
+  opacity: 0;
+  padding: 1px 4px;
+  transition: opacity 0.15s, color 0.15s;
+}
+.wiki-toc-list li:hover .toc-remove-btn { opacity: 0.7; }
+.toc-remove-btn:hover { color: #c0392b; opacity: 1 !important; }
+
+.link-suggestions { border-style: dashed; }
+.link-suggestions-title-row {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+.link-suggestions-accept-all-btn {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--fg2);
+  cursor: pointer;
+  flex-shrink: 0;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  letter-spacing: 0;
+  padding: 3px 8px;
+  text-transform: none;
+}
+.link-suggestions-accept-all-btn:hover { border-color: #1d9e75; color: #1d9e75; }
+.suggestion-term { color: var(--fg); font-size: 13px; }
+.suggestion-accept-btn {
+  background: none;
+  border: none;
+  color: var(--fg3);
+  cursor: pointer;
+  font-size: 12px;
+  margin-left: 6px;
+  padding: 1px 4px;
+  transition: color 0.15s;
+}
+.suggestion-accept-btn:hover { color: #1d9e75; }
+.link-suggestions-count { color: var(--fg3); font-size: 12px; font-weight: normal; }
+.link-suggestions-more-btn {
+  background: none;
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  color: var(--fg3);
+  cursor: pointer;
+  font-size: 12px;
+  margin-top: 6px;
+  padding: 4px 10px;
+  transition: color 0.15s, border-color 0.15s;
+}
+.link-suggestions-more-btn:hover { color: var(--fg); border-color: var(--fg3); }
+
+/* Select nos modais (idioma da Wikipedia) */
+.modal select {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--fg);
+  display: block;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  margin-top: 5px;
+  outline: none;
+  padding: 6px 10px;
+  width: 100%;
+}
+.modal select:focus { border-color: var(--accent); }
+
+.batch-import-toggle {
+  background: none;
+  border: none;
+  color: var(--fg-link);
+  cursor: pointer;
+  display: block;
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+  margin: -4px 0 14px;
+  padding: 0;
+  text-align: left;
+}
+.batch-import-toggle:hover { text-decoration: underline; }
+
+.batch-import-textarea {
+  background: var(--bg-input, var(--bg-modal));
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--fg);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  padding: 8px 10px;
+  resize: vertical;
+  width: 100%;
+}
+.batch-import-textarea:focus { border-color: var(--accent); outline: none; }
+
+/* Prévia de resultados da Wikipedia no modal de novo artigo */
+.wiki-search-results {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  margin-bottom: 14px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+.wiki-search-hint {
+  color: var(--fg3);
+  font-size: 12px;
+  margin: 0;
+  padding: 10px 12px;
+}
+.wiki-search-item {
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--border-light);
+  color: var(--fg);
+  cursor: pointer;
+  display: block;
+  font-family: var(--font-ui);
+  padding: 8px 12px;
+  text-align: left;
+  width: 100%;
+}
+.wiki-search-item:last-child { border-bottom: none; }
+.wiki-search-item:hover { background: var(--bg-hover); }
+.wiki-search-item:disabled { cursor: default; opacity: 0.5; }
+.wiki-search-title {
+  color: var(--accent);
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+}
+.wiki-search-snippet {
+  color: var(--fg3);
+  display: block;
+  font-size: 11px;
+  line-height: 1.45;
+  margin-top: 2px;
+}
+
+/* Toast + indicador de tarefa em andamento */
+.status-overlay {
+  align-items: center;
+  bottom: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  left: 50%;
+  position: fixed;
+  transform: translateX(-50%);
+  z-index: 2000;
+}
+.pending-banner,
+.toast {
+  align-items: center;
+  background: var(--bg2, #1e1e1e);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  color: var(--fg);
+  display: flex;
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+  gap: 9px;
+  max-width: 480px;
+  padding: 9px 16px;
+}
+.toast-error { border-color: #c0392b; color: #e74c3c; }
+
+.toast-action-btn {
+  background: none;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  color: var(--accent);
+  cursor: pointer;
+  flex-shrink: 0;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 600;
+  margin-left: auto;
+  padding: 3px 10px;
+  white-space: nowrap;
+}
+.toast-action-btn:hover { background: var(--accent); color: #fff; }
+.spinner {
+  animation: lexicon-spin 0.8s linear infinite;
+  border: 2px solid var(--border);
+  border-radius: 50%;
+  border-top-color: var(--accent);
+  display: inline-block;
+  flex-shrink: 0;
+  height: 13px;
+  width: 13px;
+}
+@keyframes lexicon-spin { to { transform: rotate(360deg); } }
+
+/* Legenda de cores do grafo */
+.graph-legend {
+  background: color-mix(in srgb, var(--bg) 82%, transparent);
+  border: 1px solid var(--border-light);
+  border-radius: 6px;
+  bottom: 14px;
+  display: flex;
+  flex-direction: column;
+  font-family: var(--font-ui);
+  font-size: 11.5px;
+  gap: 5px;
+  left: 14px;
+  padding: 9px 12px;
+  position: absolute;
+  z-index: 10;
+}
+.graph-legend span { align-items: center; color: var(--fg2); display: flex; gap: 7px; }
+.legend-dot {
+  border-radius: 50%;
+  display: inline-block;
+  height: 9px;
+  width: 9px;
+}
+
+/* ─── Adições: backlinks, tags, editor manual, exportação ─────────────────── */
+
+.sidebar-top-actions { display: flex; gap: 4px; }
+
+.article-header-actions { display: flex; flex-shrink: 0; gap: 4px; }
+
+/* Chips de tag na sidebar — colapsa em 8 + "mais N" quando há muitas
+   (ver App.tsx), com filtro por digitação acima dos chips. */
+.sidebar-tags-wrap { padding: 0 14px 10px; }
+.sidebar-tag-filter {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--fg);
+  font-family: var(--font-ui);
+  font-size: 11px;
+  margin-bottom: 6px;
+  outline: none;
+  padding: 4px 8px;
+  width: 100%;
+}
+.sidebar-tag-filter:focus { border-color: var(--accent); }
+.sidebar-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.sidebar-tag {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--fg3);
+  cursor: pointer;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  padding: 2px 9px;
+  transition: all 0.15s;
+}
+.sidebar-tag:hover { border-color: var(--accent); color: var(--accent); }
+.sidebar-tag.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.sidebar-tag-more { border-style: dashed; color: var(--fg-link); }
+
+/* "Recentes" — histórico de navegação da sessão (⌘[ / ⌘], ver App.tsx) */
+.sidebar-recents { border-bottom: 1px solid var(--border-light); padding: 8px 14px; }
+.sidebar-recents-label {
+  align-items: center;
+  color: var(--fg3);
+  display: flex;
+  font-size: 10.5px;
+  gap: 4px;
+  margin-bottom: 5px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.sidebar-recents-list { display: flex; flex-direction: column; gap: 2px; }
+.sidebar-recent-item {
+  background: none;
+  border: none;
+  color: var(--fg-link);
+  cursor: pointer;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  overflow: hidden;
+  padding: 2px 0;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sidebar-recent-item:hover { color: var(--fg-link-hover); text-decoration: underline; }
+
+/* Grade de pastas do mobile (cards, não chips) — ArticleListScreen.tsx */
+.mobile-folder-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+
+.mobile-folder-card {
+  align-items: flex-start;
+  background: var(--bg-hover, #eaf3fb);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 72px;
+  padding: 12px;
+  text-align: left;
+}
+.mobile-folder-card svg { color: var(--fg3); height: 20px; width: 20px; }
+
+.mobile-folder-card-name {
+  color: var(--fg);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  width: 100%;
+}
+
+.mobile-folder-card-count { color: var(--fg3); font-size: 0.78rem; }
+
+.mobile-folder-card-none { background: none; border-style: dashed; }
+
+/* Cabeçalho da pasta aberta (view de página inteira) */
+.mobile-folder-detail-header {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+}
+
+.mobile-folder-detail-title {
+  align-items: center;
+  color: var(--fg);
+  display: flex;
+  flex: 1;
+  font-weight: 600;
+  gap: 6px;
+  min-width: 0;
+}
+.mobile-folder-detail-title span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mobile-folder-detail-actions { display: flex; flex-shrink: 0; gap: 2px; }
+.mobile-folder-detail-actions button {
+  background: none;
+  border: none;
+  color: var(--fg3);
+  min-height: 36px;
+  min-width: 36px;
+  padding: 6px;
+}
+.mobile-folder-detail-actions button:hover { color: var(--accent); }
+
+/* Chips de pasta na sidebar (desktop) */
+.sidebar-folders, .mobile-folders {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  padding: 0 14px 10px;
+}
+
+.folder-chip {
+  align-items: center;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  display: flex;
+  gap: 4px;
+  padding: 2px 4px 2px 9px;
+  transition: all 0.15s;
+}
+.folder-chip.active { background: var(--accent-soft); border-color: var(--accent); }
+
+.folder-chip-label {
+  background: none;
+  border: none;
+  color: var(--fg3);
+  cursor: pointer;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  padding: 0;
+}
+.folder-chip.active .folder-chip-label { color: var(--accent); font-weight: 600; }
+
+.folder-chip-actions {
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.folder-chip:hover .folder-chip-actions { opacity: 0.7; }
+.folder-chip-actions button {
+  background: none;
+  border: none;
+  color: var(--fg3);
+  cursor: pointer;
+  font-size: 10px;
+  padding: 2px;
+}
+.folder-chip-actions button:hover { color: var(--accent); }
+
+.folder-chip-rename-input {
+  background: var(--bg-input, var(--bg-modal));
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  color: var(--fg);
+  font-family: var(--font-ui);
+  font-size: 11px;
+  padding: 2px 6px;
+  width: 100px;
+}
+
+.article-item-folder-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  flex-shrink: 0;
+  font-size: 12px;
+  opacity: 0;
+  padding: 2px 4px;
+  transition: opacity 0.15s;
+}
+.article-item:hover .article-item-folder-btn,
+.mobile-article-item .article-item-folder-btn {
+  opacity: 0.55;
+}
+.article-item-folder-btn:hover { opacity: 1 !important; }
+
+/* Mini-grafo estático no hover da lista (desktop) */
+.mini-graph-preview {
+  background: var(--bg-modal);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+  pointer-events: none;
+  z-index: 900;
+}
+
+/* Popover de atribuição de pasta (FolderPicker) */
+.folder-picker {
+  background: var(--bg-modal);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+  min-width: 180px;
+  padding: 8px;
+}
+
+.folder-picker-title {
+  color: var(--fg2);
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  padding: 2px 6px 6px;
+  text-transform: uppercase;
+}
+
+.folder-picker-list { list-style: none; margin: 0; padding: 0; max-height: 220px; overflow-y: auto; }
+
+.folder-picker-list button {
+  background: none;
+  border: none;
+  border-radius: 6px;
+  color: var(--fg);
+  cursor: pointer;
+  display: block;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  padding: 6px 8px;
+  text-align: left;
+  width: 100%;
+}
+.folder-picker-list button:hover { background: var(--bg-hover); }
+.folder-picker-list button.active { color: var(--accent); font-weight: 600; }
+
+.folder-picker-new-btn {
+  background: none;
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  color: var(--fg2);
+  cursor: pointer;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  margin-top: 4px;
+  padding: 6px 8px;
+  width: 100%;
+}
+.folder-picker-new-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+.folder-picker-create { display: flex; gap: 4px; margin-top: 4px; }
+.folder-picker-create input {
+  background: var(--bg-input, var(--bg-modal));
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--fg);
+  flex: 1;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  min-width: 0;
+  padding: 5px 7px;
+}
+
+/* Anexos (imagem/PDF/qualquer arquivo) no cabeçalho do artigo */
+.attachments-section { margin-top: 10px; }
+
+.attachments-header {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+}
+.attachments-label {
+  color: var(--fg3);
+  font-family: var(--font-ui);
+  font-size: 11.5px;
+}
+.attachments-add-btn {
+  background: none;
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  color: var(--fg3);
+  cursor: pointer;
+  font-family: var(--font-ui);
+  font-size: 11.5px;
+  padding: 2px 9px;
+}
+.attachments-add-btn:hover { border-color: var(--accent); color: var(--fg); }
+.attachments-add-btn:disabled { cursor: not-allowed; opacity: 0.5; }
+
+.attachments-list { list-style: none; margin: 6px 0 0; padding: 0; }
+
+.attachment-item {
+  align-items: center;
+  border-bottom: 1px solid var(--border-light);
+  display: flex;
+  gap: 8px;
+  padding: 5px 0;
+}
+.attachment-item:last-child { border-bottom: none; }
+
+.attachment-icon { font-size: 14px; }
+.attachment-name {
+  color: var(--fg2);
+  flex: 1;
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.attachment-size {
+  color: var(--fg3);
+  font-family: var(--font-ui);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.attachment-actions { display: flex; gap: 5px; }
+.attachment-actions button {
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--fg2);
+  cursor: pointer;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  padding: 3px 7px;
+}
+.attachment-actions button:hover { border-color: var(--accent); color: var(--fg); }
+.attachment-actions button:disabled { cursor: not-allowed; opacity: 0.5; }
+
+.attachment-preview-modal { max-width: 90vw; }
+.attachment-preview-img { border-radius: var(--radius-sm); display: block; max-height: 70vh; max-width: 100%; }
+
+/* Editor de tags no cabeçalho do artigo */
+.tag-editor {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.tag-chip {
+  align-items: center;
+  background: var(--bg-hover);
+  border-radius: 10px;
+  color: var(--fg2);
+  display: inline-flex;
+  font-family: var(--font-ui);
+  font-size: 11.5px;
+  gap: 4px;
+  padding: 2px 9px;
+}
+.tag-remove {
+  background: none;
+  border: none;
+  color: var(--fg3);
+  cursor: pointer;
+  font-size: 9px;
+  padding: 0 1px;
+}
+.tag-remove:hover { color: #c0392b; }
+.tag-add-btn {
+  background: none;
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  color: var(--fg3);
+  cursor: pointer;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  padding: 2px 9px;
+}
+.tag-add-btn:hover { border-color: var(--accent); color: var(--accent); }
+.tag-input {
+  background: var(--bg-input);
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+  color: var(--fg);
+  font-family: var(--font-ui);
+  font-size: 11.5px;
+  outline: none;
+  padding: 2px 9px;
+  width: 110px;
+}
+
+/* Editor de artigo manual (Markdown) */
+.manual-editor { display: flex; flex-direction: column; gap: 10px; }
+.manual-editor textarea {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--fg);
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 13px;
+  line-height: 1.65;
+  min-height: 340px;
+  outline: none;
+  padding: 14px 16px;
+  resize: vertical;
+  width: 100%;
+}
+.manual-editor textarea:focus { border-color: var(--accent); }
+.manual-editor-actions {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.unsaved-indicator {
+  color: #c49a3c;
+  font-size: 11px;
+  margin-right: auto;
+}
+.manual-editor-actions button {
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--fg);
+  cursor: pointer;
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+  padding: 6px 16px;
+}
+.manual-editor-actions button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+/* Painel de backlinks */
+.backlinks-panel { margin-top: 34px; }
+.backlinks-list { list-style: none; margin: 0; padding: 0; }
+.backlink-item {
+  align-items: baseline;
+  border-bottom: 1px solid var(--border-light);
+  display: flex;
+  gap: 10px;
+  padding: 7px 2px;
+}
+.backlink-item:last-child { border-bottom: none; }
+.backlink-source {
+  background: none;
+  border: none;
+  color: var(--accent);
+  cursor: pointer;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  padding: 0;
+  text-align: left;
+}
+.backlink-source:hover { text-decoration: underline; }
+.backlink-anchor { color: var(--fg3); font-size: 11.5px; }
+
+/* Indicador de anel de tag na legenda do grafo */
+.legend-ring {
+  background: none !important;
+  border: 1.5px dashed var(--fg3);
+  border-radius: 50%;
+  display: inline-block;
+  height: 9px;
+  width: 9px;
+}
+

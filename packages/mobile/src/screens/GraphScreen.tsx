@@ -32,7 +32,7 @@ export function GraphScreen({ onOpenArticle }: Props) {
   const {
     graphNodes, graphEdges, activeArticleId,
     graphScope, setGraphScope, localDepth, setLocalDepth,
-    requestSearchFocus,
+    requestSearchFocus, selectedFolder,
   } = useStore();
   const [graphCanvasEl, setGraphCanvasEl] = useState<HTMLCanvasElement | null>(null);
   const [tagFilter, setTagFilter] = useState<string | null>(null);
@@ -91,6 +91,7 @@ export function GraphScreen({ onOpenArticle }: Props) {
               onCanvasReady={setGraphCanvasEl}
               onNodeOpen={onOpenArticle}
               highlightTag={tagFilter}
+              highlightFolderId={selectedFolder}
             />
             <GraphLegend
               tags={displayedGraphTags}

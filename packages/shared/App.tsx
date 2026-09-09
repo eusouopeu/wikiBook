@@ -7,7 +7,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useStore, computeLocalSubgraph } from "./store/useStore";
 import type { Article, Flashcard, FlashcardGrade } from "./shared/types";
 import { GraphView } from "./components/GraphView";
-import { ArticleView, ReviewModal } from "./components/ArticleView";
+import { ArticleView } from "./components/ArticleView";
+import { ReviewModal } from "./components/ReviewModal";
 import { PathView } from "./components/PathView";
 import { FolderPicker } from "./components/FolderPicker";
 import { LogoMark } from "./components/LogoMark";
@@ -1150,6 +1151,7 @@ export default function App() {
                     onCanvasReady={setGraphCanvasEl}
                     onNodeOpen={pushHistory}
                     highlightTag={graphTagFilter}
+                    highlightFolderId={selectedFolder}
                   />
                   <GraphLegend
                     tags={displayedGraphTags}

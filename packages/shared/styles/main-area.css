@@ -1,0 +1,152 @@
+/* ══════════════════════════════════════════════════════════════════════════
+   BARRA SUPERIOR — padronizada entre todas as abas/telas (ver TopBar.tsx):
+   título à esquerda, ícones específicos + pesquisar + tema à direita, sempre
+   na mesma posição relativa entre desktop e mobile.
+══════════════════════════════════════════════════════════════════════════ */
+.top-bar {
+  align-items: center;
+  background: var(--bg-body);
+  border-bottom: 1px solid var(--tab-border);
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+  padding: 8px 16px;
+}
+.top-bar-left { align-items: center; display: flex; gap: 12px; min-width: 0; }
+.top-bar-title {
+  color: var(--fg);
+  font-family: var(--font-title);
+  font-size: 15px;
+  font-weight: 600;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.top-bar-right { align-items: center; display: flex; flex-shrink: 0; gap: 4px; }
+.top-bar-divider { background: var(--border-light); height: 18px; margin: 0 2px; width: 1px; }
+.top-bar-back { font-size: 17px; }
+
+/* Controles de zoom do grafo */
+.graph-controls { display: flex; gap: 3px; margin-left: auto; padding-bottom: 4px; }
+.graph-controls button {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--fg2);
+  cursor: pointer;
+  font-family: var(--font-ui);
+  font-size: 14px;
+  line-height: 1;
+  padding: 2px 9px;
+  transition: background 0.1s;
+}
+.graph-controls button:hover { background: var(--bg-hover); }
+
+.content-area {
+  flex: 1;
+  min-height: 0;     /* permite que o flex item encolha abaixo do conteúdo */
+  overflow: hidden;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Grafo */
+.graph-container {
+  background: var(--bg);
+  flex: 1;
+  min-height: 0;
+  position: relative;   /* âncora da legenda */
+  width: 100%;
+}
+
+.graph-canvas-wrap { height: 100%; position: relative; width: 100%; }
+
+.graph-canvas-wrap canvas:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+.graph-edge-tooltip {
+  background: var(--bg2, #1e1e1e);
+  border: 1px solid #555;
+  border-radius: 4px;
+  color: var(--fg, #ddd);
+  font-size: 11px;
+  padding: 3px 6px;
+  pointer-events: none;
+  position: absolute;
+  white-space: nowrap;
+  z-index: 10;
+}
+
+.graph-path-status {
+  align-items: center;
+  background: var(--bg2, #1e1e1e);
+  border: 1px solid #555;
+  border-radius: 6px;
+  bottom: 12px;
+  display: flex;
+  font-size: 12px;
+  gap: 8px;
+  left: 12px;
+  padding: 4px 6px 4px 10px;
+  position: absolute;
+  z-index: 10;
+}
+
+/* Utilitário: conteúdo só para leitor de tela (região aria-live do grafo) */
+.sr-only {
+  border: 0;
+  clip: rect(0, 0, 0, 0);
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  padding: 0;
+  position: absolute;
+  white-space: nowrap;
+  width: 1px;
+}
+
+/* Estado vazio */
+.empty-state {
+  align-items: center;
+  color: var(--fg2);
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  font-family: var(--font-body);
+  font-size: 15px;
+  gap: 16px;
+  justify-content: center;
+  padding: 40px;
+  text-align: center;
+}
+.empty-state-small { font-size: 12px; padding: 16px; gap: 8px; }
+
+/* Painel de grafo local ao lado do artigo (ver App.tsx/showLocalGraphPanel) */
+.article-with-graph-panel { display: flex; flex: 1; min-height: 0; overflow: hidden; }
+.article-with-graph-panel .article-view { flex: 1; min-width: 0; }
+.article-with-graph-panel.split .article-view { border-right: 1px solid var(--border-light); }
+.local-graph-panel {
+  background: var(--bg);
+  flex-shrink: 0;
+  position: relative;
+  width: 300px;
+}
+
+/* Lista de atalhos de teclado (ver App.tsx/ShortcutsModal) */
+.shortcuts-list { display: flex; flex-direction: column; gap: 8px; list-style: none; margin: 10px 0; padding: 0; }
+.shortcuts-list li { align-items: center; display: flex; gap: 12px; }
+.shortcuts-list kbd {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--fg);
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  min-width: 32px;
+  padding: 2px 6px;
+  text-align: center;
+}
+.shortcuts-list span { color: var(--fg2); font-size: 13px; }
+

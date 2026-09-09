@@ -13,7 +13,7 @@ const { createConfigHandlers, getConfig } = require("./handlers/configHandlers")
 const { createFlashcardHandlers } = require("./handlers/flashcardHandlers");
 const { createSyncHandlers } = require("./handlers/syncHandlers");
 const { createPathHandlers } = require("./handlers/pathHandlers");
-const { createMdSyncHandlers } = require("./handlers/mdSyncHandlers");
+const { createMdSyncHandlers, resyncAll } = require("./handlers/mdSyncHandlers");
 
 let mainWindow = null;
 
@@ -75,6 +75,10 @@ app.whenReady().then(() => {
   createSyncHandlers(ipcMain);
   createPathHandlers(ipcMain);
   createMdSyncHandlers(ipcMain);
+  // Puxa de volta edições feitas no .md (Obsidian) desde a última sessão —
+  // ver resolveMdSyncDirection em mdSyncHandlers.js. Só afeta artigos com
+  // pasta de sync configurada; sem pasta, resyncAll() não faz nada.
+  try { resyncAll(); } catch { /* pasta de sync ainda não configurada, ou inacessível */ }
 
   // browser:open { url, internal? } — usado pelos recursos de vídeo da
   // trilha de aprendizado (não há API do YouTube integrada ainda: são links

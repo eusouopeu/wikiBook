@@ -1,0 +1,30 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "allowJs": true,
+    "checkJs": false,
+    "baseUrl": ".",
+    "paths": {
+      "@lexicon/shared": ["packages/shared/index.ts"],
+      "@lexicon/shared/*": ["packages/shared/*"]
+    }
+  },
+  "include": ["packages/shared/**/*", "packages/desktop/src/**/*", "packages/mobile/src/**/*"],
+  "exclude": [
+    "node_modules",
+    "**/node_modules",
+    "**/dist",
+    "**/android",
+    "**/ios",
+    "packages/*/build"
+  ]
+}

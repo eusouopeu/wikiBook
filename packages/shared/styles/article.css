@@ -1,0 +1,538 @@
+/* ══════════════════════════════════════════════════════════════════════════
+   CONTEÚDO WIKIPEDIA — .wiki-content
+   Estiliza o HTML retornado pela Wikipedia e os trechos salvos
+══════════════════════════════════════════════════════════════════════════ */
+.wiki-content {
+  color: var(--fg);
+  font-family: var(--font-body);
+  font-size: 15.5px;
+  line-height: 1.5;
+  max-width: var(--content-max);
+  text-align: justify;
+}
+
+.wiki-content p  { margin-bottom: 0.85em; }
+.wiki-content p:last-child { margin-bottom: 0; }
+
+/* Headings — mesma hierarquia visual da Wikipedia */
+.wiki-content h1,
+.wiki-content h2 {
+  border-bottom: 1px solid var(--border-light);
+  color: var(--fg);
+  font-family: var(--font-title);
+  font-size: 22px;
+  font-weight: 400;
+  margin: 1.4em 0 0.5em;
+  padding-bottom: 3px;
+}
+.wiki-content h3 {
+  color: var(--fg);
+  font-family: var(--font-title);
+  font-size: 18px;
+  font-weight: 400;
+  margin: 1.2em 0 0.4em;
+}
+.wiki-content h4,
+.wiki-content h5 {
+  color: var(--fg);
+  font-family: var(--font-ui);
+  font-size: 15px;
+  font-weight: 600;
+  margin: 1em 0 0.3em;
+}
+
+/* ── Accordions/toggles dos artigos da Wikipedia (ver lib/wikiAccordions.ts) ──
+   Cada <details class="wiki-accordion"> carrega as cores da sua seção como
+   custom properties (--wa-100/600/700/800/900) — os toggles e subtítulos
+   dentro dele herdam essas variáveis sem precisar de uma classe por cor. */
+.wiki-content .wiki-accordion {
+  border: 1px solid var(--wa-900, var(--border));
+  border-radius: var(--radius);
+  margin: 1.1em 0;
+  padding: 0.1em 16px 14px;
+}
+.wiki-content .wiki-accordion-title {
+  color: var(--wa-900, var(--fg));
+  cursor: pointer;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  list-style: none;
+  padding: 12px 0;
+  user-select: none;
+}
+.wiki-content .wiki-accordion-title::-webkit-details-marker { display: none; }
+.wiki-content .wiki-accordion-title::before {
+  content: '▸';
+  display: inline-block;
+  font-size: 0.7em;
+  transition: transform 0.15s;
+}
+.wiki-content .wiki-accordion[open] > .wiki-accordion-title::before { transform: rotate(90deg); }
+.wiki-content .wiki-accordion-title h1,
+.wiki-content .wiki-accordion-title h2 {
+  border: none;
+  color: inherit;
+  font-size: 20px;
+  font-weight: 700;
+  margin: 0;
+  padding: 0;
+  text-align: left;
+}
+.wiki-content .wiki-accordion-body { padding-top: 0.2em; }
+
+.wiki-content .wiki-toggle { margin: 0.7em 0; }
+.wiki-content .wiki-toggle-title {
+  color: var(--wa-800, var(--fg));
+  cursor: pointer;
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  list-style: none;
+  padding: 4px 0;
+  user-select: none;
+}
+.wiki-content .wiki-toggle-title::-webkit-details-marker { display: none; }
+.wiki-content .wiki-toggle-title::before {
+  content: '▸';
+  display: inline-block;
+  font-size: 0.65em;
+  transition: transform 0.15s;
+}
+.wiki-content .wiki-toggle[open] > .wiki-toggle-title::before { transform: rotate(90deg); }
+.wiki-content .wiki-toggle-title h3 {
+  color: inherit;
+  font-size: 17px;
+  font-weight: 700;
+  margin: 0;
+  padding: 0;
+  text-align: left;
+}
+.wiki-content .wiki-toggle-body {
+  border-left: 2px solid var(--border-light);
+  margin-top: 0.3em;
+  padding-left: 14px;
+}
+
+.wiki-content .wiki-subheading-h4 { color: var(--wa-700, var(--fg)); }
+.wiki-content .wiki-subheading-h5,
+.wiki-content .wiki-subheading-h6 { color: var(--wa-600, var(--fg)); }
+
+/* Listas */
+.wiki-content ul,
+.wiki-content ol {
+  margin: 0.4em 0 0.9em 1.8em;
+}
+.wiki-content li { margin-bottom: 0.2em; }
+
+/* Definições */
+.wiki-content dl { margin: 0.4em 0 0.9em 1em; }
+.wiki-content dt { font-weight: 600; }
+.wiki-content dd { margin-left: 1.4em; }
+
+/* Tabelas (estilo "wikitable") */
+.wiki-content table {
+  border-collapse: collapse;
+  font-size: 13px;
+  margin: 0.8em 0 1.2em;
+  max-width: 100%;
+}
+.wiki-content table th {
+  background: var(--bg-toc);
+  border: 1px solid var(--border);
+  color: var(--fg);
+  font-weight: 600;
+  padding: 5px 10px;
+  text-align: left;
+}
+.wiki-content table td {
+  border: 1px solid var(--border-light);
+  padding: 4px 10px;
+  vertical-align: top;
+}
+.wiki-content table tr:nth-child(even) td { background: var(--bg-body); }
+
+/* Código inline */
+.wiki-content code {
+  background: var(--bg-body);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  padding: 0 4px;
+}
+
+/* Bloco de código */
+.wiki-content pre {
+  background: var(--bg-body);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.5;
+  margin: 0.8em 0;
+  overflow-x: auto;
+  padding: 12px 14px;
+}
+
+/* Negrito e itálico */
+.wiki-content b, .wiki-content strong { font-weight: 600; }
+.wiki-content i, .wiki-content em     { font-style: italic; }
+
+/* Citações */
+.wiki-content blockquote {
+  border-left: 3px solid var(--border);
+  color: var(--fg2);
+  font-style: italic;
+  margin: 0.8em 0 0.8em 1em;
+  padding: 4px 0 4px 14px;
+}
+
+/* Imagens da Wikipedia */
+.wiki-figure {
+  clear: right;
+  float: right;
+  margin: 0 0 1em 1.6em;
+  max-width: min(320px, 42%);
+}
+
+.wiki-figure img {
+  background: var(--bg-body);
+  border: 1px solid var(--border-light);
+  display: block;
+  height: auto;
+  max-width: 100%;
+}
+
+/* Limpa floats das figuras ao final do conteúdo */
+.wiki-content::after {
+  clear: both;
+  content: '';
+  display: table;
+}
+
+/* Imagens inline fora de figure */
+.wiki-content img {
+  background: var(--bg-body);
+  border: 1px solid var(--border-light);
+  height: auto;
+  max-width: 100%;
+}
+
+/* Termos não vinculados (foram links Wikipedia, agora são spans) */
+.wiki-content .wiki-term {
+  color: inherit;
+  cursor: context-menu;
+  border-bottom: 1px dotted var(--border);
+  transition: border-color 0.12s, color 0.12s;
+}
+.wiki-content .wiki-term:hover {
+  border-bottom-color: var(--accent);
+  color: var(--fg-link);
+}
+
+/* Links internos criados pelo usuário */
+.wiki-content a.internal-link {
+  color: var(--fg-link);
+  cursor: pointer;
+  text-decoration: none;
+  border-bottom: 1px solid var(--fg-link);
+  transition: color 0.12s, border-color 0.12s;
+}
+.wiki-content a.internal-link:hover {
+  color: var(--fg-link-hover);
+  border-bottom-color: var(--fg-link-hover);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   SUMÁRIO (TOC) — estilo Wikipedia
+══════════════════════════════════════════════════════════════════════════ */
+.wiki-toc {
+  background: var(--bg-toc);
+  border: 1px solid var(--border-toc);
+  border-radius: var(--radius-sm);
+  display: inline-block;
+  font-size: 13px;
+  margin: 0 0 18px;
+  min-width: 200px;
+  max-width: var(--toc-w);
+  padding: 10px 14px 12px;
+}
+
+/* Título dos painéis de "Conceitos vinculados"/"Links sugeridos" — agora
+   <summary> de um <details>, para poderem ser colapsados sem perder o
+   estilo anterior (era um <div> estático). */
+.wiki-toc-title {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  list-style: none;
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  user-select: none;
+  color: var(--fg2);
+}
+.wiki-toc-title::-webkit-details-marker { display: none; }
+.wiki-toc-title::before {
+  content: '▸';
+  display: inline-block;
+  font-size: 0.85em;
+  transition: transform 0.15s;
+}
+.wiki-toc[open] > .wiki-toc-title::before { transform: rotate(90deg); }
+.wiki-toc-title.link-suggestions-title-row { justify-content: flex-start; }
+.wiki-toc-title.link-suggestions-title-row > span:first-child { flex: 1; }
+
+.wiki-toc-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.wiki-toc-list li {
+  border-bottom: 1px solid var(--border-light);
+  margin: 0;
+  padding: 3px 0;
+}
+.wiki-toc-list li:last-child { border-bottom: none; }
+
+.toc-link {
+  color: var(--fg-link);
+  font-size: 13px;
+  text-decoration: none;
+}
+.toc-link:hover { text-decoration: underline; }
+
+.toc-target {
+  color: var(--fg3);
+  font-size: 12px;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   RESUMO (bullet points do Claude)
+══════════════════════════════════════════════════════════════════════════ */
+.summary-content { max-width: var(--content-max); }
+
+.wiki-content .summary-bullet {
+  border-left: 3px solid var(--border-light);
+  margin-bottom: 0.7em;
+  padding: 3px 0 3px 12px;
+  transition: border-color 0.12s;
+}
+.wiki-content .summary-bullet:hover { border-left-color: var(--accent); }
+
+.wiki-content .no-content { color: var(--fg3); font-style: italic; }
+
+.summary-actions { margin-top: 20px; }
+
+.summary-failed-notice {
+  background: rgba(192, 57, 43, 0.1);
+  border: 1px solid #c0392b;
+  border-radius: 6px;
+  color: #e74c3c;
+  margin-bottom: 16px;
+  padding: 8px 12px;
+}
+
+.wiki-btn {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--fg2);
+  cursor: pointer;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  padding: 5px 12px;
+  transition: background 0.1s, border-color 0.1s;
+}
+.wiki-btn:hover   { background: var(--bg-hover); border-color: var(--accent); color: var(--accent); }
+.wiki-btn:disabled { opacity: 0.4; cursor: wait; }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   SEÇÃO DE HEADINGS dentro do artigo
+══════════════════════════════════════════════════════════════════════════ */
+.section-heading {
+  border-bottom: 1px solid var(--border-light);
+  color: var(--fg);
+  font-family: var(--font-title);
+  font-size: 20px;
+  font-weight: 400;
+  margin: 28px 0 14px;
+  padding-bottom: 3px;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   TRECHOS SALVOS
+══════════════════════════════════════════════════════════════════════════ */
+.excerpts-panel {
+  border-top: 1px solid var(--border-light);
+  margin-top: 32px;
+  max-width: var(--content-max);
+  padding-top: 20px;
+}
+
+.excerpts-panel h2 {
+  border-bottom: 1px solid var(--border-light);
+  color: var(--fg);
+  font-family: var(--font-title);
+  font-size: 20px;
+  font-weight: 400;
+  margin-bottom: 14px;
+  padding-bottom: 3px;
+}
+
+.excerpts-list { display: flex; flex-direction: column; gap: 14px; list-style: none; }
+
+.excerpt-item {
+  background: var(--bg-excerpt);
+  border: 1px solid var(--border-light);
+  border-left: 4px solid #c49a3c;
+  border-radius: 0 var(--radius) var(--radius) 0;
+  padding: 10px 14px 8px;
+}
+
+/* O conteúdo HTML do trecho usa .wiki-content herdado */
+.excerpt-html {
+  font-size: 14px;
+  line-height: 1.7;
+  margin-bottom: 8px;
+  max-width: 100%;
+}
+/* Reduz o tamanho dos headings dentro de um trecho para não dominar */
+.excerpt-html h1, .excerpt-html h2 { font-size: 16px; margin: 0.6em 0 0.3em; border-bottom: none; }
+.excerpt-html h3                   { font-size: 15px; margin: 0.5em 0 0.2em; }
+
+.excerpt-meta {
+  align-items: center;
+  border-top: 1px solid var(--border-light);
+  display: flex;
+  gap: 10px;
+  margin-top: 6px;
+  padding-top: 6px;
+}
+
+.excerpt-source-btn {
+  background: none;
+  border: none;
+  color: var(--fg-link);
+  cursor: pointer;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  padding: 0;
+  text-decoration: none;
+}
+.excerpt-source-btn:hover { text-decoration: underline; color: var(--fg-link-hover); }
+
+.excerpt-date { color: var(--fg3); font-size: 11px; margin-left: auto; }
+
+.excerpt-remove-btn {
+  background: none;
+  border: none;
+  color: var(--fg3);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 0 2px;
+  transition: color 0.12s;
+}
+.excerpt-remove-btn:hover { color: #d33; }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   MENU DE CONTEXTO
+══════════════════════════════════════════════════════════════════════════ */
+.context-menu {
+  align-items: center;
+  background: var(--bg-modal);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.18);
+  display: flex;
+  flex-direction: row;
+  gap: 2px;
+  max-width: 92vw;
+  overflow-x: auto;
+  padding: 4px;
+}
+.context-menu::-webkit-scrollbar { display: none; }
+
+/* ── Dica de descoberta (primeira seleção de texto) ────────────────────── */
+.selection-hint-bubble {
+  align-items: center;
+  background: var(--accent);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.25);
+  color: #fff;
+  display: flex;
+  font-size: 12px;
+  gap: 8px;
+  max-width: 280px;
+  padding: 8px 10px;
+}
+.selection-hint-dismiss {
+  background: none;
+  border: none;
+  color: #fff;
+  cursor: pointer;
+  flex-shrink: 0;
+  font-size: 12px;
+  opacity: 0.85;
+  padding: 0;
+}
+.selection-hint-dismiss:hover { opacity: 1; }
+
+/* ── Preview ao hover em link interno ──────────────────────────────────── */
+.link-hover-preview {
+  background: var(--bg-modal);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.18);
+  max-width: 260px;
+  padding: 10px 12px;
+  pointer-events: none;
+}
+.link-hover-preview-title {
+  color: var(--fg-link);
+  display: block;
+  font-size: 12.5px;
+  margin-bottom: 4px;
+}
+.link-hover-preview-snippet {
+  color: var(--fg2);
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+
+.context-menu-item {
+  align-items: center;
+  background: none;
+  border: none;
+  border-radius: 50%;
+  color: var(--fg);
+  cursor: pointer;
+  display: flex;
+  flex-shrink: 0;
+  font-size: 16px;
+  height: 40px;
+  justify-content: center;
+  line-height: 1;
+  padding: 0;
+  transition: background 0.1s;
+  width: 40px;
+}
+.context-menu-item:hover { background: var(--bg-hover); }
+
+.context-menu-save   { color: var(--accent); }
+.context-menu-cancel { color: #d33; }
+
+.context-menu-divider {
+  align-self: stretch;
+  background: var(--border-light);
+  flex-shrink: 0;
+  margin: 4px 2px;
+  width: 1px;
+}
+

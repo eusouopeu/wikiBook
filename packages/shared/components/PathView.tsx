@@ -146,7 +146,10 @@ const PathList: React.FC<{ onCreate: () => void }> = ({ onCreate }) => {
 type WizardStage = "goal" | "interview" | "model" | "generating";
 
 const CreatePathWizard: React.FC<{ onDone: () => void; onCancel: () => void }> = ({ onDone, onCancel }) => {
-  const { consolidateProfile, generatePathUnits, importPathArticles, savePathRecord } = useStore();
+  const {
+    consolidateProfile, generatePathUnits, importPathArticles, savePathRecord,
+    pathDraft, savePathDraft, clearPathDraft,
+  } = useStore();
   const [stage, setStage] = useState<WizardStage>("goal");
   const [goal, setGoal] = useState("");
   const [qIndex, setQIndex] = useState(0);
@@ -157,6 +160,31 @@ const CreatePathWizard: React.FC<{ onDone: () => void; onCancel: () => void }> =
   const [error, setError] = useState("");
 
   const question = INTERVIEW_SCRIPT[qIndex];
+
+  // Retoma um rascunho de geração interrompida (app fechado, rede caiu ou
+  // erro no meio da importação) sem pagar outra chamada ao Claude — ver
+  // savePathDraft/handleGenerate abaixo.
+  async function resumeDraft() {
+    if (!pathDraft) return;
+    setGoal(pathDraft.goal);
+    setAnswers(pathDraft.interviewAnswers);
+    setProfileSummary(pathDraft.profileSummary);
+    setModel(pathDraft.model);
+    setStage("generating");
+    setError("");
+    try {
+      const importedUnits = await importPathArticles(pathDraft.units, pathDraft.goal);
+      await savePathRecord({
+        goal: pathDraft.goal, interviewAnswers: pathDraft.interviewAnswers,
+        profileSummary: pathDraft.profileSummary, model: pathDraft.model, units: importedUnits,
+      });
+      await clearPathDraft();
+      onDone();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      setStage("goal");
+    }
+  }
 
   function submitAnswer(answer: string) {
     if (!answer.trim()) return;
@@ -183,11 +211,16 @@ const CreatePathWizard: React.FC<{ onDone: () => void; onCancel: () => void }> =
     setError("");
     try {
       const units = await generatePathUnits(goal, profileSummary, model);
+      // Salva a resposta já paga ANTES de importar — se a importação falhar
+      // (rede cai, artigo removido) ou o app fechar no meio, o rascunho
+      // permite retomar sem gerar (e pagar) de novo.
+      await savePathDraft({ goal, interviewAnswers: answers, profileSummary, model, units });
       // Importa os artigos da Wikipedia selecionados pela trilha para uma
       // pasta própria — sem isso, os links dos passos abririam no navegador
       // do sistema em vez da própria aba de artigos do app.
       const importedUnits = await importPathArticles(units, goal);
       await savePathRecord({ goal, interviewAnswers: answers, profileSummary, model, units: importedUnits });
+      await clearPathDraft();
       onDone();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -201,7 +234,22 @@ const CreatePathWizard: React.FC<{ onDone: () => void; onCancel: () => void }> =
         <button className="text-btn" onClick={onCancel}><Icon name="back" /><span>Cancelar</span></button>
       </div>
 
-      {stage === "goal" && (
+      {stage === "goal" && pathDraft && (
+        <div className="path-wizard-step">
+          <h2>Retomar trilha interrompida?</h2>
+          <p className="path-wizard-hint">
+            "{pathDraft.goal}" já foi gerada e ainda não terminou de importar os artigos.
+            Retomar não paga uma nova geração.
+          </p>
+          {error && <div className="modal-error">{error}</div>}
+          <div className="modal-actions">
+            <button onClick={() => clearPathDraft()}>Descartar</button>
+            <button className="primary" onClick={resumeDraft}>Retomar importação</button>
+          </div>
+        </div>
+      )}
+
+      {stage === "goal" && !pathDraft && (
         <div className="path-wizard-step">
           <h2>O que você quer aprender?</h2>
           <p className="path-wizard-hint">Ex.: "violão", "alemão", "calistenia"</p>

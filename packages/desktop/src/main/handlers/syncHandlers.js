@@ -3,19 +3,26 @@
 // Cliente do servidor self-hosted em packages/sync-server — sincronização sob
 // demanda (botão "Sincronizar agora"), não automática em segundo plano.
 //
-// Fluxo de sync:sync (única chamada faz push + adota o merge de volta):
+// Fluxo de sync:run { serverUrl, token, confirmed? }:
 //   1. Lê todos os artigos locais + pastas (config "folders")
 //   2. POST /sync/push no servidor com esse estado
 //   3. O servidor devolve o estado MESCLADO (LWW por updatedAt de artigo,
 //      união de pastas por id)
-//   4. Artigos do merge mais novos que os locais (ou que não existem
-//      localmente) são gravados em disco — isso "puxa" as mudanças feitas em
-//      outros dispositivos
-//   5. As pastas locais são substituídas pelo conjunto mesclado
+//   4. computeSyncConflicts lista os artigos locais que o merge vai
+//      SOBRESCREVER (versão do servidor mais nova que a local). Sem
+//      confirmed=true e com conflitos, a chamada PARA aqui sem gravar nada e
+//      devolve { needsConfirmation: true, conflicts } para a UI perguntar —
+//      LWW silencioso apagava a versão perdida sem aviso nenhum.
+//   5. Confirmado (ou sem conflito nenhum): antes de sobrescrever cada
+//      artigo em conflito, snapshotBeforeSave grava a versão local atual em
+//      .history/ (mesma rede de segurança do article:save) — a perda vira
+//      reversível em vez de definitiva.
+//   6. As pastas locais são substituídas pelo conjunto mesclado
 // ─────────────────────────────────────────────────────────────────────────────
 
 const { getConfig, setConfig } = require("./configHandlers");
-const { listAllArticles, writeArticle } = require("./articleHandlers");
+const { listAllArticles, writeArticle, snapshotBeforeSave } = require("./articleHandlers");
+const { computeSyncConflicts } = require("../../../../shared/lib/syncPolicy");
 
 const REQUEST_TIMEOUT_MS = 30_000;
 
@@ -51,8 +58,8 @@ function createSyncHandlers(ipcMain) {
     }
   });
 
-  // ── sync:run { serverUrl, token } → executa push+merge+adoção local ────────
-  ipcMain.handle("sync:run", async (_evt, { serverUrl, token }) => {
+  // ── sync:run { serverUrl, token, confirmed? } → push+merge+adoção local ────
+  ipcMain.handle("sync:run", async (_evt, { serverUrl, token, confirmed = false }) => {
     try {
       if (!serverUrl || !token) return { ok: false, error: "Configure o servidor e o token antes de sincronizar." };
 
@@ -64,12 +71,23 @@ function createSyncHandlers(ipcMain) {
         method: "POST",
         body: JSON.stringify({ articles: localArticles, folders: localFolders }),
       });
+      const mergedArticles = merged.articles ?? [];
+
+      if (!confirmed) {
+        const conflicts = computeSyncConflicts(localArticles, mergedArticles);
+        if (conflicts.length > 0) {
+          return { ok: true, data: { needsConfirmation: true, conflicts } };
+        }
+      }
 
       const localById = new Map(localArticles.map(a => [a.id, a]));
       let pulled = 0;
-      for (const article of merged.articles ?? []) {
+      for (const article of mergedArticles) {
         const local = localById.get(article.id);
         if (!local || article.updatedAt > local.updatedAt) {
+          // Confirmado (ou sem conflito): a versão local que vai ser
+          // substituída ainda entra no histórico antes da escrita.
+          if (local) snapshotBeforeSave(local);
           writeArticle(article);
           pulled++;
         }
@@ -79,7 +97,7 @@ function createSyncHandlers(ipcMain) {
 
       return {
         ok: true,
-        data: { pushed: localArticles.length, pulled, totalArticles: (merged.articles ?? []).length },
+        data: { pushed: localArticles.length, pulled, totalArticles: mergedArticles.length },
       };
     } catch (e) {
       return { ok: false, error: e.message };

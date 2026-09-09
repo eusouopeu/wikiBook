@@ -834,5 +834,5 @@ function createArticleHandlers(ipcMain) {
 
 module.exports = {
   createArticleHandlers, readArticle, writeArticle, listAllArticles, htmlToMarkdown,
-  articleToMarkdown, safeFilename, extFromMime, dataUriToBuffer,
+  articleToMarkdown, safeFilename, extFromMime, dataUriToBuffer, snapshotBeforeSave,
 };

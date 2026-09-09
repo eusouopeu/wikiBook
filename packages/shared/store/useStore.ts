@@ -62,6 +62,11 @@ interface AppState {
   // ── Trilhas de aprendizado ───────────────────────────────────────────────
   paths: LearningPath[];
   activePathId: string | null;
+  // Rascunho da última geração de trilha que ainda não terminou de importar
+  // (ver savePathDraft/clearPathDraft) — guarda as unidades já pagas ao
+  // Claude antes de importPathArticles rodar, para não perder a geração se o
+  // app fechar, a rede cair ou um recurso falhar no meio da importação.
+  pathDraft: { goal: string; interviewAnswers: InterviewAnswer[]; profileSummary: string; model: PathGenerationModel; units: PathUnit[]; createdAt: string } | null;
 
   // ── Grafo ─────────────────────────────────────────────────────────────────
   graphNodes: GraphNode[];
@@ -157,6 +162,9 @@ interface AppState {
   consolidateProfile: (goal: string, answers: InterviewAnswer[]) => Promise<string>;
   generatePathUnits: (goal: string, profileSummary: string, model: PathGenerationModel) => Promise<PathUnit[]>;
   importPathArticles: (units: PathUnit[], goal: string) => Promise<PathUnit[]>;
+  loadPathDraft: () => Promise<void>;
+  savePathDraft: (draft: { goal: string; interviewAnswers: InterviewAnswer[]; profileSummary: string; model: PathGenerationModel; units: PathUnit[] }) => Promise<void>;
+  clearPathDraft: () => Promise<void>;
   completeStep: (pathId: string, stepId: string) => Promise<void>;
   uncompleteStep: (pathId: string, stepId: string) => Promise<void>;
   setSearchQuery: (q: string) => void;
@@ -268,6 +276,7 @@ function computeGraphData(articles: Article[]): { nodes: GraphNode[]; edges: Gra
       title: art.title,
       source: art.source,
       tags: art.tags ?? [],
+      folderId: art.folderId ?? null,
       depth,
       radius,
     };
@@ -316,6 +325,7 @@ export const useStore = create<AppState>((set, get) => ({
   view: "article",
   paths: [],
   activePathId: null,
+  pathDraft: null,
   graphNodes: [],
   graphEdges: [],
   searchQuery: "",
@@ -382,6 +392,7 @@ export const useStore = create<AppState>((set, get) => ({
     } catch { /* mantém o padrão false */ }
     await get().loadFolders();
     try { await get().loadPaths(); } catch { /* trilhas ficam vazias se falhar */ }
+    try { await get().loadPathDraft(); } catch { /* sem rascunho pendente */ }
   },
 
   // ── openArticle ─────────────────────────────────────────────────────────────
@@ -561,6 +572,22 @@ export const useStore = create<AppState>((set, get) => ({
   generatePathUnits: async (goal, profileSummary, model) => {
     const r = await ipc<{ units: PathUnit[] }>("path:generate", { goal, profileSummary, model });
     return r.units;
+  },
+  // Guarda a resposta paga do Claude assim que chega, antes de
+  // importPathArticles rodar — ver comentário do campo pathDraft. Chave única
+  // (uma trilha em geração por vez) porque o assistente também é single-flow.
+  loadPathDraft: async () => {
+    const raw = await ipc<string | undefined>("config:get", { key: "pathGenerationDraft" });
+    set({ pathDraft: raw ? JSON.parse(raw) : null });
+  },
+  savePathDraft: async (draft) => {
+    const stored = { ...draft, createdAt: new Date().toISOString() };
+    await ipc("config:set", { key: "pathGenerationDraft", value: JSON.stringify(stored) });
+    set({ pathDraft: stored });
+  },
+  clearPathDraft: async () => {
+    await ipc("config:set", { key: "pathGenerationDraft", value: "" });
+    set({ pathDraft: null });
   },
   // Cria uma pasta para a trilha e importa cada recurso "wikipedia" resolvido
   // (ver resolveWikipediaResource nos handlers — só recursos com URL real de

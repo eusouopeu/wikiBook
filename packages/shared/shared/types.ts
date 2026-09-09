@@ -108,6 +108,7 @@ export interface GraphNode {
   title: string;
   source: Article["source"];
   tags: string[];
+  folderId?: string | null;
   depth: number;
   radius: number;
   x?: number;

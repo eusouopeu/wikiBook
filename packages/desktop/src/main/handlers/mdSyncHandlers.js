@@ -18,6 +18,7 @@ const fs = require("fs");
 const path = require("path");
 const { dialog, shell } = require("electron");
 const { getConfig, setConfig } = require("./configHandlers");
+const { resolveMdSyncDirection } = require("../../../../shared/lib/syncPolicy");
 
 const FOLDER_KEY = "mdSyncFolder";
 const MANIFEST_KEY = "mdSyncManifest";
@@ -73,6 +74,17 @@ function syncArticleFile(article) {
   writeManifest(manifest);
 }
 
+// ── Lê de volta o corpo da seção "## Conteúdo" de um .md exportado ──────────
+// Só usado para artigos "manual" — para esses, articleToMarkdown grava
+// article.content verbatim (é Markdown puro), então a extração é o inverso
+// exato, sem depender de parsear HTML de volta. Para "wikipedia"/"claude" o
+// .md carrega o HTML já convertido por htmlToMarkdown, que não tem inverso —
+// esses continuam só empurrando (comportamento anterior a esta mudança).
+function extractContentSection(mdText) {
+  const match = mdText.match(/^## Conteúdo\n\n([\s\S]*?)(?:\n## |\n?$)/m);
+  return match ? match[1].trim() : null;
+}
+
 // ── Remove o .md de um artigo apagado ─────────────────────────────────────────
 function removeArticleFile(id) {
   const dir = getSyncFolder();
@@ -87,11 +99,15 @@ function removeArticleFile(id) {
   }
 }
 
-// ── Ressincroniza tudo (troca de pasta, ou correção manual) ───────────────────
+// ── Ressincroniza tudo (troca de pasta, correção manual, ou início do app) ────
+// Para cada artigo "manual" com .md editado por fora (Obsidian) desde o
+// último save no app, PUXA o conteúdo de volta em vez de empurrar por cima —
+// ver resolveMdSyncDirection/extractContentSection. Demais fontes e casos
+// sem conflito continuam só empurrando, como sempre.
 function resyncAll() {
   const dir = getSyncFolder();
-  if (!dir) return { count: 0 };
-  const { listAllArticles } = require("./articleHandlers");
+  if (!dir) return { count: 0, pulled: 0 };
+  const { listAllArticles, writeArticle } = require("./articleHandlers");
   const articles = listAllArticles();
   const manifest = readManifest();
   const currentIds = new Set(articles.map(a => a.id));
@@ -104,8 +120,27 @@ function resyncAll() {
     delete manifest[id];
   }
   writeManifest(manifest);
-  for (const article of articles) syncArticleFile(article);
-  return { count: articles.length };
+
+  let pulled = 0;
+  for (const article of articles) {
+    const filename = manifest[article.id];
+    const filePath = filename ? path.join(dir, filename) : null;
+    const fileMtimeIso = filePath && fs.existsSync(filePath)
+      ? fs.statSync(filePath).mtime.toISOString()
+      : null;
+    const direction = resolveMdSyncDirection(article.updatedAt, fileMtimeIso);
+
+    if (direction === "pull" && article.source === "manual") {
+      const content = extractContentSection(fs.readFileSync(filePath, "utf8"));
+      if (content !== null && content !== article.content) {
+        writeArticle({ ...article, content, updatedAt: new Date().toISOString() });
+        pulled++;
+        continue;
+      }
+    }
+    syncArticleFile(article);
+  }
+  return { count: articles.length, pulled };
 }
 
 function createMdSyncHandlers(ipcMain) {

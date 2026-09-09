@@ -7,7 +7,8 @@
 
 export { default as App, GraphLegend } from "./App";
 export { useStore, computeLocalSubgraph } from "./store/useStore";
-export { ArticleView, ReviewModal } from "./components/ArticleView";
+export { ArticleView } from "./components/ArticleView";
+export { ReviewModal } from "./components/ReviewModal";
 export { GraphView } from "./components/GraphView";
 export { PathView } from "./components/PathView";
 export { FolderPicker } from "./components/FolderPicker";

@@ -1,0 +1,95 @@
+/* ══════════════════════════════════════════════════════════════════════════
+   ARTIGO — ESTRUTURA GERAL
+══════════════════════════════════════════════════════════════════════════ */
+.article-view {
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* ── Cabeçalho do artigo ────────────────────────────────────────────────── */
+.article-header {
+  background: var(--bg);
+  flex-shrink: 0;
+  padding: 20px 32px 0;
+}
+
+.article-title {
+  color: var(--fg);
+  font-family: var(--font-title);
+  font-size: 32px;
+  font-weight: 400;
+  line-height: 1.15;
+  margin-bottom: 5px;
+}
+
+.article-header-meta {
+  align-items: center;
+  color: var(--fg3);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 12px;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.header-sep { color: var(--border); }
+
+.source-badge {
+  border: 1px solid currentColor;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  padding: 1px 6px;
+}
+.source-wikipedia { color: var(--accent); }
+.source-claude    { color: #c49a3c; }
+.source-manual    { color: #3a8c6e; }
+
+.article-date { color: var(--fg3); }
+
+/* Abas dentro do artigo (Artigo / Resumo) */
+.wiki-tabs {
+  align-items: flex-end;
+  display: flex;
+  gap: 0;
+  margin: 0 -32px;
+  padding: 0 32px;
+}
+
+.wiki-tab {
+  background: var(--bg-body);
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: var(--radius) var(--radius) 0 0;
+  color: var(--fg-link);
+  cursor: pointer;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  margin-bottom: -1px;
+  padding: 5px 14px 6px;
+}
+.wiki-tab:hover  { background: var(--bg-hover); }
+.wiki-tab.active {
+  background: var(--bg);
+  border-color: var(--border-light);
+  color: var(--fg);
+}
+
+/* ── Linha divisória abaixo do cabeçalho ───────────────────────────────── */
+.wiki-divider {
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  margin: 0 32px;
+}
+
+/* ── Corpo do artigo (scrollável) ──────────────────────────────────────── */
+.article-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 22px 32px 56px;
+}
+.article-body::-webkit-scrollbar { width: 8px; }
+.article-body::-webkit-scrollbar-thumb { background: var(--border-light); border-radius: 4px; }
+

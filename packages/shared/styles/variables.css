@@ -1,0 +1,194 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   Lexicon — Tema inspirado na Wikipedia
+   Fonte de display : Linux Libertine (mesma usada pelo logo da Wikipedia)
+   Fonte de corpo   : Georgia (serifada, igual ao corpo do artigo Wikipedia)
+   Fonte de UI      : system-ui (igual às abas e menus da Wikipedia)
+   Paleta clara com modo escuro respeitado via prefers-color-scheme
+═══════════════════════════════════════════════════════════════════════════ */
+
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&display=swap');
+
+/* ── Variáveis — modo claro (padrão Wikipedia) ─────────────────────────── */
+:root {
+  --bg:            #ffffff;
+  --bg-body:       #f8f9fa;   /* fundo levemente acinzentado fora do artigo */
+  --bg-sidebar:    #f8f9fa;
+  --bg-toc:        #f8f9fa;
+  --bg-infobox:    #f8f9fa;
+  --bg-excerpt:    #fef9f0;   /* creme suave para trechos salvos */
+  --bg-modal:      #ffffff;
+  --bg-input:      #ffffff;
+  --bg-hover:      #eaf3fb;
+  --bg-selected:   #d0e8f7;
+
+  --fg:            #202122;   /* texto principal Wikipedia */
+  --fg2:           #54595d;   /* texto secundário */
+  --fg3:           #72777d;   /* datas, metadados */
+  --fg-link:       #3366cc;   /* azul Wikipedia */
+  --fg-link-hover: #447ff5;
+  --fg-visited:    #6b4191;   /* roxo Wikipedia para links visitados */
+
+  --border:        #a2a9b1;   /* cinza Wiki padrão */
+  --border-light:  #c8ccd1;
+  --border-toc:    #a2a9b1;
+
+  --accent:        #3366cc;   /* azul Wikipedia */
+  --accent-soft:   #eaf3fb;
+
+  --tab-active-bg: #ffffff;
+  --tab-border:    #a2a9b1;
+
+  --sidebar-w:     240px;
+  --content-max:   960px;
+  --toc-w:         220px;
+
+  --font-ui:       'Montserrat', system-ui, sans-serif;
+  --font-title:    'Montserrat', system-ui, sans-serif;
+  --font-body:     'Montserrat', system-ui, sans-serif;
+  --font-mono:     'Courier New', Courier, monospace;
+
+  --radius-sm:     2px;
+  --radius:        4px;
+
+  /* Cores de destaque de texto (marca-texto, cloze, categorias de trecho) —
+     centralizadas em tokens para que o par claro/escuro de cada uma viva num
+     só lugar (ver bloco de modo escuro abaixo), em vez de repetir o mesmo
+     par de hex ao lado de cada seletor que os usa. */
+  --hl-default-bg: #ffe680;
+  --hl-default-fg: #202122;
+  --hl-def-bg:     #cfe3ff;
+  --hl-def-fg:     #17324d;
+  --hl-enum-bg:    #c8f0d0;
+  --hl-enum-fg:    #1b4324;
+  --hl-num-bg:     #e4d4f7;
+  --hl-num-fg:     #3d2260;
+  --hl-orange-bg:  #ffd9b0;
+  --hl-orange-fg:  #5c3400;
+
+  --excerpt-cat-concept-bg:     #eaf2fd;
+  --excerpt-cat-concept-border: #3b7dd8;
+  --excerpt-cat-list-bg:        #e9f7ec;
+  --excerpt-cat-list-border:    #2e9e51;
+  --excerpt-cat-numeric-bg:     #f2ebfb;
+  --excerpt-cat-numeric-border: #8b5cc7;
+
+  --modal-error-bg:     #fee7e6;
+  --modal-error-border: #d33;
+  --modal-error-fg:     #d33;
+}
+
+/* ── Modo escuro ────────────────────────────────────────────────────────── */
+/* Aplica pelas variáveis abaixo em duas situações: o SO está em modo escuro
+   (e o usuário não forçou "claro" nas configurações — data-theme="light" no
+   <html> desativa este bloco), ou o usuário forçou "escuro" explicitamente
+   (data-theme="dark", independente do SO). Ver ThemeToggle em App.tsx. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg:           #1e1e1e;
+    --bg-body:      #15161a;
+    --bg-sidebar:   #1c1c1e;
+    --bg-toc:       #27272a;
+    --bg-infobox:   #27272a;
+    --bg-excerpt:   #1f2010;
+    --bg-modal:     #27272a;
+    --bg-input:     #1e1e1e;
+    --bg-hover:     #1a2636;
+    --bg-selected:  #1b3a5c;
+    --fg:           #d4d4d4;
+    --fg2:          #a0a0a0;
+    --fg3:          #72777d;
+    --fg-link:      #6b9eff;
+    --fg-link-hover:#90b8ff;
+    --fg-visited:   #a58ccf;
+    --border:       #3a3a3a;
+    --border-light: #2e2e2e;
+    --border-toc:   #3a3a3a;
+    --accent:       #6b9eff;
+    --accent-soft:  #1a2636;
+    --tab-active-bg:#1e1e1e;
+    --tab-border:   #3a3a3a;
+
+    --hl-default-bg: #7a6a1f;
+    --hl-default-fg: #f0e6c0;
+    --hl-def-bg:     #274a73;
+    --hl-def-fg:     #cfe3ff;
+    --hl-enum-bg:    #2b5e38;
+    --hl-enum-fg:    #c8f0d0;
+    --hl-num-bg:     #4d3570;
+    --hl-num-fg:     #e4d4f7;
+    --hl-orange-bg:  #7a4a1a;
+    --hl-orange-fg:  #ffd9b0;
+
+    --excerpt-cat-concept-bg:     #16283f;
+    --excerpt-cat-concept-border: #4f86c6;
+    --excerpt-cat-list-bg:        #14301d;
+    --excerpt-cat-list-border:    #3c9159;
+    --excerpt-cat-numeric-bg:     #241834;
+    --excerpt-cat-numeric-border: #8b5cc7;
+
+    --modal-error-bg:     #2c1010;
+    --modal-error-border: #a33;
+    --modal-error-fg:     #f88;
+  }
+}
+:root[data-theme="dark"] {
+  --bg:           #1e1e1e;
+  --bg-body:      #15161a;
+  --bg-sidebar:   #1c1c1e;
+  --bg-toc:       #27272a;
+  --bg-infobox:   #27272a;
+  --bg-excerpt:   #1f2010;
+  --bg-modal:     #27272a;
+  --bg-input:     #1e1e1e;
+  --bg-hover:     #1a2636;
+  --bg-selected:  #1b3a5c;
+  --fg:           #d4d4d4;
+  --fg2:          #a0a0a0;
+  --fg3:          #72777d;
+  --fg-link:      #6b9eff;
+  --fg-link-hover:#90b8ff;
+  --fg-visited:   #a58ccf;
+  --border:       #3a3a3a;
+  --border-light: #2e2e2e;
+  --border-toc:   #3a3a3a;
+  --accent:       #6b9eff;
+  --accent-soft:  #1a2636;
+  --tab-active-bg:#1e1e1e;
+  --tab-border:   #3a3a3a;
+
+  --hl-default-bg: #7a6a1f;
+  --hl-default-fg: #f0e6c0;
+  --hl-def-bg:     #274a73;
+  --hl-def-fg:     #cfe3ff;
+  --hl-enum-bg:    #2b5e38;
+  --hl-enum-fg:    #c8f0d0;
+  --hl-num-bg:     #4d3570;
+  --hl-num-fg:     #e4d4f7;
+  --hl-orange-bg:  #7a4a1a;
+  --hl-orange-fg:  #ffd9b0;
+
+  --excerpt-cat-concept-bg:     #16283f;
+  --excerpt-cat-concept-border: #4f86c6;
+  --excerpt-cat-list-bg:        #14301d;
+  --excerpt-cat-list-border:    #3c9159;
+  --excerpt-cat-numeric-bg:     #241834;
+  --excerpt-cat-numeric-border: #8b5cc7;
+
+  --modal-error-bg:     #2c1010;
+  --modal-error-border: #a33;
+  --modal-error-fg:     #f88;
+}
+
+/* ── Reset ─────────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body, #root {
+  height: 100%;
+  background: var(--bg-body);
+  color: var(--fg);
+  font-family: var(--font-ui);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+

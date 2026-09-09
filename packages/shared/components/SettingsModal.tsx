@@ -13,6 +13,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import { useStore } from "../store/useStore";
 import { Icon, type IconName } from "./Icon";
 import { useEscToClose } from "../lib/useEscToClose";
+import { confirmDialog } from "../lib/confirmDialog";
 import { TrashModal } from "./TrashModal";
 
 const WIKI_LANGS: Array<{ code: string; label: string }> = [
@@ -94,9 +95,13 @@ export const SettingsModal: React.FC<{ onClose?: () => void; embedded?: boolean 
     try {
       const res = await window.lexicon.invoke("mdsync:resync");
       if (!res.ok) { showToast(res.error ?? "Falha ao ressincronizar.", "error"); return; }
-      const { count } = res.data as { count: number };
+      const { count, pulled } = res.data as { count: number; pulled?: number };
       setMdCount(count);
-      showToast(`Ressincronizado — ${count} artigo${count === 1 ? "" : "s"}.`);
+      showToast(
+        pulled
+          ? `Ressincronizado — ${count} artigo${count === 1 ? "" : "s"}, ${pulled} atualizado${pulled === 1 ? "" : "s"} a partir de edições feitas fora do app.`
+          : `Ressincronizado — ${count} artigo${count === 1 ? "" : "s"}.`,
+      );
     } finally {
       setMdBusy(false);
     }
@@ -146,17 +151,29 @@ export const SettingsModal: React.FC<{ onClose?: () => void; embedded?: boolean 
       setTestingConn(false);
     }
   }
-  async function handleSyncNow() {
+  async function handleSyncNow(confirmed = false) {
     setSyncing(true);
     try {
-      const res = await window.lexicon.invoke("sync:run", { serverUrl: syncServerUrl, token: syncToken });
-      if (res.ok) {
-        const { pushed, pulled } = res.data as { pushed: number; pulled: number };
-        showToast(`Sincronizado — ${pushed} enviados, ${pulled} atualizados a partir de outros dispositivos.`);
-        setSyncLastRunAt(new Date().toISOString());
-      } else {
+      const res = await window.lexicon.invoke("sync:run", { serverUrl: syncServerUrl, token: syncToken, confirmed });
+      if (!res.ok) {
         showToast(res.error ?? "Falha ao sincronizar.", "error");
+        return;
       }
+      const data = res.data as {
+        needsConfirmation?: boolean; conflicts?: { id: string; title: string }[];
+        pushed?: number; pulled?: number;
+      };
+      if (data.needsConfirmation) {
+        const list = (data.conflicts ?? []).map(c => `• ${c.title}`).join("\n");
+        const proceed = await confirmDialog(
+          `A sincronização vai substituir a versão local de ${data.conflicts?.length} artigo(s) por uma versão mais recente vinda de outro dispositivo:\n\n${list}\n\nA versão substituída fica salva no histórico do artigo. Continuar?`,
+          "Confirmar sincronização",
+        );
+        if (proceed) await handleSyncNow(true);
+        return;
+      }
+      showToast(`Sincronizado — ${data.pushed} enviados, ${data.pulled} atualizados a partir de outros dispositivos.`);
+      setSyncLastRunAt(new Date().toISOString());
     } finally {
       setSyncing(false);
     }
@@ -292,7 +309,7 @@ export const SettingsModal: React.FC<{ onClose?: () => void; embedded?: boolean 
           <button onClick={handleTestConnection} disabled={testingConn || !syncServerUrl}>
             {testingConn ? "Testando…" : "Testar conexão"}
           </button>
-          <button className="primary" onClick={handleSyncNow} disabled={syncing || !syncServerUrl || !syncToken}>
+          <button className="primary" onClick={() => handleSyncNow()} disabled={syncing || !syncServerUrl || !syncToken}>
             {syncing ? "Sincronizando…" : "Sincronizar agora"}
           </button>
         </div>

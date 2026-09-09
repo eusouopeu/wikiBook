@@ -114,7 +114,7 @@ async function invoke(channel: string, payload?: any): Promise<IpcResponse> {
       case "sync:test":
         return { ok: true, data: await sync.testConnection(payload.serverUrl) };
       case "sync:run":
-        return { ok: true, data: await sync.runSync(payload.serverUrl, payload.token) };
+        return { ok: true, data: await sync.runSync(payload.serverUrl, payload.token, payload.confirmed ?? false) };
 
       case "wikipedia:search":
         return { ok: true, data: await wikipedia.search(payload.query, payload.lang ?? "pt") };
