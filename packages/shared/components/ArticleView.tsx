@@ -8,6 +8,7 @@ import { useShallow } from "zustand/react/shallow";
 import DOMPurify from "dompurify";
 import type { Article, ArticleExcerpt, ArticleHistoryEntry, ExcerptCategory, ExcerptOutlineItem, Flashcard, FlashcardGrade } from "../shared/types";
 import { useStore } from "../store/useStore";
+import { buildSelectionTableHtml } from "../lib/tableSelection.js";
 import { computeTrackedEdit, stripTrackedMarkup } from "../lib/excerptDiff";
 import { confirmDialog } from "../lib/confirmDialog";
 import { buildWikiAccordions, openAncestorDetails } from "../lib/wikiAccordions";
@@ -97,6 +98,36 @@ function getSelectionHtml(): { html: string; plainText: string } | null {
   container.appendChild(range.cloneContents());
   const html = container.innerHTML;
   return { html, plainText };
+}
+
+// ── Seleção que cruza mais de uma célula de tabela ───────────────────────────
+// cloneContents() de uma seleção assim devolve pedaços soltos de <td>/<tr>, que
+// salvos como trecho de texto viram um amontoado sem tabela. Aqui as células
+// tocadas pelo Range são remontadas numa sub-tabela bem formada (a montagem do
+// HTML fica em lib/tableSelection.js, testada à parte).
+type SelectedCell = { tag: "td" | "th"; html: string; colSpan: number; rowSpan: number };
+
+function getSelectionTableHtml(): string | null {
+  const selection = window.getSelection();
+  if (!selection || selection.isCollapsed || selection.rangeCount === 0) return null;
+  const range = selection.getRangeAt(0);
+  const anchor = range.commonAncestorContainer;
+  const anchorEl = (anchor.nodeType === 1 ? anchor : anchor.parentElement) as HTMLElement | null;
+  const table = anchorEl?.closest?.("table") as HTMLTableElement | null;
+  if (!table) return null;   // seleção não está inteira dentro de uma tabela
+
+  const rows: SelectedCell[][] = [];
+  for (const tr of Array.from(table.rows)) {
+    const cells = Array.from(tr.cells).filter(cell => range.intersectsNode(cell));
+    if (cells.length === 0) continue;
+    rows.push(cells.map(cell => ({
+      tag: cell.tagName.toLowerCase() === "th" ? "th" : "td",
+      html: cell.innerHTML,
+      colSpan: cell.colSpan,
+      rowSpan: cell.rowSpan,
+    })));
+  }
+  return buildSelectionTableHtml(rows);
 }
 
 // ── Envolve/desenvolve a seleção atual de um textarea com marcadores Markdown ─
@@ -1344,6 +1375,7 @@ export const ArticleView: React.FC<Props> = ({ article, headerActionsSlot }) => 
     showContextMenu(e.clientX, e.clientY, article.id, {
       selectedText: sel?.plainText ?? "",
       tableHtml: tableEl?.outerHTML,
+      selectionTableHtml: sel ? getSelectionTableHtml() ?? undefined : undefined,
       imageSrc: imgEl?.src,
       imageAlt: imgEl?.alt,
     });
@@ -1536,6 +1568,14 @@ export const ArticleView: React.FC<Props> = ({ article, headerActionsSlot }) => 
     if (!html) return;
     setSaveModal({ visible: true, kind: "table", category: "default", html });
   }, [contextMenu.tableHtml, hideContextMenu]);
+
+  // Seleção que cruza células: salva só as células selecionadas, como tabela.
+  const handleOpenSaveSelectionTable = useCallback(() => {
+    const html = contextMenu.selectionTableHtml;
+    hideContextMenu();
+    if (!html) return;
+    setSaveModal({ visible: true, kind: "table", category: "default", html });
+  }, [contextMenu.selectionTableHtml, hideContextMenu]);
 
   const handleOpenSaveImage = useCallback(() => {
     const { imageSrc, imageAlt } = contextMenu;
@@ -1738,9 +1778,21 @@ export const ArticleView: React.FC<Props> = ({ article, headerActionsSlot }) => 
 
   const summaryHtml = summaryToHtml(article.summary);
 
-  // Os 4 ícones "primários" do cabeçalho — no mobile, vão via portal para a
-  // barra de navegação do shell (ver prop headerActionsSlot); no desktop
-  // (sem slot) renderizam aqui mesmo, ao lado do <h1>.
+  // ── Progresso de leitura ───────────────────────────────────────────────────
+  // Fita fina no topo do corpo mostrando quanto do artigo já rolou — em artigos
+  // longos da Wikipédia a barra de rolagem do painel é curta demais para dar
+  // essa noção. Só leitura de scrollTop, sem estado persistido.
+  const [readProgress, setReadProgress] = useState(0);
+  const handleBodyScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    const el = e.currentTarget;
+    const max = el.scrollHeight - el.clientHeight;
+    setReadProgress(max > 0 ? Math.min(1, el.scrollTop / max) : 0);
+  }, []);
+  useEffect(() => { setReadProgress(0); }, [article.id, showSummary]);
+
+  // Os 4 ícones "primários" do cabeçalho — quando há slot (barra fixa abaixo
+  // da TopBar, tanto no desktop quanto no mobile) vão todos por portal para
+  // lá, junto dos secundários; sem slot, renderizam ao lado do <h1>.
   const primaryHeaderActions = (
     <>
       <span className="header-popover-anchor">
@@ -1820,6 +1872,19 @@ export const ArticleView: React.FC<Props> = ({ article, headerActionsSlot }) => 
     </>
   );
 
+  // Histórico / editar / excluir — seguem os primários para onde eles forem.
+  const secondaryHeaderActions = (
+    <>
+      <button className="icon-btn" title="Histórico de versões" aria-label="Histórico de versões"
+              onClick={() => setHistoryOpen(true)}><Icon name="history" /></button>
+      {article.source === "manual" && !isEditing && (
+        <button className="icon-btn" title="Editar artigo" aria-label="Editar artigo" onClick={handleStartEdit}><Icon name="edit" /></button>
+      )}
+      <button className="icon-btn article-delete-btn" title="Excluir artigo" aria-label="Excluir artigo"
+              onClick={handleDeleteArticle}><Icon name="trash" /></button>
+    </>
+  );
+
   return (
     <div className="article-view">
 
@@ -1827,18 +1892,16 @@ export const ArticleView: React.FC<Props> = ({ article, headerActionsSlot }) => 
       <div className="article-header">
         <div className="article-title-row">
           <h1 className="article-title">{article.title}</h1>
-          <div className="article-header-actions">
-            {!headerActionsSlot && primaryHeaderActions}
-            <button className="icon-btn" title="Histórico de versões" aria-label="Histórico de versões"
-                    onClick={() => setHistoryOpen(true)}><Icon name="history" /></button>
-            {article.source === "manual" && !isEditing && (
-              <button className="icon-btn" title="Editar artigo" aria-label="Editar artigo" onClick={handleStartEdit}><Icon name="edit" /></button>
-            )}
-            <button className="icon-btn article-delete-btn" title="Excluir artigo" aria-label="Excluir artigo"
-                    onClick={handleDeleteArticle}><Icon name="trash" /></button>
-          </div>
+          {!headerActionsSlot && (
+            <div className="article-header-actions">
+              {primaryHeaderActions}
+              {secondaryHeaderActions}
+            </div>
+          )}
         </div>
-        {headerActionsSlot && createPortal(primaryHeaderActions, headerActionsSlot)}
+        {headerActionsSlot && createPortal(
+          <>{primaryHeaderActions}{secondaryHeaderActions}</>, headerActionsSlot
+        )}
 
         <div className="article-header-meta">
           <span className={`source-badge source-${article.source}`}>
@@ -1882,7 +1945,15 @@ export const ArticleView: React.FC<Props> = ({ article, headerActionsSlot }) => 
       <div className="wiki-divider" />
 
       {/* ── Corpo ───────────────────────────────────────────────────────── */}
-      <div className="article-body">
+      <div
+        className="article-read-progress"
+        style={{ transform: `scaleX(${readProgress})` }}
+        role="progressbar"
+        aria-label="Progresso de leitura do artigo"
+        aria-valuemin={0} aria-valuemax={100}
+        aria-valuenow={Math.round(readProgress * 100)}
+      />
+      <div className="article-body" onScroll={handleBodyScroll}>
 
         {/* Índice de links internos (estilo "Sumário" da Wikipedia) — colapsável
             para não empurrar o conteúdo do artigo para baixo da dobra em
@@ -2083,11 +2154,13 @@ export const ArticleView: React.FC<Props> = ({ article, headerActionsSlot }) => 
           x={contextMenu.x} y={contextMenu.y}
           text={contextMenu.selectedText}
           hasTable={!!contextMenu.tableHtml}
+          hasSelectionTable={!!contextMenu.selectionTableHtml}
           hasImage={!!contextMenu.imageSrc}
           onSearchWiki={() => handleSearch("wikipedia")}
           onSearchClaude={() => handleSearch("claude")}
           onSaveExcerpt={handleOpenSaveExcerpt}
           onSaveTable={handleOpenSaveTable}
+          onSaveSelectionTable={handleOpenSaveSelectionTable}
           onSaveImage={handleOpenSaveImage}
           onClose={hideContextMenu}
         />
@@ -2211,16 +2284,16 @@ const LinkHoverPreview: React.FC<{ x: number; y: number; title: string; snippet:
 
 interface ContextMenuProps {
   x: number; y: number; text: string;
-  hasTable: boolean; hasImage: boolean;
+  hasTable: boolean; hasSelectionTable: boolean; hasImage: boolean;
   onSearchWiki: () => void; onSearchClaude: () => void;
   onSaveExcerpt: (category: ExcerptCategory) => void;
-  onSaveTable: () => void; onSaveImage: () => void;
+  onSaveTable: () => void; onSaveSelectionTable: () => void; onSaveImage: () => void;
   onClose: () => void;
 }
 
 const ContextMenu: React.FC<ContextMenuProps> = ({
-  x, y, text, hasTable, hasImage,
-  onSearchWiki, onSearchClaude, onSaveExcerpt, onSaveTable, onSaveImage, onClose,
+  x, y, text, hasTable, hasSelectionTable, hasImage,
+  onSearchWiki, onSearchClaude, onSaveExcerpt, onSaveTable, onSaveSelectionTable, onSaveImage, onClose,
 }) => {
   const hasText = text.length > 0;
 
@@ -2279,8 +2352,15 @@ const ContextMenu: React.FC<ContextMenuProps> = ({
           </button>
         </>
       )}
+      {hasSelectionTable && (
+        <button className="context-menu-item context-menu-save" title="Salvar só as células selecionadas"
+                aria-label="Salvar só as células selecionadas" onClick={onSaveSelectionTable}>
+          <Icon name="table" />
+          <span className="ctx-badge">seleção</span>
+        </button>
+      )}
       {hasTable && (
-        <button className="context-menu-item context-menu-save" title="Salvar tabela em…" aria-label="Salvar tabela em…" onClick={onSaveTable}><Icon name="table" /></button>
+        <button className="context-menu-item context-menu-save" title="Salvar tabela inteira em…" aria-label="Salvar tabela inteira em…" onClick={onSaveTable}><Icon name="table" /></button>
       )}
       {hasImage && (
         <button className="context-menu-item context-menu-save" title="Salvar imagem em…" aria-label="Salvar imagem em…" onClick={onSaveImage}><Icon name="image" /></button>

@@ -84,6 +84,17 @@
   margin: 0 32px;
 }
 
+/* Fita de progresso de leitura — entre o divisor e o corpo do artigo,
+   encolhida no eixo X conforme a rolagem (ver readProgress em ArticleView). */
+.article-read-progress {
+  background: var(--accent);
+  flex-shrink: 0;
+  height: 2px;
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform 0.08s linear;
+}
+
 /* ── Corpo do artigo (scrollável) ──────────────────────────────────────── */
 .article-body {
   flex: 1;

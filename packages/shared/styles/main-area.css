@@ -27,6 +27,31 @@
 .top-bar-divider { background: var(--border-light); height: 18px; margin: 0 2px; width: 1px; }
 .top-bar-back { font-size: 17px; }
 
+/* ── Segunda barra, fixa abaixo da superior (prop actionsBelow do TopBar) ──
+   Recebe os ícones da aba/artigo que antes disputavam espaço com o título.
+   Quebra em várias linhas quando não cabem (nada de overflow: o painel do
+   "buscar na página" e o do Claude abrem ancorados em botões daqui e seriam
+   recortados por um contexto de scroll). */
+.top-bar-stack {
+  background: var(--bg-body);
+  flex-shrink: 0;
+  position: sticky;
+  top: 0;
+  z-index: 12;
+}
+.top-bar-stack .top-bar { border-bottom: none; }
+.top-bar-actions-row {
+  align-items: center;
+  background: var(--bg-body);
+  border-bottom: 1px solid var(--tab-border);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 2px 16px 5px;
+}
+.top-bar-actions-row:empty { display: none; }
+.top-bar-actions-row > * { flex-shrink: 0; }
+
 /* Controles de zoom do grafo */
 .graph-controls { display: flex; gap: 3px; margin-left: auto; padding-bottom: 4px; }
 .graph-controls button {

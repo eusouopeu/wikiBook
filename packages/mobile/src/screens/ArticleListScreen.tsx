@@ -235,6 +235,7 @@ export function ArticleListScreen({ onOpenArticle }: Props) {
     <div className="mobile-screen">
       <TopBar
         title="Artigos"
+        actionsBelow
         onSearch={() => { setSearchOpen(v => !v); setTimeout(() => searchInputRef.current?.focus(), 0); }}
         actions={
           <>

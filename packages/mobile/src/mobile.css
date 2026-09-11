@@ -196,8 +196,9 @@
 .mobile-article-screen-actions {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: flex-start;
   flex: 1;
+  flex-wrap: wrap;
   gap: 2px;
 }
 .mobile-article-screen-actions .icon-btn {
@@ -321,10 +322,12 @@ html, body, #root { height: 100%; }
    próprio ícone por padrão (bom no desktop, com header largo) — no mobile,
    com ícones concentrados perto da borda da tela estreita, isso overflow.
    Aqui viram uma barra fixa logo abaixo da nav, ocupando a largura toda. */
+/* Abaixo das DUAS barras (superior + barra fixa de ícones, ver TopBar
+   actionsBelow), não só da superior. */
 .mobile-article-screen-actions .find-in-page-bar,
 .mobile-article-screen-actions .ask-claude-popover {
   position: fixed;
-  top: calc(env(safe-area-inset-top) + 60px);
+  top: calc(env(safe-area-inset-top) + 112px);
   left: 12px;
   right: 12px;
   width: auto;

@@ -592,6 +592,12 @@ export default function App() {
   // ── Painel de grafo local ao lado do artigo aberto ────────────────────────
   const [showLocalGraphPanel, setShowLocalGraphPanel] = useState(false);
 
+  // Slot para onde o ArticleView manda (por portal) os ícones do cabeçalho do
+  // artigo — assim eles ficam na barra fixa abaixo da TopBar, e não colados no
+  // <h1>. Callback ref: precisa re-renderizar quando o nó existir, senão o
+  // primeiro render do ArticleView ainda desenharia os ícones ao lado do título.
+  const [articleActionsSlot, setArticleActionsSlot] = useState<HTMLDivElement | null>(null);
+
   // ── Pastas ──────────────────────────────────────────────────────────────
   const [folderPickerFor, setFolderPickerFor] = useState<{ articleId: string; x: number; y: number } | null>(null);
   const [renamingFolderId, setRenamingFolderId] = useState<string | null>(null);
@@ -1064,8 +1070,15 @@ export default function App() {
           title={view === "article" ? "Artigo" : view === "graph" ? "Grafo" : "Trilha"}
           onSearch={() => { setSidebarCollapsed(false); setTimeout(() => searchInputRef.current?.focus(), 0); }}
           searchTitle="Pesquisar artigos (⌘F)"
+          actionsBelow={view === "article"}
           actions={
             <>
+              {view === "article" && activeArticle && (
+                <>
+                  <div className="article-header-actions" ref={setArticleActionsSlot} />
+                  <span className="top-bar-divider" />
+                </>
+              )}
               {view === "article" && activeArticle && (
                 <button
                   className={`icon-btn ${showLocalGraphPanel ? "icon-btn-active" : ""}`}
@@ -1117,7 +1130,7 @@ export default function App() {
             activeArticle
               ? (
                 <div className={`article-with-graph-panel ${showLocalGraphPanel ? "split" : ""}`}>
-                  <ArticleView article={activeArticle} />
+                  <ArticleView article={activeArticle} headerActionsSlot={articleActionsSlot} />
                   {showLocalGraphPanel && (
                     <div className="local-graph-panel">
                       {localGraphPanelData.nodes.length > 1 ? (

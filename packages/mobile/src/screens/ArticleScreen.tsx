@@ -39,6 +39,7 @@ export function ArticleScreen({ article, onBack }: Props) {
         onBack={onBack}
         onSearch={() => { onBack(); requestSearchFocus(); }}
         searchTitle="Buscar artigos"
+        actionsBelow
         actions={<div className="mobile-article-screen-actions" ref={setActionsSlot} />}
       />
       <div className="mobile-article-screen-body">

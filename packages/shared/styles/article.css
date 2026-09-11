@@ -6,12 +6,14 @@
   color: var(--fg);
   font-family: var(--font-body);
   font-size: 15.5px;
-  line-height: 1.5;
+  /* Corpo de artigo lê melhor com entrelinhas maior que o 1.5 da UI —
+     ver CLAUDE.md (1.5 continua valendo para o resto da interface). */
+  line-height: 1.75;
   max-width: var(--content-max);
   text-align: justify;
 }
 
-.wiki-content p  { margin-bottom: 0.85em; }
+.wiki-content p  { margin-bottom: 0.95em; }
 .wiki-content p:last-child { margin-bottom: 0; }
 
 /* Headings — mesma hierarquia visual da Wikipedia */
@@ -123,7 +125,7 @@
 .wiki-content ol {
   margin: 0.4em 0 0.9em 1.8em;
 }
-.wiki-content li { margin-bottom: 0.2em; }
+.wiki-content li { margin-bottom: 0.3em; }
 
 /* Definições */
 .wiki-content dl { margin: 0.4em 0 0.9em 1em; }
@@ -134,9 +136,16 @@
 .wiki-content table {
   border-collapse: collapse;
   font-size: 13px;
+  line-height: 1.55;         /* entrelinhas do corpo (1.75) infla demais a grade */
   margin: 0.8em 0 1.2em;
   max-width: 100%;
+  /* Seleção de texto atravessando várias células precisa estar explicitamente
+     liberada — o menu de contexto salva as células selecionadas como tabela
+     (ver getSelectionTableHtml em ArticleView.tsx). */
+  -webkit-user-select: text;
+  user-select: text;
 }
+.wiki-content table tbody tr:hover td { background: var(--bg-hover); }
 .wiki-content table th {
   background: var(--bg-toc);
   border: 1px solid var(--border);

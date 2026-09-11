@@ -12,7 +12,9 @@ SEMPRE usar a skill `/caveman` (modo de comunicação ultra-comprimido) em toda 
 
 ## Padrões técnicos e visuais obrigatórios
 
-- Sempre usar **TypeScript** e fonte **Montserrat** com espaçamento entrelinhas (line-height) de 1.5.
+- Sempre usar **TypeScript** e fonte **Montserrat** com espaçamento entrelinhas (line-height) de 1.5
+  na interface. Exceção: corpo de artigo (`.wiki-content`) usa 1.75 por legibilidade de leitura longa
+  (tabelas dentro dele voltam a 1.55 para a grade não inflar).
 - Logo do app: livro aberto em degradê roxo (`#8B5CF6`) → azul (`#2563EB`) sobre fundo branco. Fonte
   única em `assets/brand/mark.svg` (transparente, usado no ícone do desktop), `icon-square.svg`/
   `icon-round.svg` (mesmo desenho com fundo branco, usados no ícone do iOS) e embutida como JSX em
@@ -31,6 +33,16 @@ SEMPRE usar a skill `/caveman` (modo de comunicação ultra-comprimido) em toda 
   `.tsx` de shared/desktop/mobile. `.js` (main do Electron, libs antigas de `shared/lib`) fica de
   fora do checkJs até serem convertidas; libs `.js` NOVAS usam `// @ts-check` + JSDoc (ver
   `lib/graphPath.js`/`lib/syncPolicy.js`) — daí SÃO checadas mesmo com checkJs desligado.
+- Aba "Artigos" e views de artigo passam `actionsBelow` para a `TopBar`: os ícones da aba saem da
+  linha do título e vão para uma segunda barra fixa (`.top-bar-actions-row`, dentro de
+  `.top-bar-stack` sticky), sobrando a largura toda para o título. Nessas telas, o `ArticleView`
+  manda TODOS os seus ícones de cabeçalho (primários + histórico/editar/excluir) por portal para o
+  slot `headerActionsSlot` dessa barra — no desktop o slot é criado em `App.tsx`, no mobile em
+  `ArticleScreen.tsx`. Sem slot, eles voltam a renderizar ao lado do `<h1>`.
+- Seleção de texto atravessando mais de uma célula de tabela vira trecho do tipo `table`: as células
+  tocadas pelo `Range` são remontadas em sub-tabela bem formada (`lib/tableSelection.js`, pura e
+  testada; a varredura de DOM é `getSelectionTableHtml` em `ArticleView.tsx`). O menu de contexto
+  mostra os dois itens — "salvar só as células selecionadas" e "salvar tabela inteira".
 - Toda tela/aba (desktop e mobile) usa a `TopBar` compartilhada (`components/TopBar.tsx`):
   nome da aba + ícones específicos da aba + pesquisar (global) + central de erros (só aparece
   se houver erro na sessão) + alternar tema, nessa ordem. Todas as abas devem passar `onSearch`

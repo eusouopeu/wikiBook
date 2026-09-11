@@ -135,6 +135,8 @@ interface AppState {
     selectedText: string;
     parentArticleId: string | null;
     tableHtml?: string;
+    /** Sub-tabela remontada quando a seleção cruza mais de uma célula. */
+    selectionTableHtml?: string;
     imageSrc?: string;
     imageAlt?: string;
   };
@@ -197,7 +199,8 @@ interface AppState {
   clearErrorHistory: () => void;
   requestSearchFocus: () => void;
   showContextMenu: (x: number, y: number, parentId: string, opts?: {
-    selectedText?: string; tableHtml?: string; imageSrc?: string; imageAlt?: string;
+    selectedText?: string; tableHtml?: string; selectionTableHtml?: string;
+    imageSrc?: string; imageAlt?: string;
   }) => void;
   hideContextMenu: () => void;
   rebuildGraph: () => void;
@@ -819,7 +822,8 @@ export const useStore = create<AppState>((set, get) => ({
     set({ contextMenu: {
       visible: true, x, y, parentArticleId: parentId,
       selectedText: opts.selectedText ?? "",
-      tableHtml: opts.tableHtml, imageSrc: opts.imageSrc, imageAlt: opts.imageAlt,
+      tableHtml: opts.tableHtml, selectionTableHtml: opts.selectionTableHtml,
+      imageSrc: opts.imageSrc, imageAlt: opts.imageAlt,
     } }),
   hideContextMenu: () =>
     set({ contextMenu: { visible: false, x: 0, y: 0, selectedText: "", parentArticleId: null } }),

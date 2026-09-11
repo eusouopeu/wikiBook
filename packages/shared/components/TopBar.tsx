@@ -95,34 +95,57 @@ interface TopBarProps {
   center?: React.ReactNode;
   /** Ícones específicos da aba atual, renderizados antes de pesquisar/tema. */
   actions?: React.ReactNode;
+  /**
+   * Move os ícones da aba para uma segunda barra fixa logo abaixo da barra
+   * superior (aba Artigos e views de artigo), deixando a linha de cima só com
+   * o título + pesquisar/erros/tema — assim o título ganha a largura toda.
+   */
+  actionsBelow?: boolean;
   onSearch?: () => void;
   searchTitle?: string;
   className?: string;
 }
 
 export const TopBar: React.FC<TopBarProps> = ({
-  title, onBack, center, actions, onSearch, searchTitle = "Pesquisar (⌘F)", className,
-}) => (
-  <div className={`top-bar ${className ?? ""}`}>
-    <div className="top-bar-left">
-      {onBack && (
-        <button type="button" className="icon-btn top-bar-back" title="Voltar" aria-label="Voltar" onClick={onBack}>
-          <Icon name="back" />
-        </button>
-      )}
-      <span className="top-bar-title">{title}</span>
-      {center}
+  title, onBack, center, actions, actionsBelow = false,
+  onSearch, searchTitle = "Pesquisar (⌘F)", className,
+}) => {
+  const bar = (
+    <div className={`top-bar ${className ?? ""}`}>
+      <div className="top-bar-left">
+        {onBack && (
+          <button type="button" className="icon-btn top-bar-back" title="Voltar" aria-label="Voltar" onClick={onBack}>
+            <Icon name="back" />
+          </button>
+        )}
+        <span className="top-bar-title">{title}</span>
+        {center}
+      </div>
+      <div className="top-bar-right">
+        {!actionsBelow && (
+          <>
+            {actions}
+            <span className="top-bar-divider" />
+          </>
+        )}
+        {onSearch && (
+          <button type="button" className="icon-btn" title={searchTitle} aria-label={searchTitle} onClick={onSearch}>
+            <Icon name="search" />
+          </button>
+        )}
+        <ErrorCenterButton />
+        <ThemeToggleButton />
+      </div>
     </div>
-    <div className="top-bar-right">
-      {actions}
-      <span className="top-bar-divider" />
-      {onSearch && (
-        <button type="button" className="icon-btn" title={searchTitle} aria-label={searchTitle} onClick={onSearch}>
-          <Icon name="search" />
-        </button>
-      )}
-      <ErrorCenterButton />
-      <ThemeToggleButton />
+  );
+
+  if (!actionsBelow) return bar;
+  return (
+    <div className="top-bar-stack">
+      {bar}
+      <div className="top-bar-actions-row" role="toolbar" aria-label={`Ações de ${title}`}>
+        {actions}
+      </div>
     </div>
-  </div>
-);
+  );
+};

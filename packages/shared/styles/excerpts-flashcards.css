@@ -513,6 +513,19 @@ mark.hl-orange { background: var(--hl-orange-bg); color: var(--hl-orange-fg); pa
 .excerpt-preview.excerpt-cat-numeric { background: var(--excerpt-cat-numeric-bg); }
 
 /* Bolinhas de cor nas opções do menu de contexto */
+/* Rótulo curto no item "salvar só as células selecionadas" do menu de
+   contexto — distingue-o do "salvar tabela inteira", que usa o mesmo ícone. */
+.ctx-badge {
+  background: var(--bg-hover);
+  border-radius: var(--radius-sm);
+  color: var(--fg2);
+  font-size: 9.5px;
+  letter-spacing: 0.02em;
+  margin-left: 4px;
+  padding: 1px 4px;
+  text-transform: uppercase;
+}
+
 .ctx-cat-swatch {
   border-radius: 50%;
   display: inline-block;
