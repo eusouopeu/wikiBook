@@ -13,6 +13,12 @@ SEMPRE usar a skill `/caveman` (modo de comunicação ultra-comprimido) em toda 
 ## Padrões técnicos e visuais obrigatórios
 
 - Sempre usar **TypeScript** e fonte **Montserrat** com espaçamento entrelinhas (line-height) de 1.5.
+- Logo do app: livro aberto em degradê roxo (`#8B5CF6`) → azul (`#2563EB`) sobre fundo branco. Fonte
+  única em `assets/brand/mark.svg` (transparente, usado no ícone do desktop), `icon-square.svg`/
+  `icon-round.svg` (mesmo desenho com fundo branco, usados no ícone do iOS) e embutida como JSX em
+  `packages/shared/components/LogoMark.tsx` (usada só na sidebar do desktop, `App.tsx`). Ícone do
+  Android (`android/app/src/main/res/mipmap-*/ic_launcher*`) ainda é o padrão genérico do Capacitor,
+  não gerado a partir de `assets/brand/` — pendente de regenerar quando alguém tratar do launcher.
 - Dar preferência a **botões-ícone** em vez de botões com texto.
 - Estado real do projeto (diferente do que pedimos em app novo): CSS puro (sem Tailwind) e ícones
   **Heroicons** (`@heroicons/react/24/outline`, mapeados em `components/Icon.tsx`) — não Lucide.
