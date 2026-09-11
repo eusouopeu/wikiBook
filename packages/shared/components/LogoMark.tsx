@@ -1,10 +1,9 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // packages/shared/components/LogoMark.tsx
-// Marca do Wikibook — livro aberto (base de conhecimento) com um grafo de
-// conceitos nascendo da lombada (a rede de artigos vinculados que o app
-// constrói). Mesmo desenho de assets/brand/mark.svg (fonte dos ícones do
-// app), embutido aqui como JSX para não depender de um loader de assets no
-// esbuild (o pipeline atual não configura --loader para .svg/.png).
+// Marca do Wikibook — livro aberto em degradê roxo→azul sobre fundo branco.
+// Mesmo desenho de assets/brand/mark.svg (fonte dos ícones do app), embutido
+// aqui como JSX para não depender de um loader de assets no esbuild (o
+// pipeline atual não configura --loader para .svg/.png).
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React from "react";
@@ -18,16 +17,17 @@ export const LogoMark: React.FC<{ size?: number; className?: string }> = ({ size
     role="img"
     aria-label="Wikibook"
   >
-    <path d="M54,44 C42,37 24,39 18,48 L18,80 C24,73 42,71 54,77 Z"
-          fill="#3366CC" stroke="#1f4e9e" strokeWidth="1.5" strokeLinejoin="round"/>
-    <path d="M54,44 C66,37 84,39 90,48 L90,80 C84,73 66,71 54,77 Z"
-          fill="#3366CC" stroke="#1f4e9e" strokeWidth="1.5" strokeLinejoin="round"/>
-    <path d="M54,44 L54,77" fill="none" stroke="#1f4e9e" strokeWidth="1.5" strokeLinecap="round"/>
-
-    <path d="M54,44 L54,30 M54,30 L34,30 M54,30 L74,30"
-          fill="none" stroke="#1D9E75" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
-    <circle cx="54" cy="22" r="7" fill="#1D9E75"/>
-    <circle cx="34" cy="30" r="5" fill="#1D9E75"/>
-    <circle cx="74" cy="30" r="5" fill="#1D9E75"/>
+    <defs>
+      <linearGradient id="wikibookLogoGradient" x1="18" y1="30" x2="90" y2="82" gradientUnits="userSpaceOnUse">
+        <stop offset="0" stopColor="#8B5CF6" />
+        <stop offset="1" stopColor="#2563EB" />
+      </linearGradient>
+    </defs>
+    <rect x="2" y="2" width="104" height="104" rx="20" fill="#FFFFFF" />
+    <path d="M54,40 C40,34 24,36 18,44 L18,78 C24,71 40,69 54,75 Z"
+          fill="url(#wikibookLogoGradient)" stroke="#4338CA" strokeWidth="1.5" strokeLinejoin="round" />
+    <path d="M54,40 C68,34 84,36 90,44 L90,78 C84,71 68,69 54,75 Z"
+          fill="url(#wikibookLogoGradient)" stroke="#4338CA" strokeWidth="1.5" strokeLinejoin="round" />
+    <path d="M54,40 L54,75" fill="none" stroke="#4338CA" strokeWidth="1.5" strokeLinecap="round" />
   </svg>
 );
