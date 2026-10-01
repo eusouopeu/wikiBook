@@ -19,6 +19,7 @@
 .mobile-article-screen .top-bar,
 .mobile-graph-screen .top-bar,
 .mobile-path-screen .top-bar,
+.mobile-review-screen .top-bar,
 .mobile-settings-screen .top-bar {
   position: sticky;
   top: 0;
@@ -251,6 +252,14 @@
 }
 
 /* ── Tela de trilha (PathView de @lexicon/shared, reaproveitado) ───────────── */
+
+.mobile-review-screen {
+  height: 100%;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
 
 .mobile-path-screen {
   height: 100%;

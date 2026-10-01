@@ -1,3 +1,4 @@
+// @ts-check
 // ─────────────────────────────────────────────────────────────────────────────
 // packages/shared/lib/claudePrompts.js
 // Fonte única dos prompts de sistema, templates de geração e tabela de
@@ -14,7 +15,28 @@
 // ESM. module.exports aqui é consumido tanto por require() (desktop main,
 // Node puro) quanto por import (mobile, via esbuild, que faz a interop de
 // CommonJS automaticamente).
+//
+// Tipado via JSDoc + `// @ts-check` (checkJs fica desligado no tsconfig.json
+// para o resto dos .js legados).
 // ─────────────────────────────────────────────────────────────────────────────
+
+/** @typedef {import("../shared/types").PathGenerationModel} PathGenerationModel */
+/** @typedef {import("../shared/types").SearchEngineLink} SearchEngineLink */
+/** @typedef {{ label: string; systemPrompt: string }} GenerateTemplate */
+/**
+ * Entrada da tabela de modelos de trilha — campos de API (apiModel/thinking/
+ * thinkingBudgetTokens/maxTokens) e de UI (label/description/preços).
+ * @typedef {{
+ *   apiModel: string;
+ *   thinking: boolean;
+ *   thinkingBudgetTokens?: number;
+ *   maxTokens: number;
+ *   label: string;
+ *   description: string;
+ *   pricePerMTokIn: number;
+ *   pricePerMTokOut: number;
+ * }} PathModelSpec
+ */
 
 const SYSTEM_SUMMARIZE = `
 Você é um assistente especializado em criar resumos acadêmicos concisos.
@@ -56,6 +78,7 @@ Regras:
 // modal de "Novo artigo" quando a fonte é "Gerar com Claude". "padrao" é o
 // comportamento original (SYSTEM_GENERATE), preservado por compatibilidade
 // com chamadas antigas (templateId ausente/desconhecido cai nele).
+/** @type {Record<string, GenerateTemplate>} */
 const GENERATE_TEMPLATES = {
   padrao: { label: "Padrão", systemPrompt: SYSTEM_GENERATE },
   definicao: {
@@ -122,8 +145,11 @@ Regras:
   },
 };
 
+// templateId ausente/desconhecido cai em "padrao" (GENERATE_TEMPLATES["undefined"]
+// também é undefined, daí o cast em vez de um guard que mudaria o fluxo).
+/** @param {string | null | undefined} templateId @returns {GenerateTemplate} */
 function resolveGenerateTemplate(templateId) {
-  return GENERATE_TEMPLATES[templateId] ?? GENERATE_TEMPLATES.padrao;
+  return GENERATE_TEMPLATES[/** @type {string} */ (templateId)] ?? GENERATE_TEMPLATES.padrao;
 }
 
 // ── Modelos de geração de trilha (ver path:generate / PathGenerationModel) ──
@@ -134,6 +160,7 @@ function resolveGenerateTemplate(templateId) {
 // pela UI (pathModels.ts); apiModel/thinking/thinkingBudgetTokens/maxTokens
 // são usados só pela chamada de verdade (pathHandlers.js/claude.ts). Preços
 // por milhão de tokens (USD) — tabela pública da Anthropic, ago/2026.
+/** @type {Record<PathGenerationModel, PathModelSpec>} */
 const PATH_MODELS = {
   "sonnet-standard": {
     apiModel: "claude-sonnet-5", thinking: false, maxTokens: 8000,
@@ -250,6 +277,7 @@ const GENERATE_PATH_TOOL = {
 // pins fora da conta do próprio usuário — não dá pra embutir num app pessoal
 // sem credencial própria do usuário). Mesma estratégia do vídeo: pontos de
 // entrada de busca determinísticos, sem chave nenhuma.
+/** @param {string} query @returns {SearchEngineLink[]} */
 function videoSearchEngines(query) {
   const q = encodeURIComponent(query);
   return [
@@ -259,6 +287,7 @@ function videoSearchEngines(query) {
   ];
 }
 
+/** @param {string} query @returns {SearchEngineLink[]} */
 function imageSearchEngines(query) {
   const q = encodeURIComponent(query);
   return [

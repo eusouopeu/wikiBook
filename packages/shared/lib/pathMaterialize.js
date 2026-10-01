@@ -1,3 +1,4 @@
+// @ts-check
 // ─────────────────────────────────────────────────────────────────────────────
 // packages/shared/lib/pathMaterialize.js
 // Monta as unidades/passos/recursos de uma trilha a partir da resposta bruta
@@ -13,11 +14,32 @@
 // vêm injetadas em `deps` em vez de importadas aqui.
 //
 // CommonJS plano, mesmo padrão de claudePrompts.js: require() direto no main
-// do Electron, import com interop do esbuild no mobile.
+// do Electron, import com interop do esbuild no mobile. Tipado via JSDoc +
+// `// @ts-check`.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const { imageSearchEngines, videoSearchEngines } = require("./claudePrompts.js");
 
+/** @typedef {import("../shared/types").PathResource} PathResource */
+/** @typedef {import("../shared/types").PathStep} PathStep */
+/** @typedef {import("../shared/types").PathUnit} PathUnit */
+
+// Formato bruto devolvido pelo Claude (schema de GENERATE_PATH_TOOL em
+// claudePrompts.js) — resources/steps opcionais porque a resposta não é
+// validada (o código já trata ausência com `?? []`).
+/** @typedef {{ kind: "wikipedia" | "video-search" | "image-search"; title: string; query: string }} RawResource */
+/** @typedef {{ title: string; objective: string; estimatedMinutes: number | string; practice: string; resources?: RawResource[] }} RawStep */
+/** @typedef {{ title: string; steps?: RawStep[] }} RawUnit */
+
+/** @typedef {(query: string, lang: string, limit: number) => Promise<{ title: string }[]>} SearchWikipedia */
+/** @typedef {{ searchWikipedia: SearchWikipedia; makeId: () => string }} MaterializeDeps */
+
+/**
+ * @param {SearchWikipedia} searchWikipedia
+ * @param {string} query
+ * @param {string} lang
+ * @returns {Promise<{ title: string; url: string; verified: boolean }>}
+ */
 async function resolveWikipediaResource(searchWikipedia, query, lang) {
   try {
     const results = await searchWikipedia(query, lang, 1);
@@ -39,8 +61,15 @@ async function resolveWikipediaResource(searchWikipedia, query, lang) {
   };
 }
 
+/**
+ * @param {RawResource[] | undefined} rawResources
+ * @param {string} lang
+ * @param {MaterializeDeps} deps
+ * @returns {Promise<PathResource[]>}
+ */
 async function materializeResources(rawResources, lang, deps) {
   const { searchWikipedia, makeId } = deps;
+  /** @type {PathResource[]} */
   const out = [];
   for (const r of rawResources ?? []) {
     if (r.kind === "wikipedia") {
@@ -66,12 +95,21 @@ async function materializeResources(rawResources, lang, deps) {
 
 // deps: { searchWikipedia(query, lang, limit), makeId() } — injetados pelo
 // chamador (ver pathHandlers.js/claude.ts) porque dependem de plataforma.
+/**
+ * @param {RawUnit[]} rawUnits
+ * @param {string} lang
+ * @param {MaterializeDeps} deps
+ * @returns {Promise<PathUnit[]>}
+ */
 async function materializeUnits(rawUnits, lang, deps) {
   const { makeId } = deps;
+  /** @type {PathUnit[]} */
   const units = [];
+  /** @type {string | null} */
   let previousStepId = null;
   for (const rawUnit of rawUnits) {
     const unitId = makeId();
+    /** @type {PathStep[]} */
     const steps = [];
     let order = units.reduce((acc, u) => acc + u.steps.length, 0);
     for (const rawStep of rawUnit.steps ?? []) {

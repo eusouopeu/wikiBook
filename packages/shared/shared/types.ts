@@ -153,6 +153,14 @@ export interface Flashcard {
   lapses: number;
 }
 
+// Matéria-prima do painel de revisão (flashcards:overview): vencimento de
+// todos os cards e quantas revisões foram feitas por dia local
+// ("AAAA-MM-DD" → contagem). As estatísticas saem de lib/reviewStats.ts.
+export interface ReviewOverview {
+  dueDates: string[];
+  reviewLog: Record<string, number>;
+}
+
 // ── Trilhas de aprendizado (percurso guiado estilo Duolingo) ────────────────
 // Uma LearningPath é gerada a partir de um objetivo em linguagem natural
 // ("quero aprender violão") + um perfil consolidado a partir de uma
@@ -272,6 +280,7 @@ export type IpcChannel =
   | "flashcards:list"
   | "flashcards:listDue"
   | "flashcards:grade"
+  | "flashcards:overview"
   | "config:get"
   | "config:set"
   | "sync:test"

@@ -10,14 +10,19 @@
 import { Filesystem, Directory, Encoding } from "@capacitor/filesystem";
 import { CapacitorHttp } from "@capacitor/core";
 import type { Article, ArticleAttachment, ArticleExcerpt, ArticleHistoryEntry, ExcerptOutlineItem } from "@lexicon/shared";
+// Lógica pura (cache, normalização, histórico, trechos, HTML → Markdown) é
+// compartilhada com o desktop — aqui fica só o I/O via @capacitor/filesystem.
+import * as core from "@lexicon/shared/lib/articleCore.js";
+
+// Reexportado: platform/flashcards.ts e export.ts importam daqui
+export const htmlToMarkdown = core.htmlToMarkdown;
 
 const ARTICLES_DIR = "articles";
 const TRASH_DIR = `${ARTICLES_DIR}/.trash`;
 const HISTORY_DIR = `${ARTICLES_DIR}/.history`;
-const HISTORY_MAX_ENTRIES = 20;
 const ATTACHMENTS_DIR = "attachments";
-// Mesmo limite do desktop (ver articleHandlers.js/MAX_ATTACHMENT_BYTES)
-const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
+// Mesmo limite do desktop (fonte única em articleCore.js)
+const { MAX_ATTACHMENT_BYTES } = core;
 
 async function ensureDir() {
   try {
@@ -81,7 +86,7 @@ async function writeHistory(id: string, entries: ArticleHistoryEntry[]) {
 // Mesma modelagem do desktop: só metadados no JSON do artigo, conteúdo
 // binário em arquivo próprio (attachments/<articleId>/<attachmentId>-<nome>).
 function safeAttachmentName(name: string): string {
-  return name.replace(/[/\\:*?"<>|#^[\]]/g, "-").trim().slice(0, 120) || "arquivo";
+  return core.safeFilename(name, "arquivo");
 }
 function attachmentDirPath(articleId: string) {
   return `${ATTACHMENTS_DIR}/${articleId}`;
@@ -98,12 +103,7 @@ async function ensureAttachmentDir(articleId: string) {
 }
 
 export async function snapshotBeforeSave(oldArticle: Article) {
-  const entries = await readHistory(oldArticle.id);
-  entries.unshift({
-    title: oldArticle.title, content: oldArticle.content,
-    summary: oldArticle.summary, updatedAt: oldArticle.updatedAt,
-  });
-  await writeHistory(oldArticle.id, entries.slice(0, HISTORY_MAX_ENTRIES));
+  await writeHistory(oldArticle.id, core.pushHistorySnapshot(await readHistory(oldArticle.id), oldArticle));
 }
 
 async function readArticle(id: string): Promise<Article | null> {
@@ -111,11 +111,7 @@ async function readArticle(id: string): Promise<Article | null> {
     const res = await Filesystem.readFile({
       path: articlePath(id), directory: Directory.Data, encoding: Encoding.UTF8,
     });
-    const article = JSON.parse(res.data as string) as Article;
-    article.excerpts = article.excerpts ?? [];
-    article.links = article.links ?? [];
-    article.tags = article.tags ?? [];
-    return article;
+    return core.normalizeArticle(JSON.parse(res.data as string) as Article);
   } catch {
     return null;
   }
@@ -150,10 +146,9 @@ async function writeArticle(article: Article) {
 // JSONs a cada article:list. Invalidado (não atualizado incrementalmente) em
 // toda escrita — writeArticle() já cobre a maioria; delete/restore, que usam
 // Filesystem.rename direto sem passar por writeArticle, invalidam explicitamente.
-let articlesCache: Article[] | null = null;
-function invalidateArticlesCache() { articlesCache = null; }
+const articlesCache = core.createListingCache<Article>();
+function invalidateArticlesCache() { articlesCache.invalidate(); }
 
-const TRASH_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;   // 30 dias
 let trashPurged = false;
 
 // Limpeza oportunista de itens da lixeira com mais de 30 dias — roda no
@@ -167,7 +162,7 @@ async function purgeOldTrashOnce() {
     const now = Date.now();
     for (const f of files) {
       if (!f.name.endsWith(".json")) continue;
-      if (now - f.mtime > TRASH_MAX_AGE_MS) {
+      if (core.isTrashExpired(f.mtime, now)) {
         await Filesystem.deleteFile({ path: `${TRASH_DIR}/${f.name}`, directory: Directory.Data });
         try {
           await Filesystem.deleteFile({ path: `${HISTORY_DIR}/${f.name}`, directory: Directory.Data });
@@ -187,7 +182,8 @@ async function purgeOldTrashOnce() {
 async function listAllArticles(): Promise<Article[]> {
   await ensureDir();
   await purgeOldTrashOnce();
-  if (articlesCache) return articlesCache;
+  const cached = articlesCache.get();
+  if (cached) return cached;
   let entries;
   try {
     entries = await Filesystem.readdir({ path: ARTICLES_DIR, directory: Directory.Data });
@@ -199,24 +195,21 @@ async function listAllArticles(): Promise<Article[]> {
     .filter(name => name.endsWith(".json"))
     .map(name => name.replace(/\.json$/, ""));
   const articles = await Promise.all(ids.map(readArticle));
-  articlesCache = articles.filter((a): a is Article => a !== null);
-  return articlesCache;
+  return articlesCache.set(articles.filter((a): a is Article => a !== null));
 }
 
+// Sufixo aleatório do id (Web Crypto) — o resto do slug é puro (articleCore)
+function randomSlugSuffix(): string {
+  return crypto.randomUUID().replace(/-/g, "").slice(0, 4);
+}
 function slugify(title: string): string {
-  const base = title
-    .toLowerCase()
-    .normalize("NFD").replace(/\p{Diacritic}/gu, "")
-    .replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")
-    .slice(0, 60);
-  const rand = crypto.randomUUID().replace(/-/g, "").slice(0, 4);
-  return `${base}-${rand}`;
+  return core.slugify(title, randomSlugSuffix());
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function listArticles(): Promise<Article[]> {
-  return (await listAllArticles()).sort((a, b) => (b.updatedAt ?? "").localeCompare(a.updatedAt ?? ""));
+  return core.sortByUpdatedDesc(await listAllArticles());
 }
 
 export async function getArticle(id: string): Promise<Article> {
@@ -235,11 +228,7 @@ export async function saveArticle(partial: Partial<Article> & { title: string })
     article.excerpts = article.excerpts ?? [];
   } else {
     const previous = await readArticle(article.id);
-    if (previous && (
-      previous.title !== article.title ||
-      previous.summary !== article.summary ||
-      previous.content !== article.content
-    )) {
+    if (previous && core.hasContentChanged(previous, article)) {
       await snapshotBeforeSave(previous);
     }
   }
@@ -346,9 +335,7 @@ export async function deleteArticle(id: string): Promise<void> {
   } catch { /* sync desligado ou indisponível */ }
   // Remove referências ao artigo excluído nos artigos-pai
   for (const art of await listAllArticles()) {
-    const before = art.links.length;
-    art.links = art.links.filter(l => l.targetId !== id);
-    if (art.links.length !== before) await writeArticle(art);
+    if (core.removeLinksTo(art, id)) await writeArticle(art);
   }
 }
 
@@ -390,15 +377,14 @@ export async function listTrash(): Promise<Array<{ id: string; title: string; so
           path: `${TRASH_DIR}/${f.name}`, directory: Directory.Data, encoding: Encoding.UTF8,
         });
         const raw = JSON.parse(res.data as string);
-        return { id: raw.id as string, title: raw.title as string, source: raw.source as Article["source"], deletedAt: new Date(f.mtime).toISOString() };
+        const item = core.trashItemFromRaw(raw, new Date(f.mtime).toISOString());
+        return item as { id: string; title: string; source: Article["source"]; deletedAt: string };
       } catch {
         return null;
       }
     })
   );
-  return items
-    .filter((i): i is NonNullable<typeof i> => i !== null)
-    .sort((a, b) => b.deletedAt.localeCompare(a.deletedAt));
+  return core.sortTrashItems(items.filter((i): i is NonNullable<typeof i> => i !== null));
 }
 
 // Remove em definitivo um artigo da lixeira (arquivo + histórico + anexos).
@@ -416,8 +402,7 @@ export async function addLink(
 ): Promise<Article> {
   const parent = await readArticle(parentId);
   if (!parent) throw new Error("Artigo-pai não encontrado.");
-  const already = parent.links.some(l => l.targetId === targetId && l.anchorText === anchorText);
-  if (already) return parent;
+  if (core.hasLink(parent.links, targetId, anchorText)) return parent;
   parent.links.push({
     id: crypto.randomUUID(), anchorText, targetId, targetTitle,
     createdAt: new Date().toISOString(),
@@ -437,76 +422,9 @@ export async function removeLink(parentId: string, linkId: string): Promise<Arti
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Excerpts — sanitização de HTML/tabela é regex puro, copiado sem alteração
-// de articleHandlers.js (só os helpers de fs/http mudam).
+// Excerpts — sanitização de HTML/tabela e HTML → Markdown vêm de
+// shared/lib/articleCore.js (mesmo código do desktop); aqui só fs/http.
 // ─────────────────────────────────────────────────────────────────────────────
-
-function sanitizeExcerptHtml(html: string): string {
-  return html
-    .replace(/\s+href="[^"]*"/g, "")
-    .replace(/<a\b[^>]*>([\s\S]*?)<\/a>/gi, '<span class="wiki-term">$1</span>')
-    .replace(/\s+style="[^"]*"/g, "")
-    .replace(/\s+class="(?:mw-[^"]*|reference[^"]*)"/g, "")
-    .replace(/<sup[^>]*>[\s\S]*?<\/sup>/gi, "")
-    .trim();
-}
-
-function htmlToPlainText(html: string): string {
-  return html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
-}
-
-function decodeEntities(text: string): string {
-  return text
-    .replace(/&nbsp;/g, " ")
-    .replace(/&quot;/g, '"').replace(/&#39;/g, "'")
-    .replace(/&lt;/g, "<").replace(/&gt;/g, ">")
-    .replace(/&amp;/g, "&");
-}
-
-function htmlTableToMarkdown(html: string): string {
-  const rows: string[][] = [];
-  const rowRegex = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
-  let rowMatch: RegExpExecArray | null;
-  while ((rowMatch = rowRegex.exec(html)) !== null) {
-    const cells: string[] = [];
-    const cellRegex = /<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi;
-    let cellMatch: RegExpExecArray | null;
-    while ((cellMatch = cellRegex.exec(rowMatch[1])) !== null) {
-      const text = decodeEntities(cellMatch[1].replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim());
-      cells.push(text.replace(/\|/g, "\\|"));
-    }
-    if (cells.length) rows.push(cells);
-  }
-  if (rows.length === 0) return "(tabela vazia)";
-
-  const colCount = Math.max(...rows.map(r => r.length));
-  const pad = (r: string[]) => { const copy = [...r]; while (copy.length < colCount) copy.push(""); return copy; };
-  const toLine = (r: string[]) => `| ${pad(r).join(" | ")} |`;
-
-  const header = toLine(rows[0]);
-  const separator = `| ${Array(colCount).fill("---").join(" | ")} |`;
-  const body = rows.slice(1).map(toLine);
-  return [header, separator, ...body].join("\n");
-}
-
-// Conversão pragmática HTML → Markdown, usada pelo gerador de flashcards
-// (platform/flashcards.ts) para reprocessar excerpts salvos como HTML.
-export function htmlToMarkdown(html: string): string {
-  let md = html;
-  md = md.replace(/<h2[^>]*>([\s\S]*?)<\/h2>/gi, "\n## $1\n");
-  md = md.replace(/<h3[^>]*>([\s\S]*?)<\/h3>/gi, "\n### $1\n");
-  md = md.replace(/<h4[^>]*>([\s\S]*?)<\/h4>/gi, "\n#### $1\n");
-  md = md.replace(/<li[^>]*>([\s\S]*?)<\/li>/gi, "- $1\n");
-  md = md.replace(/<(?:b|strong)[^>]*>([\s\S]*?)<\/(?:b|strong)>/gi, "**$1**");
-  md = md.replace(/<(?:i|em)[^>]*>([\s\S]*?)<\/(?:i|em)>/gi, "*$1*");
-  md = md.replace(/<p[^>]*>([\s\S]*?)<\/p>/gi, "\n$1\n");
-  md = md.replace(/<br\s*\/?>/gi, "\n");
-  md = md.replace(/<img[^>]*>/gi, "");
-  md = md.replace(/<[^>]+>/g, "");
-  md = decodeEntities(md);
-  md = md.replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n");
-  return md.trim();
-}
 
 interface AppendExcerptArgs {
   targetId?: string | null; targetTitle?: string;
@@ -517,23 +435,13 @@ interface AppendExcerptArgs {
 export async function appendExcerpt(args: AppendExcerptArgs): Promise<Article> {
   const { targetId, targetTitle, html, kind = "text", category = "default", sourceArticleId, sourceArticleTitle } = args;
   const now = new Date().toISOString();
-  const cleanHtml = sanitizeExcerptHtml(html);
-  const plainText = kind === "table" ? htmlTableToMarkdown(cleanHtml) : htmlToPlainText(cleanHtml);
+  const { cleanHtml, plainText } = core.prepareExcerpt(html, kind);
 
-  let target = targetId ? await readArticle(targetId) : null;
-  if (!target) {
-    target = {
-      id: slugify(targetTitle || "notas-pessoais"),
-      title: targetTitle || "Notas pessoais",
-      source: "manual",
-      content: "", summary: "", links: [], excerpts: [], tags: [],
-      createdAt: now, updatedAt: now,
-    };
-  }
+  const target: Article = (targetId ? await readArticle(targetId) : null)
+    ?? core.createNotesArticle(targetTitle, now, randomSlugSuffix());
   target.excerpts = target.excerpts ?? [];
 
-  const alreadyExists = target.excerpts.some(e => e.plainText === plainText && e.sourceArticleId === sourceArticleId);
-  if (alreadyExists) return target;
+  if (core.isDuplicateExcerpt(target.excerpts, "text", plainText, sourceArticleId)) return target;
 
   target.excerpts.push({
     id: crypto.randomUUID(), kind, category, html: cleanHtml, plainText,
@@ -573,27 +481,13 @@ export async function appendImage(args: AppendImageArgs): Promise<Article> {
   }
 
   const now = new Date().toISOString();
-  const dataUri = `data:${mime};base64,${res.data}`;
-  const safeAlt = alt.replace(/"/g, "&quot;");
-  const html = `<img src="${dataUri}" alt="${safeAlt}">`;
-  const plainText = alt || "Imagem salva";
+  const { html, plainText } = core.buildImageExcerptHtml(mime, res.data, alt);
 
-  let target = targetId ? await readArticle(targetId) : null;
-  if (!target) {
-    target = {
-      id: slugify(targetTitle || "notas-pessoais"),
-      title: targetTitle || "Notas pessoais",
-      source: "manual",
-      content: "", summary: "", links: [], excerpts: [], tags: [],
-      createdAt: now, updatedAt: now,
-    };
-  }
+  const target: Article = (targetId ? await readArticle(targetId) : null)
+    ?? core.createNotesArticle(targetTitle, now, randomSlugSuffix());
   target.excerpts = target.excerpts ?? [];
 
-  const alreadyExists = target.excerpts.some(
-    e => e.kind === "image" && e.sourceArticleId === sourceArticleId && e.plainText === plainText
-  );
-  if (alreadyExists) return target;
+  if (core.isDuplicateExcerpt(target.excerpts, "image", plainText, sourceArticleId)) return target;
 
   target.excerpts.push({
     id: crypto.randomUUID(), kind: "image", html, plainText,
@@ -607,10 +501,7 @@ export async function appendImage(args: AppendImageArgs): Promise<Article> {
 export async function removeExcerpt(targetId: string, excerptId: string): Promise<Article> {
   const target = await readArticle(targetId);
   if (!target) throw new Error("Artigo não encontrado.");
-  target.excerpts = (target.excerpts ?? []).filter(e => e.id !== excerptId);
-  if (target.excerptOutline) {
-    target.excerptOutline = target.excerptOutline.filter(item => !(item.type === "excerpt" && item.id === excerptId));
-  }
+  core.removeExcerptFromArticle(target, excerptId);
   target.updatedAt = new Date().toISOString();
   await writeArticle(target);
   return target;

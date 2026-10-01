@@ -142,6 +142,8 @@ async function invoke(channel: string, payload?: any): Promise<IpcResponse> {
         return { ok: true, data: await flashcards.listDue() };
       case "flashcards:grade":
         return { ok: true, data: await flashcards.grade(payload.articleId, payload.cardId, payload.grade) };
+      case "flashcards:overview":
+        return { ok: true, data: await flashcards.overview() };
 
       case "article:exportFlashcardsCsv":
         return { ok: true, data: await exporter.exportFlashcardsCsv() };

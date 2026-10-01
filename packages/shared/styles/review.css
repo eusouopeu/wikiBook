@@ -1,0 +1,77 @@
+/* ── Painel de revisão diária (components/ReviewDashboard.tsx) ─────────── */
+.review-dashboard {
+  display: flex;
+  flex-direction: column;
+  font-family: var(--font-ui);
+  gap: 24px;
+  margin: 0 auto;
+  max-width: 640px;
+  overflow-y: auto;
+  padding: 24px 16px 48px;
+  width: 100%;
+}
+
+.review-muted { color: var(--fg3); font-size: 13px; margin: 8px 0 0; }
+
+.review-hero {
+  align-items: center;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius);
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  padding: 16px;
+}
+.review-hero-count { display: flex; flex-direction: column; }
+.review-hero-count strong { color: var(--fg); font-size: 32px; font-weight: 600; line-height: 1.1; }
+.review-hero-count span { color: var(--fg2); font-size: 13px; }
+
+.review-stats { display: grid; gap: 8px; grid-template-columns: repeat(3, 1fr); }
+.review-stat {
+  background: var(--bg-sidebar);
+  border-radius: var(--radius);
+  display: flex;
+  flex-direction: column;
+  padding: 12px;
+}
+.review-stat strong { color: var(--fg); font-size: 18px; font-weight: 600; }
+.review-stat span { color: var(--fg3); font-size: 12px; }
+
+.review-section h3 {
+  color: var(--fg2);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  margin: 0 0 8px;
+  text-transform: uppercase;
+}
+
+/* Mapa de calor: uma coluna por semana (domingo → sábado), igual ao GitHub */
+.review-heatmap { display: flex; gap: 3px; overflow-x: auto; padding-bottom: 4px; }
+.review-heatmap-labels,
+.review-heatmap-week { display: grid; gap: 3px; grid-template-rows: repeat(7, 12px); }
+.review-heatmap-labels span { color: var(--fg3); font-size: 9px; line-height: 12px; padding-right: 2px; }
+.review-heatmap-cell {
+  background: var(--bg-hover);
+  border-radius: 2px;
+  height: 12px;
+  width: 12px;
+}
+.review-heatmap-cell.level-1 { background: color-mix(in srgb, var(--accent) 30%, transparent); }
+.review-heatmap-cell.level-2 { background: color-mix(in srgb, var(--accent) 55%, transparent); }
+.review-heatmap-cell.level-3 { background: color-mix(in srgb, var(--accent) 78%, transparent); }
+.review-heatmap-cell.level-4 { background: var(--accent); }
+.review-heatmap-cell.future { background: transparent; }
+.review-heatmap-cell.today { outline: 1px solid var(--fg2); outline-offset: 1px; }
+
+.review-upcoming { display: flex; flex-direction: column; gap: 4px; list-style: none; margin: 0; padding: 0; }
+.review-upcoming li { align-items: center; display: grid; font-size: 13px; gap: 8px; grid-template-columns: 72px 1fr 32px; }
+.review-upcoming-day { color: var(--fg2); text-transform: capitalize; }
+.review-upcoming-bar { background: var(--bg-hover); border-radius: 2px; height: 8px; overflow: hidden; }
+.review-upcoming-bar i { background: var(--accent); display: block; height: 100%; }
+.review-upcoming-count { color: var(--fg2); text-align: right; }
+
+@media (max-width: 480px) {
+  .review-hero { align-items: stretch; flex-direction: column; }
+  .review-stat strong { font-size: 16px; }
+}

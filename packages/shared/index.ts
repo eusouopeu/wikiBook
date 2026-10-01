@@ -5,10 +5,12 @@
 // destas peças; só o host (Electron IPC vs. Capacitor plugins) muda.
 // ─────────────────────────────────────────────────────────────────────────────
 
-export { default as App, GraphLegend } from "./App";
+export { default as App } from "./App";
+export { GraphLegend } from "./components/GraphLegend";
 export { useStore, computeLocalSubgraph } from "./store/useStore";
 export { ArticleView } from "./components/ArticleView";
 export { ReviewModal } from "./components/ReviewModal";
+export { ReviewDashboard } from "./components/ReviewDashboard";
 export { GraphView } from "./components/GraphView";
 export { PathView } from "./components/PathView";
 export { FolderPicker } from "./components/FolderPicker";

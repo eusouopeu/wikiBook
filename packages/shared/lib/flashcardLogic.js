@@ -1,3 +1,4 @@
+// @ts-check
 // ─────────────────────────────────────────────────────────────────────────────
 // packages/shared/lib/flashcardLogic.js
 // Parser de flashcards (texto Markdown → rascunhos) e agendamento SM-2
@@ -26,7 +27,27 @@
 // CommonJS plano, mesmo padrão de claudePrompts.js/pathMaterialize.js:
 // require() direto no main do Electron, import com interop do esbuild no
 // mobile (quando/se essa duplicação for removida do lado mobile também).
+// Tipado via JSDoc + `// @ts-check`.
 // ─────────────────────────────────────────────────────────────────────────────
+
+/** @typedef {import("../shared/types").Flashcard} Flashcard */
+/** @typedef {import("../shared/types").FlashcardGrade} FlashcardGrade */
+// Campos de agendamento SM-2 de um Flashcard.
+/** @typedef {Pick<Flashcard, "due" | "interval" | "ease" | "reps" | "lapses">} Schedule */
+
+// Rascunho de card (antes de virar Flashcard com id/agendamento).
+// Um membro por `kind` literal (e não `kind: "a" | "b"`) para o TS conseguir
+// estreitar a união nos ramos else de flattenDraftsForExport.
+/** @typedef {{ kind: "cloze"; clozeText: string; sourceLine: string }} ClozeLineDraft */
+/** @typedef {{ kind: "enum-cloze"; clozeText: string; sourceLine: string }} EnumClozeDraft */
+/** @typedef {ClozeLineDraft | EnumClozeDraft} ClozeDraft */
+/** @typedef {{ kind: "basic"; front: string; back: string; sourceLine: string }} BasicDraft */
+/** @typedef {{ kind: "reversed"; front: string; back: string; sourceLine: string }} ReversedDraft */
+/** @typedef {{ kind: "qa"; front: string; back: string; sourceLine: string }} QADraft */
+/** @typedef {BasicDraft | ReversedDraft | QADraft} FrontBackDraft */
+/** @typedef {ClozeDraft | FrontBackDraft} FlashcardDraft */
+/** @typedef {{ marker: string; content: string }} ListItem */
+/** @typedef {{ front: string; back: string }} ExportCard */
 
 // Marcadores de lista, ordenada ou não: bullets ("-" "*" "•"), números ("1."
 // "2)"), romanos ("i." "iv)" — minúsculo ou maiúsculo) e letras ("a)" "b.").
@@ -39,6 +60,12 @@ const ENUM_INLINE_RE = /(?:^|\s)(\d{1,2}[.)]|[ivxlcdm]{1,4}[.)]|[A-Za-zÀ-ÿ][.)
 // Monta um card cloze de lista: cada item vira {{c1::…}} com o marcador visível.
 // `stem` (parágrafo-guia logo acima da lista, se houver) é exibido intacto na
 // frente do card, acima dos itens escondidos.
+/**
+ * @param {ListItem[]} items
+ * @param {string} sourceText
+ * @param {string | null} [stem]
+ * @returns {EnumClozeDraft}
+ */
 function buildEnumCloze(items, sourceText, stem) {
   const body = items.map(it => `${it.marker} {{c1::${it.content}}}`).join("\n");
   const clozeText = stem ? `${stem}\n${body}` : body;
@@ -47,6 +74,11 @@ function buildEnumCloze(items, sourceText, stem) {
 
 // Coleta uma sequência de 2+ linhas de lista a partir de `start`. Retorna
 // { items, runLines, end } ou null se não houver uma lista de 2+ itens ali.
+/**
+ * @param {string[]} lines
+ * @param {number} start
+ * @returns {{ items: ListItem[]; runLines: string[]; end: number } | null}
+ */
 function collectListRun(lines, start) {
   const first = start < lines.length ? lines[start].trim() : "";
   if (!first || !ENUM_LINE_RE.test(first)) return null;
@@ -58,7 +90,8 @@ function collectListRun(lines, start) {
   }
   if (runLines.length < 2) return null;
   const items = runLines.map(l => {
-    const m = l.match(ENUM_LINE_RE);
+    // runLines só contém linhas que já passaram em ENUM_LINE_RE.test
+    const m = /** @type {RegExpMatchArray} */ (l.match(ENUM_LINE_RE));
     return { marker: m[1], content: m[2].trim() };
   });
   return { items, runLines, end: j };
@@ -67,6 +100,7 @@ function collectListRun(lines, start) {
 // Substitui o conteúdo de atributos de span ({bg=...}, {color=...}, {.def}…)
 // por placeholders do mesmo tamanho — o "=" interno deles não pode ser
 // confundido com o separador de flashcard básico/invertido
+/** @param {string} text @returns {string} */
 function maskSpanAttrs(text) {
   return text.replace(/\{[^}]*\}/g, m => " ".repeat(m.length));
 }
@@ -74,6 +108,7 @@ function maskSpanAttrs(text) {
 // Interpreta uma única linha como card cloze, invertido ou básico.
 // Retorna null se a linha não casar nenhum padrão. Detecção de separadores
 // roda sobre a versão mascarada; o conteúdo dos cards vem da linha original.
+/** @param {string} line @returns {FlashcardDraft | null} */
 function parseLineForCard(line) {
   const trimmed = line.trim();
   if (!trimmed) return null;
@@ -120,11 +155,19 @@ function parseLineForCard(line) {
 // pergunta; o ":" é descartado). O verso vai até a primeira linha vazia.
 // O "\s+" exigido após o delimitador evita casar "http://…", "3:30", etc.
 // Retorna { draft, next } (índice da próxima linha a processar) ou null.
+/**
+ * @param {string[]} lines
+ * @param {number} i
+ * @returns {{ draft: QADraft; next: number } | null}
+ */
 function parseQA(lines, i) {
   const line = lines[i].trim();
   if (!line) return null;
 
-  let front, firstBackLine = null;
+  /** @type {string} */
+  let front;
+  /** @type {string | null} */
+  let firstBackLine = null;
   const inline = line.match(/^(.+?)([?:])\s+(\S.*)$/);
   if (inline) {
     front = inline[1].trim() + (inline[2] === "?" ? "?" : "");
@@ -153,7 +196,9 @@ function parseQA(lines, i) {
 // enumeração viram um único card cloze simultâneo; uma linha isolada com 2+
 // marcadores inline ("a) x b) y") faz o mesmo. Linhas restantes são avaliadas
 // individualmente (cloze "==", invertido "==" solto, básico "=" solto).
+/** @param {string} text @returns {FlashcardDraft[]} */
 function parseFlashcardsFromText(text) {
+  /** @type {FlashcardDraft[]} */
   const drafts = [];
   const lines = text.split("\n");
   let i = 0;
@@ -184,10 +229,12 @@ function parseFlashcardsFromText(text) {
     // Enumeração inline (2+ itens na mesma linha)
     const inlineMatches = [...trimmed.matchAll(ENUM_INLINE_RE)];
     if (inlineMatches.length >= 2) {
+      /** @type {ListItem[]} */
       const items = [];
+      // matchAll sempre preenche `index` (o tipo do lib.d.ts é que o deixa opcional)
       for (let k = 0; k < inlineMatches.length; k++) {
-        const start = inlineMatches[k].index + inlineMatches[k][0].length;
-        const end = k + 1 < inlineMatches.length ? inlineMatches[k + 1].index : trimmed.length;
+        const start = /** @type {number} */ (inlineMatches[k].index) + inlineMatches[k][0].length;
+        const end = k + 1 < inlineMatches.length ? /** @type {number} */ (inlineMatches[k + 1].index) : trimmed.length;
         const content = trimmed.slice(start, end).trim();
         if (content) items.push({ marker: inlineMatches[k][1], content });
       }
@@ -214,7 +261,9 @@ function parseFlashcardsFromText(text) {
 // no app (um card por grupo de cloze presente, duas direções para
 // "reversed"), mas sem estado de agendamento. Usado pela exportação CSV para
 // Anki, para que o card exportado seja o mesmo que o usuário revisa aqui.
+/** @param {FlashcardDraft[]} drafts @returns {ExportCard[]} */
 function flattenDraftsForExport(drafts) {
+  /** @type {ExportCard[]} */
   const cards = [];
   for (const draft of drafts) {
     if (draft.kind === "reversed") {
@@ -244,10 +293,17 @@ function flattenDraftsForExport(drafts) {
 // SM-2 simplificado
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** @param {string} now @returns {Schedule} */
 function makeDefaultSchedule(now) {
   return { due: now, interval: 0, ease: 2.5, reps: 0, lapses: 0 };
 }
 
+/**
+ * @template {Schedule} T
+ * @param {T} card
+ * @param {FlashcardGrade} grade
+ * @returns {T}
+ */
 function gradeCard(card, grade) {
   let { interval, ease, reps, lapses } = card;
 

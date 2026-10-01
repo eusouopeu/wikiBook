@@ -8,6 +8,12 @@ const path    = require("path");
 const crypto  = require("crypto");
 const https   = require("https");
 const { URL } = require("url");
+// Lógica pura (cache, normalização, histórico, trechos, HTML → Markdown, .md
+// Obsidian) é compartilhada com o mobile — aqui fica só o I/O de arquivo.
+const core = require("../../../../shared/lib/articleCore");
+const {
+  MAX_ATTACHMENT_BYTES, htmlToMarkdown, articleToMarkdown, safeFilename, extFromMime, csvEscape,
+} = core;
 
 const DATA_DIR = path.join(app.getPath("userData"), "articles");
 const TRASH_DIR = path.join(DATA_DIR, ".trash");
@@ -15,14 +21,6 @@ const HISTORY_DIR = path.join(DATA_DIR, ".history");
 const ATTACHMENTS_DIR = path.join(app.getPath("userData"), "attachments");
 const FLASHCARDS_DIR = path.join(app.getPath("userData"), "flashcards");
 const FLASHCARDS_TRASH_DIR = path.join(FLASHCARDS_DIR, ".trash");
-// Tamanho máximo por anexo — protege contra travar o processo main
-// serializando/gravando um arquivo enorme vindo do renderer como base64.
-const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
-const TRASH_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;   // 30 dias
-// Snapshots de versão guardados por artigo — cap alto o bastante para cobrir
-// uma sessão de edição longa, sem deixar o arquivo de histórico crescer sem
-// limite (cada snapshot guarda content/summary inteiros).
-const HISTORY_MAX_ENTRIES = 20;
 
 function ensureDataDir() {
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -56,14 +54,7 @@ function writeHistory(id, entries) {
 // só quando title/summary/content de fato mudaram, para não acumular uma
 // entrada idêntica a cada clique em "Salvar" sem edição real.
 function snapshotBeforeSave(oldArticle) {
-  const entries = readHistory(oldArticle.id);
-  entries.unshift({
-    title: oldArticle.title,
-    content: oldArticle.content,
-    summary: oldArticle.summary,
-    updatedAt: oldArticle.updatedAt,
-  });
-  writeHistory(oldArticle.id, entries.slice(0, HISTORY_MAX_ENTRIES));
+  writeHistory(oldArticle.id, core.pushHistorySnapshot(readHistory(oldArticle.id), oldArticle));
 }
 
 // Limpeza oportunista de itens da lixeira com mais de 30 dias — roda no
@@ -78,7 +69,7 @@ function purgeOldTrashOnce() {
     for (const f of fs.readdirSync(TRASH_DIR)) {
       if (!f.endsWith(".json")) continue;
       const p = path.join(TRASH_DIR, f);
-      if (now - fs.statSync(p).mtimeMs > TRASH_MAX_AGE_MS) {
+      if (core.isTrashExpired(fs.statSync(p).mtimeMs, now)) {
         fs.unlinkSync(p);
         const hp = path.join(HISTORY_DIR, f);
         if (fs.existsSync(hp)) fs.unlinkSync(hp);
@@ -93,11 +84,7 @@ function readArticle(id) {
   const p = articlePath(id);
   if (!fs.existsSync(p)) return null;
   try {
-    const art = JSON.parse(fs.readFileSync(p, "utf8"));
-    art.excerpts = art.excerpts ?? [];
-    art.links    = art.links    ?? [];
-    art.tags     = art.tags     ?? [];
-    return art;
+    return core.normalizeArticle(JSON.parse(fs.readFileSync(p, "utf8")));
   } catch { return null; }
 }
 
@@ -120,105 +107,28 @@ function writeArticle(article) {
 // de forma síncrona). Invalidado (não atualizado incrementalmente) em toda
 // escrita — writeArticle() já cobre a maioria; delete/restore, que fazem
 // rename direto sem passar por writeArticle, invalidam explicitamente.
-let articlesCache = null;
-function invalidateArticlesCache() { articlesCache = null; }
+const articlesCache = core.createListingCache();
+function invalidateArticlesCache() { articlesCache.invalidate(); }
 
 // Lê todos os artigos do disco — usado por list/export/flashcards
 function listAllArticles() {
   ensureDataDir();
   purgeOldTrashOnce();
-  if (articlesCache) return articlesCache;
-  articlesCache = fs.readdirSync(DATA_DIR)
+  const cached = articlesCache.get();
+  if (cached) return cached;
+  return articlesCache.set(fs.readdirSync(DATA_DIR)
     .filter(f => f.endsWith(".json"))
     .map(f => readArticle(f.replace(".json", "")))
-    .filter(Boolean);
-  return articlesCache;
+    .filter(Boolean));
 }
 
-function slugify(title) {
-  const base = title.toLowerCase()
-    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 60);
-  return `${base}-${crypto.randomBytes(2).toString("hex")}`;
-}
+// Sufixo aleatório do id (Node crypto) — o resto do slug é puro (articleCore)
+function randomSlugSuffix() { return crypto.randomBytes(2).toString("hex"); }
+function slugify(title) { return core.slugify(title, randomSlugSuffix()); }
 
-// ── Sanitiza HTML de um trecho mantendo formatação, removendo hrefs ───────────
-// Recebe HTML bruto da seleção (pode conter <a href>, <b>, <i>, <sup>, etc.)
-// Devolve HTML limpo: <a> → <span class="wiki-term">, hrefs removidos
-function sanitizeExcerptHtml(html) {
-  return html
-    // Remove atributos href de qualquer elemento
-    .replace(/\s+href="[^"]*"/g, "")
-    // Converte <a ...>texto</a> em <span class="wiki-term">texto</span>
-    .replace(/<a\b[^>]*>([\s\S]*?)<\/a>/gi,
-      '<span class="wiki-term">$1</span>')
-    // Remove atributos style e class ruidosos mas mantém a tag
-    .replace(/\s+style="[^"]*"/g, "")
-    .replace(/\s+class="(?:mw-[^"]*|reference[^"]*)"/g, "")
-    // Remove referências numéricas <sup>
-    .replace(/<sup[^>]*>[\s\S]*?<\/sup>/gi, "")
-    .trim();
-}
-
-// ── Extrai texto puro de um fragmento HTML (para prévia e deduplicação) ───────
-function htmlToPlainText(html) {
-  return html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
-}
-
-// ── Conversão pragmática HTML → Markdown (para exportação) ───────────────────
-function decodeEntities(text) {
-  return text
-    .replace(/&nbsp;/g, " ")
-    .replace(/&quot;/g, '"').replace(/&#39;/g, "'")
-    .replace(/&lt;/g, "<").replace(/&gt;/g, ">")
-    .replace(/&amp;/g, "&");
-}
-
-function htmlToMarkdown(html) {
-  let md = html;
-  md = md.replace(/<h2[^>]*>([\s\S]*?)<\/h2>/gi, "\n## $1\n");
-  md = md.replace(/<h3[^>]*>([\s\S]*?)<\/h3>/gi, "\n### $1\n");
-  md = md.replace(/<h4[^>]*>([\s\S]*?)<\/h4>/gi, "\n#### $1\n");
-  md = md.replace(/<li[^>]*>([\s\S]*?)<\/li>/gi, "- $1\n");
-  md = md.replace(/<(?:b|strong)[^>]*>([\s\S]*?)<\/(?:b|strong)>/gi, "**$1**");
-  md = md.replace(/<(?:i|em)[^>]*>([\s\S]*?)<\/(?:i|em)>/gi, "*$1*");
-  md = md.replace(/<p[^>]*>([\s\S]*?)<\/p>/gi, "\n$1\n");
-  md = md.replace(/<br\s*\/?>/gi, "\n");
-  md = md.replace(/<img[^>]*>/gi, "");
-  md = md.replace(/<[^>]+>/g, "");           // remove tags restantes
-  md = decodeEntities(md);
-  md = md.replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n");
-  return md.trim();
-}
-
-// ── Tabela HTML → tabela Markdown (preserva linhas e colunas) ─────────────────
-// Usada tanto para o plainText do excerpt (busca/prévia) quanto na exportação —
-// já sai pronta como sintaxe de tabela Markdown, sem reconversão.
-function htmlTableToMarkdown(html) {
-  const rows = [];
-  const rowRegex = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
-  let rowMatch;
-  while ((rowMatch = rowRegex.exec(html)) !== null) {
-    const cells = [];
-    const cellRegex = /<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi;
-    let cellMatch;
-    while ((cellMatch = cellRegex.exec(rowMatch[1])) !== null) {
-      const text = decodeEntities(cellMatch[1].replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim());
-      cells.push(text.replace(/\|/g, "\\|"));   // escapa pipes literais no conteúdo
-    }
-    if (cells.length) rows.push(cells);
-  }
-  if (rows.length === 0) return "(tabela vazia)";
-
-  const colCount = Math.max(...rows.map(r => r.length));
-  const pad = (r) => { const copy = [...r]; while (copy.length < colCount) copy.push(""); return copy; };
-  const toLine = (r) => `| ${pad(r).join(" | ")} |`;
-
-  const header = toLine(rows[0]);
-  const separator = `| ${Array(colCount).fill("---").join(" | ")} |`;
-  const body = rows.slice(1).map(toLine);
-  return [header, separator, ...body].join("\n");
-}
+// sanitizeExcerptHtml/htmlToPlainText/htmlToMarkdown/htmlTableToMarkdown,
+// safeFilename/extFromMime/csvEscape e articleToMarkdown vivem em
+// shared/lib/articleCore.js (mesma lógica do mobile).
 
 // ── Download binário com redirecionamento e limite de tamanho ────────────────
 const IMAGE_MAX_BYTES = 8 * 1024 * 1024;   // 8MB — evita JSONs desproporcionais
@@ -271,24 +181,6 @@ function dataUriToBuffer(dataUri) {
   return { mime: match[1], buffer: Buffer.from(match[2], "base64") };
 }
 
-const MIME_EXT = {
-  "image/png": "png", "image/jpeg": "jpg", "image/gif": "gif",
-  "image/webp": "webp", "image/svg+xml": "svg",
-};
-function extFromMime(mime) { return MIME_EXT[mime] ?? "png"; }
-
-// CSV (delimitador ";", padrão de importação do Anki em pt-BR): aspas duplas
-// ao redor de campos com ";", aspas ou quebra de linha
-function csvEscape(field) {
-  const s = String(field ?? "");
-  return /[";\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
-}
-
-// Nome de arquivo seguro a partir do título (mantém espaços — padrão Obsidian)
-function safeFilename(title) {
-  return title.replace(/[/\\:*?"<>|#^[\]]/g, "-").trim().slice(0, 120) || "sem-titulo";
-}
-
 // ── Anexos (imagem/PDF) de um artigo ────────────────────────────────────────
 // Guardados fora do JSON do artigo, um arquivo por anexo em
 // attachments/<articleId>/<attachmentId>-<nome-seguro> — só metadados
@@ -305,76 +197,13 @@ function storedAttachmentPath(articleId, attachmentId, name) {
   return path.join(attachmentDir(articleId), `${attachmentId}-${safeFilename(name)}`);
 }
 
-// Monta o .md de um artigo no formato Obsidian (frontmatter + wikilinks)
-// imageAssetPaths: Map<excerptId, caminho relativo em assets/> já gravado em disco
-function articleToMarkdown(article, imageAssetPaths = new Map()) {
-  const lines = [];
-  lines.push("---");
-  lines.push(`title: "${article.title.replace(/"/g, '\\"')}"`);
-  lines.push(`source: ${article.source}`);
-  if (article.tags?.length) lines.push(`tags: [${article.tags.join(", ")}]`);
-  lines.push(`created: ${article.createdAt ?? ""}`);
-  lines.push(`updated: ${article.updatedAt ?? ""}`);
-  lines.push("---", "");
-
-  if (article.summary) {
-    lines.push("## Resumo", "");
-    for (const l of article.summary.split("\n").filter(Boolean)) {
-      lines.push(l.startsWith("•") ? l.replace(/^•\s*/, "- ") : `- ${l}`);
-    }
-    lines.push("");
-  }
-
-  if (article.content) {
-    lines.push("## Conteúdo", "");
-    // Artigos manuais já são Markdown; os demais são HTML e precisam de conversão
-    lines.push(article.source === "manual" ? article.content : htmlToMarkdown(article.content));
-    lines.push("");
-  }
-
-  if (article.links?.length) {
-    lines.push("## Conceitos vinculados", "");
-    for (const link of article.links) {
-      lines.push(`- [[${safeFilename(link.targetTitle)}]] — "${link.anchorText}"`);
-    }
-    lines.push("");
-  }
-
-  if (article.excerpts?.length) {
-    lines.push("## Trechos salvos", "");
-    const CATEGORY_TAG = { concept: "conceito", list: "lista", numeric: "dados" };
-    for (const ex of article.excerpts) {
-      const kind = ex.kind ?? "text";
-      const catTag = CATEGORY_TAG[ex.category];   // undefined para "default"/ausente
-      if (kind === "image") {
-        const assetPath = imageAssetPaths.get(ex.id);
-        lines.push(assetPath ? `![${ex.plainText || "imagem"}](${assetPath})` : "_(imagem não exportada)_");
-        lines.push(`— de [[${safeFilename(ex.sourceArticleTitle)}]]`, "");
-      } else if (kind === "table") {
-        // Edição célula a célula sobrescreve a captura original
-        lines.push(ex.editedMarkdown ?? ex.plainText);
-        lines.push(`\n— de [[${safeFilename(ex.sourceArticleTitle)}]]${catTag ? ` #${catTag}` : ""}`, "");
-      } else {
-        // Trecho editado: exporta o markdown editado (com == e negrito); os
-        // marcadores "(...)"/itálico de edição são markdown válido
-        const body = ex.editedMarkdown ?? ex.plainText;
-        for (const line of body.split("\n")) lines.push(`> ${line}`);
-        lines.push(`> — de [[${safeFilename(ex.sourceArticleTitle)}]]${catTag ? ` #${catTag}` : ""}`, "");
-      }
-    }
-  }
-
-  return lines.join("\n").replace(/\n{3,}/g, "\n\n").trim() + "\n";
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 
 function createArticleHandlers(ipcMain) {
 
   ipcMain.handle("article:list", () => {
     try {
-      const articles = listAllArticles()
-        .sort((a, b) => (b.updatedAt ?? "").localeCompare(a.updatedAt ?? ""));
+      const articles = core.sortByUpdatedDesc(listAllArticles());
       return { ok: true, data: articles };
     } catch (e) { return { ok: false, error: e.message }; }
   });
@@ -395,11 +224,7 @@ function createArticleHandlers(ipcMain) {
         article.excerpts = article.excerpts ?? [];
       } else {
         const previous = readArticle(article.id);
-        if (previous && (
-          previous.title !== article.title ||
-          previous.summary !== article.summary ||
-          previous.content !== article.content
-        )) {
+        if (previous && core.hasContentChanged(previous, article)) {
           snapshotBeforeSave(previous);
         }
       }
@@ -455,9 +280,7 @@ function createArticleHandlers(ipcMain) {
       fs.readdirSync(DATA_DIR).filter(f => f.endsWith(".json")).forEach(f => {
         const art = readArticle(f.replace(".json", ""));
         if (!art) return;
-        const before = art.links.length;
-        art.links = art.links.filter(l => l.targetId !== id);
-        if (art.links.length !== before) writeArticle(art);
+        if (core.removeLinksTo(art, id)) writeArticle(art);
       });
       // Move (não apaga) os flashcards órfãos deste artigo, para restaurar junto
       const flashcardsPath = path.join(FLASHCARDS_DIR, `${id}.json`);
@@ -513,12 +336,11 @@ function createArticleHandlers(ipcMain) {
           try {
             const raw = JSON.parse(fs.readFileSync(path.join(TRASH_DIR, f), "utf8"));
             const deletedAt = fs.statSync(path.join(TRASH_DIR, f)).mtime.toISOString();
-            return { id: raw.id, title: raw.title, source: raw.source, deletedAt };
+            return core.trashItemFromRaw(raw, deletedAt);
           } catch { return null; }
         })
-        .filter(Boolean)
-        .sort((a, b) => b.deletedAt.localeCompare(a.deletedAt));
-      return { ok: true, data: items };
+        .filter(Boolean);
+      return { ok: true, data: core.sortTrashItems(items) };
     } catch (e) { return { ok: false, error: e.message }; }
   });
 
@@ -541,10 +363,7 @@ function createArticleHandlers(ipcMain) {
     try {
       const parent = readArticle(parentId);
       if (!parent) return { ok: false, error: "Artigo-pai não encontrado." };
-      const already = parent.links.some(
-        l => l.targetId === targetId && l.anchorText === anchorText
-      );
-      if (already) return { ok: true, data: parent };
+      if (core.hasLink(parent.links, targetId, anchorText)) return { ok: true, data: parent };
       parent.links.push({ id: crypto.randomUUID(), anchorText, targetId, targetTitle,
                           createdAt: new Date().toISOString() });
       parent.updatedAt = new Date().toISOString();
@@ -575,26 +394,13 @@ function createArticleHandlers(ipcMain) {
   }) => {
     try {
       const now        = new Date().toISOString();
-      const cleanHtml  = sanitizeExcerptHtml(html);
-      const plainText  = kind === "table" ? htmlTableToMarkdown(cleanHtml) : htmlToPlainText(cleanHtml);
+      const { cleanHtml, plainText } = core.prepareExcerpt(html, kind);
 
-      let target = targetId ? readArticle(targetId) : null;
-      if (!target) {
-        target = {
-          id: slugify(targetTitle || "notas-pessoais"),
-          title: targetTitle || "Notas pessoais",
-          source: "manual",
-          content: "", summary: "", links: [], excerpts: [], tags: [],
-          createdAt: now, updatedAt: now,
-        };
-      }
+      const target = (targetId ? readArticle(targetId) : null) ?? core.createNotesArticle(targetTitle, now, randomSlugSuffix());
       target.excerpts = target.excerpts ?? [];
 
       // Deduplicação por texto puro
-      const alreadyExists = target.excerpts.some(
-        e => e.plainText === plainText && e.sourceArticleId === sourceArticleId
-      );
-      if (alreadyExists) return { ok: true, data: target };
+      if (core.isDuplicateExcerpt(target.excerpts, "text", plainText, sourceArticleId)) return { ok: true, data: target };
 
       target.excerpts.push({
         id: crypto.randomUUID(),
@@ -629,27 +435,12 @@ function createArticleHandlers(ipcMain) {
       }
 
       const now = new Date().toISOString();
-      const dataUri = `data:${mime};base64,${buffer.toString("base64")}`;
-      const safeAlt = alt.replace(/"/g, "&quot;");
-      const html = `<img src="${dataUri}" alt="${safeAlt}">`;
-      const plainText = alt || "Imagem salva";
+      const { html, plainText } = core.buildImageExcerptHtml(mime, buffer.toString("base64"), alt);
 
-      let target = targetId ? readArticle(targetId) : null;
-      if (!target) {
-        target = {
-          id: slugify(targetTitle || "notas-pessoais"),
-          title: targetTitle || "Notas pessoais",
-          source: "manual",
-          content: "", summary: "", links: [], excerpts: [], tags: [],
-          createdAt: now, updatedAt: now,
-        };
-      }
+      const target = (targetId ? readArticle(targetId) : null) ?? core.createNotesArticle(targetTitle, now, randomSlugSuffix());
       target.excerpts = target.excerpts ?? [];
 
-      const alreadyExists = target.excerpts.some(
-        e => e.kind === "image" && e.sourceArticleId === sourceArticleId && e.plainText === plainText
-      );
-      if (alreadyExists) return { ok: true, data: target };
+      if (core.isDuplicateExcerpt(target.excerpts, "image", plainText, sourceArticleId)) return { ok: true, data: target };
 
       target.excerpts.push({
         id: crypto.randomUUID(), kind: "image", html, plainText,
@@ -708,13 +499,8 @@ function createArticleHandlers(ipcMain) {
     try {
       const target = readArticle(targetId);
       if (!target) return { ok: false, error: "Artigo não encontrado." };
-      target.excerpts = (target.excerpts ?? []).filter(e => e.id !== excerptId);
       // Mantém o outline consistente: remove a entrada correspondente, se houver
-      if (target.excerptOutline) {
-        target.excerptOutline = target.excerptOutline.filter(
-          item => !(item.type === "excerpt" && item.id === excerptId)
-        );
-      }
+      core.removeExcerptFromArticle(target, excerptId);
       target.updatedAt = new Date().toISOString();
       writeArticle(target);
       return { ok: true, data: target };

@@ -2,7 +2,7 @@
 // packages/mobile/src/MobileApp.tsx
 // Componente raiz do shell mobile — equivalente mínimo ao papel de App.tsx no
 // desktop (segura o estado de "qual tela/modal está aberto"). A navegação
-// entre as views principais (Artigos/Grafo/Trilha/Ajustes) fica centralizada
+// entre as views principais (Artigos/Grafo/Trilha/Revisão/Ajustes) fica centralizada
 // na barra inferior fixa (BottomNav) — as telas individuais não sabem mais
 // como abrir umas às outras.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -14,13 +14,14 @@ import { ArticleListScreen } from "./screens/ArticleListScreen";
 import { ArticleScreen } from "./screens/ArticleScreen";
 import { GraphScreen } from "./screens/GraphScreen";
 import { PathScreen } from "./screens/PathScreen";
+import { ReviewScreen } from "./screens/ReviewScreen";
 import { NewArticleModal } from "./screens/NewArticleModal";
 import { OnboardingWizard } from "./screens/OnboardingWizard";
 import { StatusOverlay } from "./StatusOverlay";
 import { BottomNav, type BottomNavTab } from "./BottomNav";
 
 export function MobileApp() {
-  const [screen, setScreen] = useState<"list" | "article" | "graph" | "path" | "settings">("list");
+  const [screen, setScreen] = useState<"list" | "article" | "graph" | "path" | "review" | "settings">("list");
   const [showNewModal, setShowNewModal] = useState(false);
 
   const {
@@ -97,6 +98,8 @@ export function MobileApp() {
     content = <GraphScreen onOpenArticle={handleGraphNodeOpen} />;
   } else if (screen === "path") {
     content = <PathScreen onOpenArticle={handlePathArticleOpen} />;
+  } else if (screen === "review") {
+    content = <ReviewScreen />;
   } else if (screen === "settings") {
     content = (
       <div className="mobile-settings-screen">

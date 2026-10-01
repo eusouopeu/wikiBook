@@ -63,6 +63,26 @@ function writeFlashcards(articleId, cards) {
   flashcardsCache.set(articleId, cards);
 }
 
+// ── Log de revisões (painel "Revisão") ───────────────────────────────────────
+// Contagem de cards avaliados por dia LOCAL ("AAAA-MM-DD" → n), alimentada por
+// flashcards:grade. Fora de flashcards/ de propósito: flashcards:listDue lê
+// todo *.json daquela pasta como lista de cards.
+function reviewLogPath() { return path.join(app.getPath("userData"), "reviewLog.json"); }
+function readReviewLog() {
+  try { return JSON.parse(fs.readFileSync(reviewLogPath(), "utf8")); } catch { return {}; }
+}
+// Mesma chave de localDayKey em shared/lib/reviewStats.ts (aquela é TS e o
+// main do Electron não passa por bundler, por isso a cópia de 3 linhas).
+function localDayKey(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+function recordReview() {
+  const log = readReviewLog();
+  const key = localDayKey(new Date());
+  log[key] = (log[key] ?? 0) + 1;
+  fs.writeFileSync(reviewLogPath(), JSON.stringify(log), "utf8");
+}
+
 // article:delete/restore movem o arquivo de flashcards direto (rename, sem
 // passar por writeFlashcards) — chamado por articleHandlers.js para manter
 // o cache coerente nesses casos.
@@ -210,7 +230,22 @@ function createFlashcardHandlers(ipcMain) {
       if (idx === -1) return { ok: false, error: "Flashcard não encontrado." };
       cards[idx] = gradeCard(cards[idx], grade);
       writeFlashcards(articleId, cards);
+      recordReview();
       return { ok: true, data: cards[idx] };
+    } catch (e) { return { ok: false, error: e.message }; }
+  });
+
+  // ── flashcards:overview ──────────────────────────────────────────────────────
+  // Vencimento de todos os cards + log de revisões por dia — as estatísticas
+  // do painel "Revisão" saem daqui em shared/lib/reviewStats.ts.
+  ipcMain.handle("flashcards:overview", () => {
+    try {
+      ensureFlashcardsDir();
+      const dueDates = [];
+      for (const f of fs.readdirSync(flashcardsDir()).filter(f => f.endsWith(".json"))) {
+        for (const c of readFlashcards(f.replace(".json", ""))) dueDates.push(c.due);
+      }
+      return { ok: true, data: { dueDates, reviewLog: readReviewLog() } };
     } catch (e) { return { ok: false, error: e.message }; }
   });
 }

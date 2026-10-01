@@ -7,7 +7,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { Filesystem, Directory, Encoding } from "@capacitor/filesystem";
-import type { Flashcard, FlashcardGrade } from "@lexicon/shared";
+import type { Flashcard, FlashcardGrade, ReviewOverview } from "@lexicon/shared";
+import { localDayKey } from "@lexicon/shared/lib/reviewStats";
 import { getArticle, htmlToMarkdown } from "./articles";
 
 const FLASHCARDS_DIR = "flashcards";
@@ -431,5 +432,45 @@ export async function grade(articleId: string, cardId: string, cardGrade: Flashc
   if (idx === -1) throw new Error("Flashcard não encontrado.");
   cards[idx] = gradeCard(cards[idx], cardGrade);
   await writeFlashcards(articleId, cards);
+  await recordReview();
   return cards[idx];
+}
+
+// ── Log de revisões (painel "Revisão") ───────────────────────────────────────
+// Contagem de cards avaliados por dia local, alimentada por grade(). Fora de
+// flashcards/ de propósito: listDue lê todo *.json daquela pasta como cards.
+const REVIEW_LOG_PATH = "reviewLog.json";
+
+async function readReviewLog(): Promise<Record<string, number>> {
+  try {
+    const res = await Filesystem.readFile({ path: REVIEW_LOG_PATH, directory: Directory.Data, encoding: Encoding.UTF8 });
+    return JSON.parse(res.data as string);
+  } catch {
+    return {};
+  }
+}
+
+async function recordReview(): Promise<void> {
+  const log = await readReviewLog();
+  const key = localDayKey(new Date());
+  log[key] = (log[key] ?? 0) + 1;
+  await Filesystem.writeFile({
+    path: REVIEW_LOG_PATH, data: JSON.stringify(log), directory: Directory.Data, encoding: Encoding.UTF8,
+  });
+}
+
+// Vencimento de todos os cards + log de revisões por dia — matéria-prima de
+// computeReviewStats (shared/lib/reviewStats.ts).
+export async function overview(): Promise<ReviewOverview> {
+  await ensureFlashcardsDir();
+  const dueDates: string[] = [];
+  try {
+    const entries = await Filesystem.readdir({ path: FLASHCARDS_DIR, directory: Directory.Data });
+    for (const f of entries.files.filter(f => f.name.endsWith(".json"))) {
+      for (const c of await readFlashcards(f.name.replace(".json", ""))) dueDates.push(c.due);
+    }
+  } catch {
+    // pasta ainda vazia
+  }
+  return { dueDates, reviewLog: await readReviewLog() };
 }

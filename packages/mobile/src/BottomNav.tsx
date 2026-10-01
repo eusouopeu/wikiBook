@@ -1,7 +1,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // packages/mobile/src/BottomNav.tsx
 // Barra de navegação inferior fixa, com as views que antes viviam como ícones
-// soltos no cabeçalho da lista de artigos (Grafo, Trilha, Configurações) mais
+// soltos no cabeçalho da lista de artigos (Grafo, Trilha, Revisão, Configurações) mais
 // a aba "Artigos" — sempre visível, com a aba atual destacada.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -9,7 +9,7 @@ import React from "react";
 import { Icon } from "@lexicon/shared";
 import type { IconName } from "@lexicon/shared";
 
-export type BottomNavTab = "list" | "graph" | "path" | "settings";
+export type BottomNavTab = "list" | "graph" | "path" | "review" | "settings";
 
 interface NavItem { tab: BottomNavTab; label: string; icon: IconName; }
 
@@ -17,6 +17,7 @@ const ITEMS: NavItem[] = [
   { tab: "list", label: "Artigos", icon: "read" },
   { tab: "path", label: "Trilha", icon: "path" },
   { tab: "graph", label: "Grafo", icon: "graph" },
+  { tab: "review", label: "Revisão", icon: "flashcards" },
   { tab: "settings", label: "Ajustes", icon: "settings" },
 ];
 
